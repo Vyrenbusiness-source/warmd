@@ -8,9 +8,9 @@ now_ms() {
   case "$t" in *N) echo "$(date +%s)000";; *) echo "$t";; esac
 }
 
-daemon_pid() { local p=""; read -r p < "$RUN/pid.txt" 2>/dev/null; echo "${p%$'\r'}"; }
+daemon_pid() { local p=""; { read -r p < "$RUN/pid.txt"; } 2>/dev/null; echo "${p%$'\r'}"; }
 daemon_alive() {
-  local a="" age; read -r a < "$RUN/alive.txt" 2>/dev/null; a="${a%$'\r'}"; [ -n "$a" ] || return 1
+  local a="" age; { read -r a < "$RUN/alive.txt"; } 2>/dev/null; a="${a%$'\r'}"; [ -n "$a" ] || return 1
   age=$(( $(now_ms) - a ))
   [ "$age" -lt 3000 ] && return 0   # a fresh heartbeat proves it, a process lookup costs 100 ms on Windows
   pid_alive "$(daemon_pid)" && [ "$age" -lt "$HANG_MS" ]
