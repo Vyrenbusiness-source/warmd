@@ -8,6 +8,7 @@ WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/daemon.sh"
+. "$WARMD_HOME/lib/ledger.sh"
 . "$WARMD_HOME/lib/team.sh"
 
 usage() {
@@ -30,7 +31,9 @@ Agents
   warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
-  warmd finish                 push and print a one-line report
+  warmd finish [--tokens N --calls N --outcome ok|escalated|failed]
+                               record cost, push, print a one-line report
+  warmd report                 cost per tier and what escalation wasted
   warmd board                  all worktrees at a glance
   warmd merge <branch>         safe merge into the base branch, rolls back on red
   warmd merge --continue       finish a merge after you resolved its conflicts
@@ -74,7 +77,8 @@ case "$CMD" in
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
   note)    team_note "$@";;
-  finish)  team_finish;;
+  finish)  team_finish "$@";;
+  report)  ledger_report "$@";;
   board)   team_board;;
   merge)   team_merge "$@";;
   init)    common_init; a_init;;
