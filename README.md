@@ -6,7 +6,7 @@
 
 **Fewer tokens, faster agents. Unity tests in 3 seconds instead of 56.**
 
-A headless daemon and one-command CLI for Unity, Godot, web projects and any test suite.<br>
+A headless daemon and one-command CLI for games, websites and ordinary programs.<br>
 It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
 
 [![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
@@ -32,6 +32,14 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
 cd your-project && warmd init && warmd check
 ```
+
+| You build | What warmd does |
+|---|---|
+| **Games** (Unity, Godot) | Keeps the editor warm: one Unity test class in 3 s instead of 56 s |
+| **Websites** | Warm dev server, desktop and phone screenshots in 1.3 s |
+| **Ordinary programs** (Node, Rust, Go, Python, .NET) | Runs only the affected tests and caches green runs: Vitest 1.9 s instead of 4 s |
+
+**Everything stays readable.** Only the output of builds and tests is shortened, never your code. On red you get the error lines with file and line, and the full log stays in `.warmd/run/last.log`.
 
 <img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
 
