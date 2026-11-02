@@ -1,0 +1,54 @@
+   Compiling shop v0.3.1 (/home/ci/work/shop)
+warning: unused variable: `tax`
+  --> src/total.rs:3:9
+   |
+3  |     let tax = 0.0;
+   |         ^^^ help: if this is intentional, prefix it with an underscore: `_tax`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `shop` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.41s
+     Running unittests src/lib.rs (target/debug/deps/shop-3f9c1d2e5a7b4c60)
+
+running 15 tests
+test cart::tests::adds_item ... ok
+test cart::tests::empty_cart ... ok
+test price::tests::rounds ... ok
+test tax::tests::zero_rate ... ok
+test total::tests::applies_discount ... FAILED
+test total::tests::sums_items ... ok
+
+failures:
+
+---- total::tests::applies_discount stdout ----
+thread 'total::tests::applies_discount' panicked at src/total.rs:31:9:
+assertion `left == right` failed
+  left: 90
+ right: 95
+stack backtrace:
+   0: rust_begin_unwind
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/std/src/panicking.rs:665:5
+   1: core::panicking::panic_fmt
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/core/src/panicking.rs:76:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/core/src/panicking.rs:408:17
+   3: core::panicking::assert_failed
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/core/src/panicking.rs:373:5
+   4: shop::total::tests::applies_discount
+             at ./src/total.rs:31:9
+   5: shop::total::tests::applies_discount::{{closure}}
+             at ./src/total.rs:28:29
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/core/src/ops/function.rs:250:5
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/3f5fd8dd41153bc5fdca9951aadaf3d9fa6d8fea/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    total::tests::applies_discount
+
+test result: FAILED. 14 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

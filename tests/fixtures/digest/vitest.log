@@ -1,0 +1,45 @@
+
+ RUN  v2.1.4 /home/ci/work/shop
+
+ ✓ src/cart.test.ts (4 tests) 3ms
+ ✓ src/price.test.ts (6 tests) 4ms
+ ❯ src/total.test.ts (3 tests | 1 failed) 12ms
+   ✓ total > sums items 1ms
+   × total > applies discount 8ms
+     → expected 90 to be 95 // Object.is equality
+   ✓ total > handles empty cart 0ms
+ ✓ src/tax.test.ts (2 tests) 2ms
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/total.test.ts > total > applies discount
+AssertionError: expected 90 to be 95 // Object.is equality
+
+- Expected
++ Received
+
+- 95
++ 90
+
+ ❯ src/total.test.ts:14:35
+     12|   test("applies discount", () => {
+     13|     const cart = makeCart([{ price: 100, qty: 1 }]);
+     14|     expect(total(cart, 0.05)).toBe(95);
+       |                                   ^
+     15|   });
+     16|
+ ❯ node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:146:14
+ ❯ node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:533:11
+ ❯ node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:61:7
+ ❯ runTest (node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:1056:7)
+ ❯ runSuite (node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:1205:15)
+ ❯ runFiles (node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:1262:5)
+ ❯ startTests (node_modules/.pnpm/@vitest+runner@2.1.4/node_modules/@vitest/runner/dist/index.js:1271:3)
+ ❯ node_modules/.pnpm/vitest@2.1.4/node_modules/vitest/dist/chunks/runBaseTests.js:126:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 14 passed (15)
+   Start at  10:41:07
+   Duration  1.12s (transform 41ms, setup 0ms, collect 88ms, tests 29ms, environment 0ms, prepare 212ms)
+
