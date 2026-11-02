@@ -25,13 +25,26 @@ test_cmd() {
 a_test() { slot_take; cached "test|${1:-}" test_cmd "${1:-}"; }
 
 a_check() {
-  local names hits
+  local names hits flt
+  if [ "$KIND" = python ] || [ "$KIND" = dotnet ]; then
+    . "$WARMD_HOME/lib/affected.sh"
+    affected_select "$([ "$KIND" = python ] && echo py || echo cs)"
+    case "$AFF_MODE" in
+      CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
+      NONE) echo "OK no test depends on this change"; return 0;;
+      ALL) echo "(running all tests: $AFF_REASON)"; a_test; return;;
+    esac
+    if [ "$KIND" = python ]; then
+      echo "(affected: $(echo "$AFF_FILES" | wc -w | tr -d ' ') test files)"; a_test "$AFF_FILES"; return
+    fi
+    flt="FullyQualifiedName~$(echo "$AFF_CLASSES" | sed 's/ /|FullyQualifiedName~/g')"
+    echo "(affected: $AFF_CLASSES)"
+    # a test= command runs through sh, the | of the filter needs quotes there
+    if [ -n "$CFG_test" ]; then a_test "'$flt'"; else a_test "$flt"; fi
+    return
+  fi
   names="$(changed_names '\.(py|rs|go|cs)$')"
   [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
-  if [ "$KIND" = python ]; then
-    hits="$(grep -rlE "\b($names)\b" "$PROJECT" --include='test_*.py' --include='*_test.py' --exclude-dir=.venv 2>/dev/null | sed "s#^$PROJECT/##" | paste -sd' ' -)"
-    if [ -n "$hits" ]; then echo "(touched: $(echo "$hits" | wc -w | tr -d ' ') test files)"; a_test "$hits"; return; fi
-  fi
   a_test
 }
 

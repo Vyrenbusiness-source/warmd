@@ -89,12 +89,16 @@ a_test() {
 }
 
 a_check() {
-  local names hits
-  names="$(changed_names '\.(gd|cs)$')"
-  [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
-  hits="$(find "$PROJECT" -name 'test_*.gd' -not -path '*/addons/*' -not -path '*/.godot/*' | xargs -r grep -lE "\b($names)\b" 2>/dev/null | sed 's#.*/##; s/\.gd$//' | paste -sd'|' -)"
-  if [ -z "$hits" ]; then echo "(no tests touched, running all)"; a_test; return; fi
-  echo "(touched: $(echo "$hits" | tr '|' ' ' | cut -c1-120))"
+  . "$WARMD_HOME/lib/affected.sh"
+  affected_select gd
+  case "$AFF_MODE" in
+    CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
+    NONE) echo "OK no test depends on this change"; return 0;;
+    ALL) echo "(running all tests: $AFF_REASON)"; a_test; return;;
+  esac
+  local hits f
+  for f in $AFF_FILES; do f="${f##*/}"; hits="${hits:+$hits|}${f%.gd}"; done
+  echo "(affected: $(echo "$hits" | tr '|' ' ' | cut -c1-120))"
   a_test "($hits)"
 }
 
