@@ -171,11 +171,27 @@ run_bench() {
   raw=""; [ -f "$RUN/last.log" ] && raw="$(wc -c < "$RUN/last.log" | tr -d ' ')"
   bash "$self" test "$@" > /dev/null 2>&1
   cached="$(timed bash "$self" test "$@")"
-  echo "warmd bench on $KIND"
-  echo "cold    $cold ms"
-  echo "warm    $warm ms, $(( (cold - warm) * 100 / (cold > 0 ? cold : 1) ))% faster"
-  echo "cached  $cached ms, $(( (cold - cached) * 100 / (cold > 0 ? cold : 1) ))% faster"
-  if [ -n "$raw" ] && [ "${raw:-0}" -gt "$out" ]; then echo "output  $raw bytes raw, $out bytes shown, $(( (raw - out) * 100 / raw ))% fewer tokens"; fi
+  {
+    echo "warmd bench on $KIND"
+    echo "cold    $cold ms"
+    echo "warm    $warm ms, $(( (cold - warm) * 100 / (cold > 0 ? cold : 1) ))% faster"
+    echo "cached  $cached ms, $(( (cold - cached) * 100 / (cold > 0 ? cold : 1) ))% faster"
+    if [ -n "$raw" ] && [ "${raw:-0}" -gt "$out" ]; then echo "output  $raw bytes raw, $out bytes shown, $(( (raw - out) * 100 / raw ))% fewer tokens"; fi
+  } | tee "$RUN/bench.txt"
+}
+
+# Nothing is ever sent by warmd. This prints a prefilled issue link, the user reads it and decides.
+common_feedback() {
+  local repo=Vyrenbusiness-source/warmd-fewer-tokens-faster-agents body
+  body="warmd $WARMD_VERSION, $OS, $KIND project
+
+What got faster or better, or what broke:
+
+$(cat "$RUN/bench.txt" 2>/dev/null)"
+  echo "This text goes into the issue, nothing is sent until you submit it:"
+  echo "$body" | cut -c1-100
+  echo
+  echo "https://github.com/$repo/issues/new?title=Feedback&body=$(printf '%s' "$body" | sed 's/%/%25/g; s/ /%20/g; s/,/%2C/g; s/#/%23/g; s/&/%26/g' | awk 'BEGIN{ORS="%0A"}{print}')"
 }
 
 # Outline with line numbers. Agents read the range they need, not a 2000-line file.

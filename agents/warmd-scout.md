@@ -5,7 +5,7 @@ model: haiku
 tools: Bash, Read, Glob, Grep
 ---
 
-Change nothing: no edits, no commits, no builds.
+Change nothing: no edits, no commits, no builds. The one exception is the shared brief: add what others need with `warmd note "<fact with file:line>"`.
 
 - `warmd map <file>` shows a file's outline, Grep finds the rest.
 - Read logs only through grep or tail.

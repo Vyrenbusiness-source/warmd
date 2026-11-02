@@ -38,6 +38,7 @@ Agents
 Setup
   warmd init                   install the engine side, agent definitions and instructions
   warmd doctor                 check what is missing
+  warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd package                build a player with your own method (Unity)
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
@@ -68,6 +69,7 @@ case "$CMD" in
   call)    a_call "$@";;
   map)     code_map "$@";;
   audit)   common_audit;;
+  feedback) common_feedback;;
   route)   route_print "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;

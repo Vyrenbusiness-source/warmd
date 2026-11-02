@@ -54,6 +54,11 @@ git checkout -q test.js
 
 expect "bench reports the three timings" 'cached +[0-9]+ ms' "$("$WARMD" bench)"
 
+out="$("$WARMD" feedback)"
+expect "feedback only prints a link" 'issues/new\?title=Feedback' "$out"
+expect "feedback shows the text first" 'nothing is sent' "$out"
+if echo "$out" | grep -q "$TMP"; then no "feedback leaks a local path"; else ok "feedback holds no local path"; fi
+
 # ---- queue ----
 mkdir -p "$XDG_CACHE_HOME/warmd/slots"
 cat > warmd.conf <<'EOF'

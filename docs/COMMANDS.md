@@ -26,6 +26,7 @@ warmd merge --continue       finish a merge after you resolved its conflicts
 
 warmd init                   install the engine side and agent definitions
 warmd doctor                 check what is missing
+warmd feedback               prefilled GitHub issue with your bench numbers, you decide
 warmd package                build a player with your own method (Unity)
 ```
 
