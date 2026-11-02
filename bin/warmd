@@ -34,6 +34,7 @@ Agents
   warmd board                  all worktrees at a glance
   warmd merge <branch>         safe merge into the base branch, rolls back on red
   warmd merge --continue       finish a merge after you resolved its conflicts
+  warmd batch-done             end the batch, the shared checkout opens again
 
 Setup
   warmd init                   install the engine side, agent definitions and instructions
@@ -77,6 +78,7 @@ case "$CMD" in
   finish)  team_finish;;
   board)   team_board;;
   merge)   team_merge "$@";;
+  batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init;;
   doctor)  common_doctor; a_doctor;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;

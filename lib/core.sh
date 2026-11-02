@@ -19,14 +19,28 @@ orphan_check() {
   shell_alive "$PARENT_PID" && return 0
   echo "FAIL caller is gone, stopping"; exit 3
 }
+# While a batch runs, agents belong in their worktrees. A run in the shared checkout collides with merges and costs a slot.
+# The marker holds the worktrees of the batch, so a call from one of them passes. WARMD_BASE=1 is the deliberate way in.
+batch_guard() {
+  [ "${WARMD_BASE:-0}" = 1 ] || [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0
+  [ -n "$GIT_ROOT" ] || return 0
+  local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  [ -f "$f" ] || return 0
+  [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { rm -f "$f"; return 0; }
+  grep -qxF "$GIT_ROOT" "$f" && return 0
+  echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
+}
+
 # Changes during a merge end up in the merge. Only the merge's own checks may run here, everyone else gets a clear refusal.
 merge_guard() {
   [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0
   local f="$STATE/merge.owner" owner
-  [ -f "$f" ] || return 0
-  owner="$(cat "$f" 2>/dev/null)"
-  shell_alive "$owner" || { rm -f "$f"; return 0; }
-  echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4
+  if [ -f "$f" ]; then
+    owner="$(cat "$f" 2>/dev/null)"
+    if shell_alive "$owner"; then echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4; fi
+    rm -f "$f"
+  fi
+  batch_guard
 }
 trap on_exit EXIT
 trap 'exit 130' INT TERM

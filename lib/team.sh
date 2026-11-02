@@ -135,6 +135,13 @@ write_task() { # name tier goal done files wt
   echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
 }
 
+# Warm start for agents: the slow first start runs before the agent arrives, in the background and through the normal queue.
+prewarm() { # worktree
+  [ "$ADAPTER" = unity ] || return 0
+  [ "${WARMD_NO_PREWARM:-0}" = 1 ] && return 0
+  ( cd "$1" || exit 0; WARMD_BASE=1 WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" ping > /dev/null 2>&1 < /dev/null & )
+}
+
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
 team_split() {
   need_git
@@ -154,12 +161,18 @@ team_split() {
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
   shared_start "$file"
+  local batch; batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  : > "$batch"
   while IFS='|' read -r name goal check files <&3; do
     name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     tier="$(route_tier "$goal" "$files")"
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
+    if [ -n "$files" ] && [ "$files" != none ]; then
+      ( cd "$wt" && pwd ) >> "$batch"
+      prewarm "$wt"
+    fi
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")
   echo "OK $n tasks split"
