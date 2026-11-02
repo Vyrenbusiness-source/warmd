@@ -1,0 +1,35 @@
+PASS src/cart.test.js
+PASS src/price.test.js
+FAIL src/total.test.js
+  ● total › applies discount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 95
+    Received: 90
+
+      12 |   test("applies discount", () => {
+      13 |     const cart = makeCart([{ price: 100, qty: 1 }]);
+    > 14 |     expect(total(cart, 0.05)).toBe(95);
+         |                               ^
+      15 |   });
+      16 |
+
+      at Object.toBe (src/total.test.js:14:33)
+      at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)
+      at new Promise (<anonymous>)
+      at callAsyncCircusFn (node_modules/jest-circus/build/utils.js:231:10)
+      at _callCircusTest (node_modules/jest-circus/build/run.js:316:40)
+      at processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at _runTest (node_modules/jest-circus/build/run.js:252:3)
+      at _runTestsForDescribeBlock (node_modules/jest-circus/build/run.js:126:9)
+      at run (node_modules/jest-circus/build/run.js:71:3)
+      at runAndTransformResultsToJestFormat (node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+
+PASS src/tax.test.js
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       1 failed, 14 passed, 15 total
+Snapshots:   0 total
+Time:        1.482 s
+Ran all test suites.

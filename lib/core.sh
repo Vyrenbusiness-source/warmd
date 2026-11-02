@@ -124,6 +124,8 @@ run_bounded() {
   return "$rc"
 }
 summarize_errors() {
+  [ -n "$(type -t digest_log)" ] || . "$WARMD_HOME/lib/digest.sh"
+  digest_log "$1" && return 0
   sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | grep -iE 'error|fail|panic|traceback|assert|expected|✗|×|exception' | awk '!seen[$0]++' | cut -c1-200 | head -13 | grep . \
     || { tail -13 "$1" | cut -c1-200; }
 }
