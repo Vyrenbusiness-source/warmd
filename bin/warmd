@@ -7,6 +7,7 @@ WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
+. "$WARMD_HOME/lib/tune.sh"
 . "$WARMD_HOME/lib/daemon.sh"
 . "$WARMD_HOME/lib/team.sh"
 . "$WARMD_HOME/lib/handoff.sh"

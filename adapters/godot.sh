@@ -102,9 +102,10 @@ a_call() { [ -n "${1:-}" ] || { echo "warmd call res://path/script.gd"; return 2
 
 a_shot() {
   local exe scene="${1:-}" out="$RUN/shots/game.png"
+  gfx_take
   exe="$(godot_exe)" || { echo "FAIL Godot not found"; return 1; }
   mkdir -p "$RUN/shots"
-  WARMD_SHOT="$(native_path "$out")" WARMD_SCENE="$scene" run_bounded shot "$exe" --path "$(native_path "$PROJECT")" --resolution 960x540 --script "$(native_path "$WARMD_HOME/godot/shot.gd")" || return 1
+  WARMD_SHOT="$(native_path "$out")" WARMD_SCENE="$scene" run_bounded shot "$exe" $(tune_godot_gpu_flag "$exe") --path "$(native_path "$PROJECT")" --resolution 960x540 --script "$(native_path "$WARMD_HOME/godot/shot.gd")" || return 1
   echo "image $(native_path "$out")"
 }
 
