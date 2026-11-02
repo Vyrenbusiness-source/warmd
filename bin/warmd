@@ -8,6 +8,7 @@ WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/daemon.sh"
+. "$WARMD_HOME/lib/ledger.sh"
 . "$WARMD_HOME/lib/team.sh"
 . "$WARMD_HOME/lib/handoff.sh"
 
@@ -32,7 +33,9 @@ Agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
   warmd handoff <name> <done> <next>  context filling up: save state, get the line for a fresh agent
-  warmd finish                 push and print a one-line report
+  warmd finish [--tokens N --calls N --outcome ok|escalated|failed]
+                               record cost, push, print a one-line report
+  warmd report                 cost per tier and what escalation wasted
   warmd board                  all worktrees at a glance
   warmd merge <branch>         safe merge into the base branch, rolls back on red
   warmd merge --continue       finish a merge after you resolved its conflicts
@@ -78,7 +81,8 @@ case "$CMD" in
   escalate) team_escalate "$@";;
   handoff) team_handoff "$@";;
   note)    team_note "$@";;
-  finish)  team_finish;;
+  finish)  team_finish "$@";;
+  report)  ledger_report "$@";;
   board)   team_board;;
   merge)   team_merge "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;

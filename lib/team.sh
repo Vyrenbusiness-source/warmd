@@ -7,11 +7,15 @@ route_tier() { # goal files
   local tier=mid
   if echo "$goal" | grep -qiE "$CFG_top_words"; then tier=top; fi
   if [ -n "$CFG_top_paths" ] && echo "$files" | grep -qE "$CFG_top_paths"; then tier=top; fi
-  # Learned: an area that needed escalation twice starts one tier higher
-  if [ "$tier" = mid ] && [ -f "$STATE/history.tsv" ]; then
-    local area n; area="$(area_of "$files")"
-    n="$(grep -c "^escalated	$area$" "$STATE/history.tsv" 2>/dev/null)"
-    [ "${n:-0}" -ge 2 ] && tier=top
+  # Learned from the ledger: an area where half of the mid attempts needed escalation (two or more tasks) starts at top. Older history.tsv counts still apply.
+  if [ "$tier" = mid ]; then
+    local area n e; area="$(area_of "$files")"
+    read -r n e <<< "$(ledger_rate "$area" mid)"
+    [ "${n:-0}" -ge 2 ] && [ $(( ${e:-0} * 2 )) -ge "$n" ] && tier=top
+    if [ "$tier" = mid ] && [ -f "$STATE/history.tsv" ]; then
+      n="$(grep -c "^escalated	$area$" "$STATE/history.tsv" 2>/dev/null)"
+      [ "${n:-0}" -ge 2 ] && tier=top
+    fi
   fi
   apply_floor "$tier"
 }
@@ -197,6 +201,7 @@ team_escalate() {
 # The last line of every agent: facts from git and the last run, not prose.
 team_finish() {
   need_git
+  ledger_finish "$@" || return $?
   local br sha ahead dirty up last
   br="$(git -C "$GIT_ROOT" branch --show-current)"; sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
