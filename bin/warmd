@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# warmd: keep the slow thing warm. One command for build, test and screenshots, made for AI coding agents.
+set -u
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
+WARMD_VERSION=0.1.0
+. "$WARMD_HOME/lib/platform.sh"
+. "$WARMD_HOME/lib/core.sh"
+. "$WARMD_HOME/lib/daemon.sh"
+. "$WARMD_HOME/lib/team.sh"
+
+usage() {
+  cat <<'EOF'
+warmd - keep the slow thing warm (Unity, Godot, web dev server, any test suite)
+
+Everyday
+  warmd status                 what was detected, what is warm
+  warmd build                  fastest possible compile or typecheck
+  warmd test [filter]          run tests, green results are cached by code hash
+  warmd check                  build, then only the tests your change touches
+  warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
+  warmd map <file>             outline with line numbers instead of reading the file
+  warmd stop                   end the warm process for real
+
+Agents
+  warmd route <goal> [files]   cheapest fitting model tier
+  warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
+  warmd escalate <name>        same task, next model tier
+  warmd finish                 push and print a one-line report
+  warmd board                  all worktrees at a glance
+  warmd merge <branch>         safe merge into the base branch, rolls back on red
+
+Setup
+  warmd init                   install the engine side, agent definitions and instructions
+  warmd doctor                 check what is missing
+
+Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
+Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
+Config    warmd.conf in the project root, see README
+EOF
+}
+
+case "${1:-status}" in
+  -h|--help|help) usage; exit 0;;
+  -v|--version|version) echo "warmd $WARMD_VERSION"; exit 0;;
+esac
+
+CMD="${1:-status}"; [ $# -gt 0 ] && shift
+detect_project
+. "$WARMD_HOME/adapters/$ADAPTER.sh"
+
+case "$CMD" in
+  status)  common_status; a_status;;
+  build)   a_build;;
+  test)    run_tests "$@";;
+  check)   run_check;;
+  shot)    a_shot "$@";;
+  stop)    a_stop;;
+  ping)    job ping;;
+  call)    a_call "$@";;
+  map)     code_map "$@";;
+  route)   route_print "$@";;
+  split)   team_split "$@";;
+  escalate) team_escalate "$@";;
+  finish)  team_finish;;
+  board)   team_board;;
+  merge)   team_merge "$@";;
+  init)    common_init; a_init;;
+  doctor)  common_doctor; a_doctor;;
+  *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
+esac

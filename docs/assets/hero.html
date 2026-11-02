@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}
+html,body{width:1280px;height:640px;overflow:hidden}
+body{background:#0b0f14;color:#e6edf3;font-family:"Segoe UI",system-ui,sans-serif;display:grid;grid-template-columns:560px 1fr;gap:44px;padding:56px;position:relative}
+body:before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% 12%,rgba(255,122,48,.2),transparent 62%)}
+.left,.term{position:relative}
+.left{display:flex;flex-direction:column}
+.logo{font:800 92px/1 "Segoe UI",system-ui;letter-spacing:-3px}
+.logo span{color:#ff7a30}
+h1{font-size:43px;line-height:1.14;letter-spacing:-.8px;margin-top:22px;font-weight:700}
+.sub{color:#9aa7b4;font-size:23px;line-height:1.38;margin-top:20px}
+.stacks{display:flex;gap:10px;margin-top:auto;flex-wrap:wrap}
+.stacks b{font-size:19px;font-weight:600;padding:8px 15px;border:1px solid #2c3641;border-radius:9px;color:#d2dae2}
+.term{background:#11171e;border:1px solid #2c3641;border-radius:16px;padding:26px 28px;font:21px/1.62 Consolas,"Cascadia Mono",monospace;align-self:center;box-shadow:0 26px 60px rgba(0,0,0,.45)}
+.dots{display:flex;gap:9px;margin-bottom:18px}.dots i{width:13px;height:13px;border-radius:50%;background:#3a4552}
+.c{color:#6e7c8a}.p{color:#ff7a30}.g{color:#3fd07f}.r{color:#ff6b6b}
+.gap{height:13px}
+</style></head><body>
+<div class="left">
+  <div class="logo">warm<span>d</span></div>
+  <h1>Your AI agent should not wait for the engine.</h1>
+  <p class="sub">A headless daemon and one-command CLI that make every test run cheap in time and tokens.</p>
+  <div class="stacks"><b>Unity</b><b>Godot</b><b>Web</b><b>Any test suite</b></div>
+</div>
+<div class="term">
+  <div class="dots"><i></i><i></i><i></i></div>
+  <div><span class="p">$</span> warmd test ShipTests</div>
+  <div><span class="g">OK 3s test</span></div>
+  <div>8 passed, 0 failed</div>
+  <div class="c">was 56 s with a fresh Unity start</div>
+  <div class="gap"></div>
+  <div><span class="p">$</span> warmd test ShipTests</div>
+  <div><span class="g">OK cached, code unchanged</span> <span class="c">0.4 s</span></div>
+  <div class="gap"></div>
+  <div><span class="p">$</span> warmd route "add a footer" site.css</div>
+  <div><span class="g">mid model=sonnet</span> <span class="c">budget=100k</span></div>
+</div>
+</body></html>
