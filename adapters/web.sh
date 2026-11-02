@@ -95,6 +95,8 @@ a_seed() { # node_modules is the slow part, a link costs nothing
   if [ "$OS" = win ]; then powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(native_path "$2/node_modules")' -Target '$(native_path "$1/node_modules")'" >/dev/null
   else ln -s "$1/node_modules" "$2/node_modules"; fi
 }
+a_has_cache() { [ -d "$1/node_modules" ] || [ ! -f "$1/package.json" ]; }
+a_package() { echo "warmd package is for Unity"; return 2; }
 a_init() { :; }
 a_doctor() {
   find_browser >/dev/null && echo "ok browser for shot" || echo "MISSING Chrome, Edge or Chromium (warmd shot)"

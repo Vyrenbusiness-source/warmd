@@ -34,6 +34,10 @@ a_start_daemon() {
   local exe gfx=(-nographics); exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
   [ "${WARMD_GFX:-0}" = 1 ] && gfx=()
+  # Each worktree gets a stable port block, so parallel daemons never collide and no agent has to think about it
+  if [ -n "$CFG_port_env" ]; then
+    export "$CFG_port_env=$(( 7830 + 10 * ( $(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1) % 160 ) ))"
+  fi
   export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
   # -logFile with warmd-daemon in the path is how the daemon is told from a human's editor
   spawn "$RUN/unity_out.log" "$exe" -batchmode "${gfx[@]}" -projectPath "$(native_path "$PROJECT")" -logFile "$(native_path "$RUN/warmd-daemon.log")"
@@ -49,10 +53,21 @@ csproj_fresh() {
   have="$(cd "$PROJECT" && find Assets -name '*.cs' | sort -u)"
   [ -z "$(comm -13 <(echo "$listed") <(echo "$have"))" ]
 }
+# One parallel msbuild over all projects with warm nodes, Runtime builds once. Unity empties Temp on exit, so restore only when it is gone.
 dotnet_errors() {
-  local p; for p in $(csproj_list); do
-    ( cd "$PROJECT" && dotnet build "$p" --nologo -v q -nr:true -clp:NoSummary 2>&1 ) || true
-  done | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
+  local p proj="$RUN/all.proj" restore=""
+  {
+    echo '<Project DefaultTargets="Build"><ItemGroup>'
+    for p in $(csproj_list); do echo "<P Include=\"$(native_path "$p")\" />"; done
+    echo '</ItemGroup><Target Name="Build">'
+    echo '<MSBuild Condition="'"'"'$(R)'"'"'==1" Projects="@(P)" BuildInParallel="true" Targets="Restore" Properties="Configuration=Debug;WarmdRestore=1" />'
+    echo '<MSBuild Projects="@(P)" BuildInParallel="true" Targets="Build" Properties="Configuration=Debug" />'
+    echo '</Target></Project>'
+  } > "$proj"
+  for p in $(csproj_list); do
+    [ -f "$PROJECT/Temp/obj/$(basename "$p" .csproj)/project.assets.json" ] || [ -f "$PROJECT/obj/project.assets.json" ] || restore=1
+  done
+  ( cd "$PROJECT" && timeout 300 dotnet msbuild "$(native_path "$proj")" -p:R="${restore:-0}" -nr:true -m -nologo -v q -clp:NoSummary 2>&1 ) | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
 }
 a_build() {
   command -v dotnet >/dev/null 2>&1 || { job compile; return; }
@@ -92,12 +107,29 @@ a_shot() { # needs graphics, so one start of its own
   local out="${1:-$RUN/shots/game.png}"; mkdir -p "$(dirname "$out")"
   [ -n "${CFG_shot_method:-}" ] || { echo "FAIL set shot_method=Namespace.Class.Method in warmd.conf, it reads -shotPath"; return 2; }
   slot_take; a_stop >/dev/null
+  local clean; clean="$(git -C "$PROJECT" status --porcelain -uno | grep -vE '\.sln[x]?$')"
   timeout "$TIMEOUT" "$(unity_exe)" -batchmode -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_shot_method" -shotPath "$(native_path "$out")" -quit -logFile "$(native_path "$RUN/shot.log")"
-  local rc=$?; [ $rc = 0 ] && echo "image $(native_path "$out")" && echo "OK $(secs)s shot" || { echo "FAIL $(secs)s shot"; grep -m3 -i error "$RUN/shot.log" | cut -c1-200; }
+  local rc=$?
+  [ -z "$clean" ] && git -C "$PROJECT" checkout -q -- .   # Unity reserializes materials, the base must stay clean for the next merge
+  [ $rc = 0 ] && echo "image $(native_path "$out")" && echo "OK $(secs)s shot" || { echo "FAIL $(secs)s shot"; grep -m3 -i error "$RUN/shot.log" | cut -c1-200; }
+  return $rc
+}
+
+# Player build through your own method: package_method and package_args in warmd.conf. Needs graphics, so one start of its own.
+a_package() {
+  [ -n "$CFG_package_method" ] || { echo "FAIL set package_method=Namespace.Class.Method in warmd.conf"; return 2; }
+  slot_take; a_stop > /dev/null
+  [ -z "$(foreign_unity)" ] || { echo "FAIL another Unity has this project open"; return 2; }
+  local clean; clean="$(git -C "$PROJECT" status --porcelain -uno | grep -vE '\.sln[x]?$')"
+  timeout "${WARMD_BUILD_TIMEOUT:-2400}" "$(unity_exe)" -batchmode -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_package_method" $CFG_package_args -quit -logFile "$(native_path "$RUN/package.log")"
+  local rc=$?
+  [ -z "$clean" ] && git -C "$PROJECT" checkout -q -- .
+  if [ $rc = 0 ]; then echo "OK $(secs)s package"; else echo "FAIL $(secs)s package"; grep -m6 -E 'error CS|rror:|Failed' "$RUN/package.log" | cut -c1-200; fi
   return $rc
 }
 
 a_stop() { daemon_stop; }
+a_has_cache() { [ -d "$1/Library" ]; }
 a_status() { if daemon_alive; then echo "Unity $UNITY_VER warm, pid $(daemon_pid)"; else echo "Unity $UNITY_VER cold"; fi; }
 a_seed() { # Library is the slow part: a worktree without it reimports everything
   [ -d "$1/Library" ] || return 0

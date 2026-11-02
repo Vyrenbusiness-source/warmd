@@ -30,15 +30,39 @@ need_git() { [ -n "$GIT_ROOT" ] || { echo "FAIL needs a git repo"; exit 2; }; }
 worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_ROOT")"; }
 rel_project() { local r="${PROJECT#"$GIT_ROOT"}"; echo "${r#/}"; }
 
+# A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
+wt_free() { # path
+  local p="$1" rel; rel="$(rel_project)"
+  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$')" ] || return 1
+  git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
+  a_has_cache "$p${rel:+/$rel}" || return 1
+  [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
+}
+wt_reuse() { # name
+  local name="$1" p base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
+  while IFS='|' read -r p br; do
+    [ "$br" = "$base" ] && continue
+    [ "$p" = "$main" ] && continue
+    case " ${USED_WT:-} " in *" $p "*) continue;; esac
+    wt_free "$p" || continue
+    git -C "$p" checkout -q -- . 2>/dev/null
+    git -C "$p" checkout -q -B "warmd/$name" "$base" || continue
+    echo "$p"; return 0
+  done < <(git -C "$GIT_ROOT" worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^locked/{p=""} /^branch /{b=$2; sub("refs/heads/","",b); if(p!="")print p"|"b}')
+  return 1
+}
+
 # A new worktree is useless until its slow caches exist: the adapter copies or links them (Library, .godot, node_modules).
 wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
   if [ -d "$wt" ]; then echo "$wt"; return 0; fi
+  wt_reuse "$name" && return 0
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
   rel="$(rel_project)"; src="$PROJECT"
   a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1
+  seed_links "$src" "$wt${rel:+/$rel}"
   echo "$wt"
 }
 
@@ -74,6 +98,16 @@ team_note() {
   keep="$(awk '/^## Findings/{print NR}' "$f")"
   if [ "$(( $(wc -l < "$f") - keep ))" -gt 40 ]; then { head -n "$keep" "$f"; tail -n 40 "$f"; } > "$f.tmp"; mv "$f.tmp" "$f"; fi
   echo "OK noted"
+}
+
+# seed_links in warmd.conf: untracked folders a worktree needs, linked instead of copied
+seed_links() { # from to
+  local item
+  for item in ${CFG_seed_links//,/ }; do
+    [ -e "$1/$item" ] && [ ! -e "$2/$item" ] || continue
+    if [ "$OS" = win ]; then powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(native_path "$2/$item")' -Target '$(native_path "$1/$item")'" >/dev/null 2>&1
+    else ln -s "$1/$item" "$2/$item"; fi
+  done
 }
 
 write_task() { # name tier goal done files wt
@@ -114,7 +148,7 @@ team_split() {
     name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     tier="$(route_tier "$goal" "$files")"
-    if [ "$tier" = cheap ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; fi
+    if [ "$tier" = cheap ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $wt"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")
@@ -164,16 +198,24 @@ team_board() {
 team_merge() {
   need_git
   local br="${1:-}" base out m
-  [ -n "$br" ] || { echo "warmd merge <branch>"; return 2; }
+  [ -n "$br" ] || { echo "warmd merge <branch>, after a resolved conflict: warmd merge --continue"; return 2; }
   base="$(base_branch)"
   [ "$(git -C "$GIT_ROOT" branch --show-current)" = "$base" ] || { echo "FAIL merge only from a checkout of $base"; return 2; }
-  [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
-  git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br"; return 2; }
-  out="$(git -C "$GIT_ROOT" merge --no-commit --no-ff "$br" 2>&1)" || {
-    echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; git -C "$GIT_ROOT" merge --abort; return 1; }
-  echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
+  if [ "$br" = --continue ]; then
+    br="$(git -C "$GIT_ROOT" name-rev --name-only MERGE_HEAD 2>/dev/null)" || { echo "FAIL no merge open"; return 2; }
+    [ -z "$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)" ] || { echo "FAIL still unresolved:"; git -C "$GIT_ROOT" diff --name-only --diff-filter=U | head -8; return 1; }
+  else
+    git -C "$GIT_ROOT" status --porcelain -uno | grep -qE '\.sln[x]?$' && git -C "$GIT_ROOT" checkout -q -- '*.sln*' 2>/dev/null
+    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
+    git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br"; return 2; }
+    out="$(git -C "$GIT_ROOT" merge --no-commit --no-ff "$br" 2>&1)" || {
+      echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; return 1; }
+    echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
+  fi
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
-  if ! m="$(run_check 2>&1)"; then mfail "$(echo "$m" | head -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
-  git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
+  if [ -n "$CFG_gate" ]; then
+    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(echo "$m" | tail -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
+  elif ! m="$(run_check 2>&1)"; then mfail "$(echo "$m" | head -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
+  git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }

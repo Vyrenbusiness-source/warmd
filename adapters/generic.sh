@@ -40,6 +40,8 @@ a_stop() { echo "OK nothing warm"; }
 a_status() { :; }
 a_call() { echo "warmd call is for engines"; return 2; }
 a_seed() { :; }
+a_has_cache() { return 0; }
+a_package() { echo "warmd package is for Unity"; return 2; }
 a_init() { :; }
 a_doctor() {
   [ "$KIND" = none ] && echo "note: no known project type, set build= and test= in warmd.conf"

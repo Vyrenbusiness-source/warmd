@@ -102,6 +102,13 @@ expect "split refuses two owners of a file" 'already owned' "$out"
 expect "finish reports facts in one line" '^DONE main [0-9a-f]+' "$("$WARMD" finish)"
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"
 
+git worktree add -q -b warmd/done "$(dirname "$PWD")/wt-done" HEAD 2>/dev/null
+printf 'again | second task | warmd test passes | src/two.css\n' > again.txt
+git add -A; git commit -qm tasks
+git -C "$(dirname "$PWD")/wt-done" merge -q --ff-only main 2>/dev/null
+out="$("$WARMD" split again.txt)"
+expect "a finished worktree is reused instead of copied" 'wt-done' "$(cat .warmd/tasks/again.md)"
+
 # ---- map ----
 cat > app.ts <<'EOF'
 export function alpha() {}

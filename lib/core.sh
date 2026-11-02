@@ -52,6 +52,7 @@ detect_project() {
 }
 
 CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=30
+CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_package_args=""; CFG_shot_method=""
 CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
 CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160

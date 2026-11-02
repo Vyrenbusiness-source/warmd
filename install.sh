@@ -9,4 +9,5 @@ mkdir -p "$BIN"
 printf '#!/usr/bin/env bash\nexec bash "%s/bin/warmd" "$@"\n' "$DIR" > "$BIN/warmd"
 chmod +x "$BIN/warmd" "$DIR/bin/warmd"
 echo "warmd installed to $BIN/warmd"
+echo "Saves you tokens or time? Star it: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "Add this to your shell profile: export PATH=\"$BIN:\$PATH\"";; esac

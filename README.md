@@ -9,6 +9,7 @@
 A headless daemon and one-command CLI for Unity, Godot, web projects and any test suite.<br>
 It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
 
+[![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
 [![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Unity](https://img.shields.io/badge/Unity-6-black?logo=unity)
@@ -24,6 +25,8 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 </tr>
 </table>
 
+**⭐ Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers), it takes one click and helps others find it.**
+
 **[Install](#install) · [What you get](#what-you-get) · [Cheap models first](#cheap-models-first) · [Measured](#measured) · [Commands](#commands) · [FAQ](#faq)**
 
 **Do not trust the numbers, run them:** `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh one on every push. Raw output is in [PROOF.md](docs/PROOF.md).
@@ -33,8 +36,6 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 <sub>Illustrative session. Timings come from the measurements below.</sub>
 
 </div>
-
-If warmd saves you a wait, [give it a star](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers). It helps other people find it.
 
 ## Why
 
@@ -94,7 +95,7 @@ AGENT unused: subagent_type=warmd-scout model=haiku prompt="Read .warmd/tasks/un
 OK 3 tasks split
 ```
 
-- **Clean split.** Each editing task gets its own git worktree with its slow caches seeded (`Library`, `.godot`, `node_modules`). If two tasks claim one file, the batch is refused before anything is created.
+- **Clean split.** Each editing task gets its own git worktree. A finished worktree is reused, so its `Library`, `.godot` or `node_modules` stays warm, otherwise they are seeded. If two tasks claim one file, the batch is refused before anything is created.
 - **Stays current by itself.** Tiers map to the aliases `haiku`, `sonnet` and `opus`, which always point to the newest release. When a new model ships there is nothing to change.
 - **Cheap first, then up.** An agent stops after two failed fixes. `warmd escalate <name>` hands the same task to the next tier, with the earlier commits as context.
 - **It learns.** An area that needed escalation twice starts one tier higher next time.
@@ -159,9 +160,11 @@ warmd escalate <name>        same task, next model tier
 warmd finish                 push and print a one-line report
 warmd board                  all worktrees at a glance
 warmd merge <branch>         safe merge into the base branch, rolls back on red
+warmd merge --continue       finish a merge after you resolved its conflicts
 
 warmd init                   install the engine side and agent definitions
 warmd doctor                 check what is missing
+warmd package                build a player with your own method (Unity)
 ```
 
 Unity extras: `--play`, `--edit`, `--speed N`, and `warmd call Namespace.Class.Method` to run a static method in the warm editor.
@@ -181,6 +184,10 @@ Everything is optional. Put a `warmd.conf` in the project root:
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
 | `top_paths` | Paths that need the top tier (regex) | none |
 | `shot_method` | Unity capture method | none |
+| `package_method`, `package_args` | Unity player build for `warmd package` | none |
+| `gate` | Shell command `warmd merge` runs instead of `check` | none |
+| `port_env` | Env variable that gets a stable port per worktree | none |
+| `seed_links` | Untracked folders linked into new worktrees | none |
 
 Environment: `WARMD_NOCACHE=1` ignores the cache, use it for a release gate. Also `WARMD_TIMEOUT`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1` (Unity daemon with graphics).
 
@@ -229,4 +236,4 @@ Run `bash tests/run.sh`. It needs no engine. `bash tests/godot.sh` needs Godot 4
 
 ## License
 
-MIT. If warmd saved you time, [a star](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers) is the best thanks.
+MIT

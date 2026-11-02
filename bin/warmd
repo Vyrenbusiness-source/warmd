@@ -4,7 +4,7 @@ set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.1.0
+WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/daemon.sh"
@@ -32,10 +32,12 @@ Agents
   warmd finish                 push and print a one-line report
   warmd board                  all worktrees at a glance
   warmd merge <branch>         safe merge into the base branch, rolls back on red
+  warmd merge --continue       finish a merge after you resolved its conflicts
 
 Setup
   warmd init                   install the engine side, agent definitions and instructions
   warmd doctor                 check what is missing
+  warmd package                build a player with your own method (Unity)
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
@@ -61,6 +63,7 @@ case "$CMD" in
   shot)    a_shot "$@";;
   stop)    a_stop;;
   ping)    job ping;;
+  package) a_package;;
   call)    a_call "$@";;
   map)     code_map "$@";;
   route)   route_print "$@";;
