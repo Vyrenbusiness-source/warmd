@@ -37,7 +37,7 @@ route_print() {
 
 need_git() { [ -n "$GIT_ROOT" ] || { echo "FAIL needs a git repo"; exit 2; }; }
 worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_ROOT")"; }
-rel_project() { local r="${PROJECT#"$GIT_ROOT"}"; echo "${r#/}"; }
+rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo "${r%/}"; }   # from git: string math breaks on Windows short paths
 
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
