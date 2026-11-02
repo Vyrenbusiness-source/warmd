@@ -1,11 +1,21 @@
 # Everything that differs between Windows (Git Bash), Linux and macOS lives here.
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) OS=win;;
-  Darwin) OS=mac;;
+# $OSTYPE is set by bash itself, so no process starts
+case "${OSTYPE:-$(uname -s)}" in
+  msys*|cygwin*|mingw*|MINGW*|MSYS*|CYGWIN*) OS=win;;
+  darwin*|Darwin) OS=mac;;
   *) OS=linux;;
 esac
 
-native_path() { if [ "$OS" = win ]; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
+# On Windows /c/dir becomes C:/dir in pure bash, only other roots such as /tmp need cygpath
+native_path() {
+  if [ "$OS" != win ]; then printf '%s\n' "$1"; return; fi
+  case "$1" in
+    /[a-zA-Z]) _d="${1:1:1}"; printf '%s:/\n' "${_d^^}";;
+    /[a-zA-Z]/*) _d="${1:1:1}"; printf '%s:%s\n' "${_d^^}" "${1:2}";;
+    [a-zA-Z]:*) _d='\'; printf '%s\n' "${1//"$_d"//}";;
+    *) cygpath -m "$1";;
+  esac
+}
 # Shell pids work across every session on all systems and need no process listing, which stalls under load on Windows
 shell_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 
@@ -53,4 +63,7 @@ find_browser() {
   return 1
 }
 
-cpu_count() { getconf _NPROCESSORS_ONLN 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}"; }
+cpu_count() {
+  if [ "$OS" = win ] && [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"; return; fi
+  getconf _NPROCESSORS_ONLN 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}"
+}
