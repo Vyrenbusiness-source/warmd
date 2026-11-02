@@ -13,23 +13,28 @@ h1{font-size:40px;line-height:1.15;letter-spacing:-.8px;font-weight:700;margin-t
 .t{font-size:22px;font-weight:600;margin-bottom:6px}.t small{font-size:17px;font-weight:400;color:#9aa7b4;margin-left:10px}
 .b{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:14px;margin-top:6px}
 .b i{font-style:normal;font-size:17px;color:#9aa7b4}
-.bar{height:28px;border-radius:7px;display:flex;align-items:center;justify-content:flex-end;padding:0 12px;font:700 18px Consolas,monospace;white-space:nowrap}
-.bef{background:#3a4552;color:#e6edf3}.aft{background:#ff7a30;color:#0b0f14}
 .foot{position:absolute;left:56px;right:56px;bottom:20px;color:#6e7c8a;font-size:16px}
+.tr{display:flex;align-items:center;gap:12px}
+.bar{height:28px;border-radius:3px;min-width:2px;flex:none}
+.num{font:700 18px Consolas,monospace;white-space:nowrap}
+.bef{background:#3a4552}.aft{background:#ff7a30}
 </style></head><body>
 <div class="logo">warm<span>d</span></div>
 <h1>Same tests, a fraction of the wait.</h1>
 <div class="rows">
- <div class="card row"><div class="t">Unity, one test class<small>large HDRP project</small></div>
-  <div class="b"><i>before</i><div class="bar bef" style="width:100%">56 s</div></div>
-  <div class="b"><i>warmd</i><div class="bar aft" style="width:6%;min-width:70px">3 s</div></div></div>
- <div class="card row"><div class="t">Unity, full PlayMode test<small>same project</small></div>
-  <div class="b"><i>before</i><div class="bar bef" style="width:96%">54 s</div></div>
-  <div class="b"><i>warmd</i><div class="bar aft" style="width:46%">26 s</div></div>
-  <div class="b"><i>--speed 8</i><div class="bar aft" style="width:14%;min-width:70px">8 s</div></div></div>
- <div class="card row"><div class="t">Repeat run, code unchanged<small>green results are cached</small></div>
-  <div class="b"><i>before</i><div class="bar bef" style="width:5.4%;min-width:70px">3 s</div></div>
-  <div class="b"><i>warmd</i><div class="bar aft" style="width:1%;min-width:84px">0.4 s</div></div></div>
+<div class="card row"><div class="t">Unity, one test class<small>large HDRP project</small></div>
+  <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="56" style="width:82.0%"></div><span class="num">56 s</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="3" style="width:4.3929%"></div><span class="num">3 s</span></div></div>
 </div>
-<div class="foot">Windows 10, Unity 6000.4. One run, your numbers will differ. Raw output in docs/PROOF.md. Bars share one scale per card.</div>
+<div class="card row"><div class="t">Unity, full PlayMode test<small>same project</small></div>
+  <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="54" style="width:82.0%"></div><span class="num">54 s</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="26" style="width:39.4815%"></div><span class="num">26 s</span></div></div>
+  <div class="b"><i>--speed 8</i><div class="tr"><div class="bar aft" data-v="8" style="width:12.1481%"></div><span class="num">8 s</span></div></div>
+</div>
+<div class="card row"><div class="t">Repeat run, code unchanged<small>green results are cached</small></div>
+  <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="3" style="width:82.0%"></div><span class="num">3 s</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="0.4" style="width:10.9333%"></div><span class="num">0.4 s</span></div></div>
+</div>
+</div>
+<div class="foot">Windows 10, Unity 6000.4. One run. Raw output in docs/PROOF.md. Bar lengths are proportional within each card.</div>
 </body></html>

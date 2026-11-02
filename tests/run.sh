@@ -213,4 +213,5 @@ for t in ledger digest affected perf; do bash "$HERE/tests/$t.sh" || fails=$((fa
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 rm -rf "$TMP" 2>/dev/null
+bash tests/bars.sh >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"
 exit $fails

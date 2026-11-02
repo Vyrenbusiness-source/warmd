@@ -39,7 +39,7 @@ _digest_vitest() {
     !msg && /^[A-Za-z]*(Error|Exception)[: ]/ { print trim($0); msg = 1; next }
     /^- Expected/ || /^\+ Received/ { next }
     d < 6 && /^[-+] / && msg { print trim($0); d++; next }
-    !loc && /^ *❯ / && !/node_modules/ { print "at " trim(substr($0, index($0, "❯") + 3)); loc = 1; next }
+    !loc && /^ *❯ / && !/node_modules/ { l = $0; sub(/^ *❯ +/, "", l); print "at " trim(l); loc = 1; next }
     END { if (n > max) print "(+" n - max " more failures)" }' "$1"
 }
 
@@ -47,7 +47,7 @@ _digest_jest() {
   awk -v max="$DIGEST_MAX_FAILS" '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     /^ *● / && !/Console/ { n++; st = 1; msg = 0; loc = 0
-      if (n <= max) print "FAIL " trim(substr($0, index($0, "●") + 4)); next }
+      l = $0; sub(/^ *● +/, "", l); if (n <= max) print "FAIL " trim(l); next }
     n > max || !st { next }
     !msg && NF { if ($0 !~ /^ *(Expected|Received)/) { print trim($0) } msg = 1 }
     /^ *(Expected|Received)/ { print trim($0); next }
