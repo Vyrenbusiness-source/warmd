@@ -45,7 +45,7 @@ cd your-project && warmd init && warmd check
 
 <sub>Illustrative session. Timings come from [the measurements](docs/MEASURED.md).</sub>
 
-**[Install](#install) · [Why](#why) · [What you get](#what-you-get) · [When it helps](#when-it-helps-and-when-it-does-not) · [Measured](#measured) · [Docs](#docs) · [Safety](#safety)**
+**[Install](#install) · [Why](#why) · [Advantages](#every-advantage-one-sentence) · [What you get](#what-you-get) · [When it helps](#when-it-helps-and-when-it-does-not) · [Measured](#measured) · [Docs](#docs) · [Safety](#safety)**
 
 </div>
 
@@ -70,6 +70,48 @@ An AI agent working on a game spends most of its time waiting for the engine, an
 | Output the agent reads | 33,323 bytes | 41 bytes |
 
 The 56 s baseline comes from a private project. Method and raw output: [PROOF.md](docs/PROOF.md).
+
+## Every advantage, one sentence
+
+### Speed
+
+![Bars: Unity test class 56 s to 3 s, PlayMode 54 s to 26 s and 8 s with --speed 8, repeat run 0.4 s](docs/assets/speed.png)
+
+- **Warm engine.** The Unity editor or the web dev server stays open between runs, so no call pays the start again.
+- **`warmd check`.** Builds, then runs only the tests that mention what you changed.
+- **Green cache.** A passing run stays passing until the code changes, across all worktrees. Red is never cached.
+- **`warmd bench`.** Measures cold, warm and cached timings on your own project, so you can check every number here.
+
+### Tokens
+
+![Bars: Unity green 33,323 to 41 bytes, Vitest green 270 to 11, Vitest red 877 to 490](docs/assets/tokens.png)
+
+- **Short output.** One line on success. On failure only the error lines, with file and line where the stack allows it. These figures are per test run, not per session.
+- **`warmd shot`.** A desktop and a real 390 px phone screenshot in about 1.3 seconds, sized to cost few tokens.
+- **`warmd map <file>`.** An outline with line numbers instead of reading the whole file.
+- **`warmd audit`.** Shows what your agents really pay for, biggest cost first.
+
+### Many agents
+
+![Flow: task list, warmd split, Haiku, Sonnet and Opus each in a worktree, warmd merge with rollback, warmd escalate](docs/assets/flow.png)
+
+- **`warmd split`.** Turns a task list into worktrees, model tiers and one-line prompts. Haiku only reads, edits start at Sonnet.
+- **Shared brief.** All agents of a batch read one short file. `warmd note "..."` adds a finding, so the next agent skips that search.
+- **`warmd escalate`.** After a failure the same task goes to the next tier, with the earlier commits as context. Areas that needed it twice start higher next time.
+- **Routing you control.** `floor=mid` or `floor=top` sets the lowest tier. The aliases `haiku`, `sonnet` and `opus` follow new releases, so nothing needs changing when a model ships.
+- **`warmd finish`.** Pushes and prints a one-line report from git and the last run.
+- **`warmd merge`.** Runs the checks on the merged result and rolls back on red.
+
+### Safe by design
+
+![Tiles: functions and protection](docs/assets/features.png)
+
+- **Queue.** At most two heavy Unity runs per machine, so six agents do not take the PC down.
+- **One job per daemon.** A second caller waits instead of overwriting the first result.
+- **Merge lock.** While a merge runs in a checkout, other runs there are refused with a clear message.
+- **Caller gone.** A run whose agent or shell has died ends itself and frees the queue.
+- **Idle end.** An idle daemon stops after 30 minutes.
+- **`warmd feedback`.** Prints a prefilled GitHub issue with your bench numbers. Nothing is sent, you decide.
 
 ## Install
 

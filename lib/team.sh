@@ -52,7 +52,8 @@ wt_reuse() { # name
   while IFS='|' read -r p br; do
     [ "$br" = "$base" ] && continue
     [ "$p" = "$main" ] && continue
-    case " ${USED_WT:-} " in *" $p "*) continue;; esac
+    # git prints C:/x, the shell uses /c/x: compare one form, or two tasks land in one worktree
+    case " ${USED_WT:-} " in *" $(cd "$p" && pwd) "*) continue;; esac
     wt_free "$p" || continue
     git -C "$p" checkout -q -- . 2>/dev/null
     git -C "$p" checkout -q -B "warmd/$name" "$base" || continue
@@ -157,7 +158,7 @@ team_split() {
     name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     tier="$(route_tier "$goal" "$files")"
-    if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $wt"; fi
+    if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")

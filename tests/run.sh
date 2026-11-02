@@ -130,6 +130,10 @@ for i in $(seq 1 45); do "$WARMD" note "fact $i" > /dev/null; done
 expect "long notes are refused" 'over 160' "$("$WARMD" note "$(printf 'x%.0s' $(seq 1 170))")"
 expect "escalate moves up one tier" 'AGENT footer: subagent_type=warmd-worker model=opus' "$("$WARMD" escalate footer)"
 expect "top tier cannot escalate" 'needs a human' "$("$WARMD" escalate footer)"
+printf 'p1 | x | y | src/p1.ts\np2 | x | y | src/p2.ts\np3 | x | y | src/p3.ts\n' > three.txt
+"$WARMD" split three.txt > /dev/null
+n="$(sed -n 's/^Task [a-z0-9]*\. First run: cd "\([^"]*\)".*/\1/p' .warmd/tasks/p1.md .warmd/tasks/p2.md .warmd/tasks/p3.md | sort -u | wc -l | tr -d ' ')"
+[ "$n" = 3 ] && ok "a batch gets one worktree per task" || no "three tasks share $n worktrees"
 printf 'a | x | y | src/same.ts\nb | x | y | src/same.ts\n' > clash.txt
 out="$("$WARMD" split clash.txt)"
 expect "split refuses two owners of a file" 'already owned' "$out"
