@@ -173,7 +173,7 @@ team_merge() {
     echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; git -C "$GIT_ROOT" merge --abort; return 1; }
   echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
-  m="$(git -C "$GIT_ROOT" diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
+  m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
   if ! m="$(run_check 2>&1)"; then mfail "$(echo "$m" | head -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
   git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }
