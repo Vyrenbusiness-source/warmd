@@ -121,6 +121,13 @@ out="$("$WARMD" split tasks.txt)"
 expect "split routes the edit to the mid tier" 'AGENT footer: subagent_type=warmd-worker model=sonnet' "$out"
 expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd-scout model=haiku' "$out"
 expect "split makes a worktree" 'warmd/footer' "$(git worktree list)"
+expect "watch sees moving worktrees" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
+wtw="$(dirname "$PWD")/.warmd-worktrees/app/footer"
+find "$wtw" -type f -not -path '*/.git/*' -exec touch -d '2 hours ago' {} +
+GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
+out="$("$WARMD" watch --once 15)"; rc=$?
+expect "watch reports a stalled agent" 'STALLED .*footer' "$out"
+[ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"
 out="$("$WARMD" test 2>&1)"; rc=$?
 expect "the shared checkout refuses runs during a batch" 'batch runs' "$out"
 [ "$rc" = 5 ] && ok "batch refusal has its own exit code" || no "batch refusal exited $rc"
@@ -208,10 +215,10 @@ head_sha="$(git log -1 --format=%s)"
 if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red merge passed: $out"; fi
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
 
-for t in ledger digest affected perf; do bash "$HERE/tests/$t.sh" || fails=$((fails+1)); done
+for t in ledger digest affected perf tune; do bash "$HERE/tests/$t.sh" || fails=$((fails+1)); done
+bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 rm -rf "$TMP" 2>/dev/null
-bash tests/bars.sh >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"
 exit $fails

@@ -148,6 +148,30 @@ prewarm() { # worktree
   ( cd "$1" || exit 0; WARMD_BASE=1 WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" ping > /dev/null 2>&1 < /dev/null & )
 }
 
+# A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
+# it ends, and so wakes the session, as soon as a worktree has not changed for <minutes> or the batch is over.
+team_watch() {
+  need_git
+  local once=0 limit=15 batch wt fresh age
+  [ "${1:-}" = --once ] && { once=1; shift; }
+  limit="${1:-15}"
+  batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
+  while :; do
+    [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
+    while IFS= read -r wt; do
+      [ -d "$wt" ] || continue
+      fresh="$(find "$wt" -type f -mmin "-$limit" -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.warmd/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)"
+      if [ -z "$fresh" ]; then
+        age=$(( ($(date +%s) - $(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)) / 60 ))
+        if [ "$age" -ge "$limit" ]; then echo "STALLED $(native_path "$wt"): nothing changed for $limit minutes"; return 3; fi
+      fi
+    done < "$batch"
+    [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes"; return 0; }
+    sleep 60
+  done
+}
+
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
 team_split() {
   need_git
@@ -181,7 +205,7 @@ team_split() {
     fi
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")
-  echo "OK $n tasks split"
+  echo "OK $n tasks split. Start now, in the background: warmd watch"
 }
 
 team_escalate() {

@@ -4,7 +4,7 @@ set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.2.0
+WARMD_VERSION=0.3.0
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/tune.sh"
@@ -39,6 +39,7 @@ Agents
                                record cost, push, print a one-line report
   warmd report                 cost per tier and what escalation wasted
   warmd board                  all worktrees at a glance
+  warmd watch [minutes]        run in the background, ends when an agent stalls or the batch is over
   warmd merge <branch>         safe merge into the base branch, rolls back on red
   warmd merge --continue       finish a merge after you resolved its conflicts
   warmd batch-done             end the batch, the shared checkout opens again
@@ -84,6 +85,7 @@ case "$CMD" in
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
   handoff) team_handoff "$@";;
+  watch)   team_watch "$@";;
   note)    team_note "$@";;
   finish)  team_finish "$@";;
   report)  ledger_report "$@";;

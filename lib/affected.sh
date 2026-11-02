@@ -363,7 +363,7 @@ aff_changed() {
   local base mb prefix f
   base="$(base_branch)"
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
-  prefix=""; [ "$PROJECT" != "$GIT_ROOT" ] && prefix="${PROJECT#"$GIT_ROOT"/}/"
+  prefix="$(git -C "$PROJECT" rev-parse --show-prefix)"   # from git: string math breaks on symlinked and short temp paths
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only --no-renames "$mb"; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u | while IFS= read -r f; do
     [ -n "$f" ] || continue
     if [ -n "$prefix" ]; then case "$f" in "$prefix"*) f="${f#"$prefix"}";; *) continue;; esac; fi
