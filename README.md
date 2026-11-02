@@ -26,11 +26,15 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 
 **[Install](#install) · [What you get](#what-you-get) · [Cheap models first](#cheap-models-first) · [Measured](#measured) · [Commands](#commands) · [FAQ](#faq)**
 
+**Do not trust the numbers, run them:** `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml) measures a fresh one on every push. Raw output is in [PROOF.md](docs/PROOF.md).
+
 <img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
 
 <sub>Illustrative session. Timings come from the measurements below.</sub>
 
 </div>
+
+If warmd saves you a wait, [give it a star](https://github.com/Vyrenbusiness-source/warmd/stargazers). It helps other people find it.
 
 ## Why
 
@@ -140,6 +144,7 @@ Honest notes:
 
 ```text
 warmd status                 what was detected, what is warm
+warmd bench [filter]         cold, warm and cached timings on your own project
 warmd build                  fastest possible compile or typecheck
 warmd test [filter]          run tests, green results are cached by code hash
 warmd check                  build, then only the tests your change touches
@@ -224,4 +229,4 @@ Run `bash tests/run.sh`. It needs no engine. `bash tests/godot.sh` needs Godot 4
 
 ## License
 
-MIT
+MIT. If warmd saved you time, [a star](https://github.com/Vyrenbusiness-source/warmd/stargazers) is the best thanks.

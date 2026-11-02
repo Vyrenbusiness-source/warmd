@@ -19,6 +19,7 @@ Everyday
   warmd build                  fastest possible compile or typecheck
   warmd test [filter]          run tests, green results are cached by code hash
   warmd check                  build, then only the tests your change touches
+  warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
   warmd map <file>             outline with line numbers instead of reading the file
   warmd stop                   end the warm process for real
@@ -56,6 +57,7 @@ case "$CMD" in
   build)   a_build;;
   test)    run_tests "$@";;
   check)   run_check;;
+  bench)   run_bench "$@";;
   shot)    a_shot "$@";;
   stop)    a_stop;;
   ping)    job ping;;

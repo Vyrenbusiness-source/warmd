@@ -159,6 +159,24 @@ run_check() {
   a_check
 }
 
+# Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
+run_bench() {
+  local self="$WARMD_HOME/bin/warmd" s cold warm cached raw out
+  timed() { s="$(now_ms)"; "$@" > "$RUN/bench.out" 2>&1; echo $(( $(now_ms) - s )); }
+  a_stop > /dev/null 2>&1
+  cold="$(WARMD_NOCACHE=1 timed bash "$self" test "$@")"
+  warm="$(WARMD_NOCACHE=1 timed bash "$self" test "$@")"
+  out="$(wc -c < "$RUN/bench.out" | tr -d ' ')"
+  raw=""; [ -f "$RUN/last.log" ] && raw="$(wc -c < "$RUN/last.log" | tr -d ' ')"
+  bash "$self" test "$@" > /dev/null 2>&1
+  cached="$(timed bash "$self" test "$@")"
+  echo "warmd bench on $KIND"
+  echo "cold    $cold ms"
+  echo "warm    $warm ms, $(( (cold - warm) * 100 / (cold > 0 ? cold : 1) ))% faster"
+  echo "cached  $cached ms, $(( (cold - cached) * 100 / (cold > 0 ? cold : 1) ))% faster"
+  if [ -n "$raw" ] && [ "${raw:-0}" -gt "$out" ]; then echo "output  $raw bytes raw, $out bytes shown, $(( (raw - out) * 100 / raw ))% fewer tokens"; fi
+}
+
 # Outline with line numbers. Agents read the range they need, not a 2000-line file.
 code_map() {
   [ -n "${1:-}" ] || { echo "warmd map <file or name>"; return 2; }

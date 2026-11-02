@@ -52,6 +52,8 @@ expect "red shows the error line" 'Error: boom at line 7' "$out"
 expect "red is not cached" '^FAIL' "$("$WARMD" test)"
 git checkout -q test.js
 
+expect "bench reports the three timings" 'cached +[0-9]+ ms' "$("$WARMD" bench)"
+
 # ---- queue ----
 mkdir -p "$XDG_CACHE_HOME/warmd/slots"
 cat > warmd.conf <<'EOF'
