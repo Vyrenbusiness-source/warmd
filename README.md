@@ -4,12 +4,12 @@
 
 # warmd
 
-**Run Unity tests in 3 seconds instead of 56. Stop paying your AI agent to wait.**
+**Fewer tokens, faster agents. Unity tests in 3 seconds instead of 56.**
 
 A headless daemon and one-command CLI for Unity, Godot, web projects and any test suite.<br>
 It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
 
-[![CI](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/actions/workflows/ci.yml)
+[![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Unity](https://img.shields.io/badge/Unity-6-black?logo=unity)
 ![Godot](https://img.shields.io/badge/Godot-4-478cbf?logo=godotengine&logoColor=white)
@@ -26,7 +26,7 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 
 **[Install](#install) · [What you get](#what-you-get) · [Cheap models first](#cheap-models-first) · [Measured](#measured) · [Commands](#commands) · [FAQ](#faq)**
 
-**Do not trust the numbers, run them:** `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/actions/workflows/ci.yml) measures a fresh one on every push. Raw output is in [PROOF.md](docs/PROOF.md).
+**Do not trust the numbers, run them:** `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh one on every push. Raw output is in [PROOF.md](docs/PROOF.md).
 
 <img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
 
@@ -34,7 +34,7 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 
 </div>
 
-If warmd saves you a wait, [give it a star](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/stargazers). It helps other people find it.
+If warmd saves you a wait, [give it a star](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers). It helps other people find it.
 
 ## Why
 
@@ -45,7 +45,7 @@ warmd removes both costs. The slow thing stays warm, the output stays short, and
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
 cd your-project
 warmd init
 warmd check
@@ -229,4 +229,4 @@ Run `bash tests/run.sh`. It needs no engine. `bash tests/godot.sh` needs Godot 4
 
 ## License
 
-MIT. If warmd saved you time, [a star](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/stargazers) is the best thanks.
+MIT. If warmd saved you time, [a star](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers) is the best thanks.

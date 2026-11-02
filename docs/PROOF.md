@@ -9,7 +9,7 @@ warmd bench            # cold, warm and cached on your project
 warmd bench MyTests    # same, for one filter
 ```
 
-The [CI workflow](https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents/actions/workflows/ci.yml) runs the self-tests on Windows, Linux and macOS, a real Godot, and a public benchmark. Open a run and look at the job summary of `proof`.
+The [CI workflow](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) runs the self-tests on Windows, Linux and macOS, a real Godot, and a public benchmark. Open a run and look at the job summary of `proof`.
 
 ## Unity
 

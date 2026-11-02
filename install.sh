@@ -4,7 +4,7 @@ set -eu
 DIR="${WARMD_DIR_INSTALL:-$HOME/.warmd}"
 BIN="${WARMD_BIN:-$HOME/.local/bin}"
 if [ -d "$DIR/.git" ]; then git -C "$DIR" pull -q --ff-only
-else git clone -q --depth 1 https://github.com/Vyrenbusiness-source/warmd-unity-godot-ai-agents.git "$DIR"; fi
+else git clone -q --depth 1 https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents.git "$DIR"; fi
 mkdir -p "$BIN"
 printf '#!/usr/bin/env bash\nexec bash "%s/bin/warmd" "$@"\n' "$DIR" > "$BIN/warmd"
 chmod +x "$BIN/warmd" "$DIR/bin/warmd"
