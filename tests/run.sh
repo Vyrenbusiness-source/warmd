@@ -70,6 +70,29 @@ expect "a dead slot owner expires" 'OK [0-9]+s test' "$("$WARMD" test)"
 [ -z "$(ls "$XDG_CACHE_HOME/warmd/slots" | grep -v '^$')" ] && ok "slot released on exit" || no "slot left behind"
 rm warmd.conf; git checkout -q test.js
 
+# ---- guards ----
+sleep 60 & holder=$!
+mkdir -p .warmd; echo "$holder" > .warmd/merge.owner
+out="$("$WARMD" test 2>&1)"; rc=$?
+expect "tests are refused during someone else's merge" 'merge is running' "$out"
+[ "$rc" = 4 ] && ok "refusal has its own exit code" || no "refusal exited $rc"
+expect "the merge's own checks still run" 'OK' "$(WARMD_IN_MERGE=1 "$WARMD" test 2>&1)"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+expect "a dead merge owner expires" 'OK' "$("$WARMD" test 2>&1)"
+[ ! -f .warmd/merge.owner ] && ok "stale merge marker removed" || no "stale merge marker stayed"
+
+mkdir -p "$XDG_CACHE_HOME/warmd/slots/1" "$XDG_CACHE_HOME/warmd/slots/2"
+sleep 30 & h1=$!; sleep 30 & h2=$!
+echo "$h1" > "$XDG_CACHE_HOME/warmd/slots/1/pid"; echo "$h2" > "$XDG_CACHE_HOME/warmd/slots/2/pid"
+printf 'slots=2\n' > warmd.conf; echo '// orphan' >> test.js
+# The caller dies while the run waits for a slot: it has to end by itself and free nothing it does not own
+( bash "$WARMD" test > "$XDG_CACHE_HOME/orphan.out" 2>&1 & echo $! > "$XDG_CACHE_HOME/orphan.pid" ) &
+sub=$!; sleep 1; wait "$sub" 2>/dev/null
+i=0; while kill -0 "$(cat "$XDG_CACHE_HOME/orphan.pid")" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done
+expect "a run without caller ends by itself" 'caller is gone' "$(cat "$XDG_CACHE_HOME/orphan.out")"
+kill "$h1" "$h2" 2>/dev/null; wait "$h1" "$h2" 2>/dev/null
+rm -rf "$XDG_CACHE_HOME/warmd/slots"/* warmd.conf; git checkout -q test.js
+
 # ---- routing ----
 expect "no files means the cheap tier" '^cheap model=haiku' "$("$WARMD" route 'list all TODOs')"
 expect "plain edit means the mid tier" '^mid model=sonnet' "$("$WARMD" route 'add a footer' src/footer.css)"
@@ -97,6 +120,7 @@ expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd
 expect "split makes a worktree" 'warmd/footer' "$(git worktree list)"
 shared="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-shared.md"
 expect "the shared brief lists owners" 'footer: src/footer.css' "$(cat "$shared")"
+expect "a task starts with its own worktree" 'First run: cd' "$(cat .warmd/tasks/footer.md)"
 expect "a task points to the shared brief" 'Shared brief:' "$(cat .warmd/tasks/footer.md)"
 expect "a note goes into the brief" 'OK noted' "$("$WARMD" note 'price lives in src/price.ts:3')"
 expect "the same note is not added twice" 'already noted' "$("$WARMD" note 'price lives in src/price.ts:3')"

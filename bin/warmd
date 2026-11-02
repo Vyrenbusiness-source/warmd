@@ -58,11 +58,11 @@ detect_project
 
 case "$CMD" in
   status)  common_status; a_status;;
-  build)   a_build;;
+  build)   merge_guard; a_build;;
   test)    run_tests "$@";;
   check)   run_check;;
   bench)   run_bench "$@";;
-  shot)    a_shot "$@";;
+  shot)    merge_guard; a_shot "$@";;
   stop)    a_stop;;
   ping)    job ping;;
   package) a_package;;

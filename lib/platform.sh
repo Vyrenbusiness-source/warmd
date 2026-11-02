@@ -6,7 +6,8 @@ case "$(uname -s)" in
 esac
 
 native_path() { if [ "$OS" = win ]; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
-self_pid() { if [ "$OS" = win ]; then cat "/proc/$$/winpid"; else echo "$$"; fi; }
+# Shell pids work across every session on all systems and need no process listing, which stalls under load on Windows
+shell_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 
 pid_alive() {
   [ -n "${1:-}" ] || return 1

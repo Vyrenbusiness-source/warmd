@@ -124,7 +124,7 @@ write_task() { # name tier goal done files wt
   mkdir -p "$STATE/tasks"; f="$STATE/tasks/$name.md"
   port=$(( 7830 + $(ls "$STATE/tasks" | wc -l) * 10 ))
   {
-    echo "Task $name. Worktree: $(native_path "$wt"). Port block: $port."
+    echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there. Port block: $port."
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
@@ -221,6 +221,7 @@ team_merge() {
       echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; return 1; }
     echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
   fi
+  MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"; export WARMD_IN_MERGE=1
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
   if [ -n "$CFG_gate" ]; then

@@ -33,6 +33,15 @@ expect "warm mode" '1 passed, 0 failed' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
 expect "an edit reaches the warm engine" 'RED test_add' "$("$WARMD" test)"
 git checkout -q score.gd
+# Two callers on one daemon: both get their own result, none overwrites the other's job
+WARMD_NOCACHE=1 "$WARMD" test test_add > one.out 2>&1 &
+p1=$!
+WARMD_NOCACHE=1 "$WARMD" test test_add > two.out 2>&1 &
+p2=$!
+wait "$p1" "$p2"
+expect "first of two parallel callers" '1 passed, 0 failed' "$(cat one.out)"
+expect "second of two parallel callers" '1 passed, 0 failed' "$(cat two.out)"
+rm -f one.out two.out
 expect "stop" 'OK daemon stopped' "$("$WARMD" stop)"
 rm -rf "$TMP" 2>/dev/null
 exit $fails

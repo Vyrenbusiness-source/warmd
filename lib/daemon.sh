@@ -39,10 +39,24 @@ wait_ready() {
   done
 }
 
+# One job at a time per daemon: a second caller waits instead of overwriting job.txt and losing both results.
+job_lock() {
+  local dir="$STATE/job.lock" holder said=""
+  [ -n "$JOBLOCK" ] && return 0
+  until mkdir "$dir" 2>/dev/null; do
+    holder="$(cat "$dir/pid" 2>/dev/null)"
+    if [ -n "$holder" ] && ! shell_alive "$holder"; then rm -rf "$dir"; continue; fi
+    [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; }
+    sleep 1; orphan_check
+  done
+  echo "$$" > "$dir/pid"; JOBLOCK="$dir"
+}
+
 # job <kind> [key=value...]: blocks until the result. If the daemon dies or the job gets lost: restart and repeat exactly once.
 job() {
   local kind="$1" attempt=1 id waited lost; shift
   [ "$kind" = quit ] || { [ "$kind" = ping ] && daemon_alive; } || slot_take
+  [ "$kind" = quit ] || job_lock
   while :; do
     start_locked a_start_daemon
     id="j$(now_ms)"
@@ -60,6 +74,7 @@ job() {
       if [ $waited -lt 40 ]; then sleep 0.05; else sleep 0.4; fi
       waited=$((waited+1))
       if [ $waited -ge 40 ] && [ $((waited % 25)) = 0 ]; then
+        orphan_check
         if ! daemon_alive; then lost="daemon died or hangs"; break; fi
         if [ $waited -ge 65 ] && [ ! -f "$RUN/job.txt" ] && [ ! -f "$RUN/result.txt" ] && grep -q '^phase=idle' "$RUN/state.txt" 2>/dev/null && ! grep -q "^id=$id" "$RUN/state.txt" 2>/dev/null; then lost="job lost"; break; fi
       fi

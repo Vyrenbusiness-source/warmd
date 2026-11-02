@@ -3,8 +3,31 @@ T0=$(date +%s)
 secs() { echo $(( $(date +%s) - T0 )); }
 TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
-LOCK=""; SLOT=""
-on_exit() { [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null; [ -n "$SLOT" ] && rm -rf "$SLOT"; return 0; }
+LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
+PARENT_PID="$PPID"
+on_exit() {
+  [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
+  [ -n "$SLOT" ] && rm -rf "$SLOT"
+  [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
+  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK"
+  return 0
+}
+# If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
+orphan_check() {
+  [ "${WARMD_DETACHED:-0}" = 1 ] && return 0
+  [ "$PARENT_PID" -le 1 ] && return 0   # started by a non-shell program, its pid is not visible from here
+  shell_alive "$PARENT_PID" && return 0
+  echo "FAIL caller is gone, stopping"; exit 3
+}
+# Changes during a merge end up in the merge. Only the merge's own checks may run here, everyone else gets a clear refusal.
+merge_guard() {
+  [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0
+  local f="$STATE/merge.owner" owner
+  [ -f "$f" ] || return 0
+  owner="$(cat "$f" 2>/dev/null)"
+  shell_alive "$owner" || { rm -f "$f"; return 0; }
+  echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4
+}
 trap on_exit EXIT
 trap 'exit 130' INT TERM
 
@@ -128,9 +151,9 @@ slot_try() {
   local i holder dir="$CACHE_ROOT/slots"
   mkdir -p "$dir"
   for i in $(seq 1 "$(slots_max)"); do
-    if mkdir "$dir/$i" 2>/dev/null; then self_pid > "$dir/$i/pid"; SLOT="$dir/$i"; return 0; fi
+    if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; SLOT="$dir/$i"; return 0; fi
     holder="$(cat "$dir/$i/pid" 2>/dev/null)"
-    if [ -n "$holder" ]; then pid_alive "$holder" || rm -rf "$dir/$i"
+    if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "$dir/$i"
     elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$dir/$i"; fi
   done
   return 1
@@ -138,7 +161,7 @@ slot_try() {
 slot_take() {
   slot_try && return 0
   echo "(queued: $(slots_max) heavy runs active)"
-  until slot_try; do sleep 3; done
+  until slot_try; do sleep 3; orphan_check; done
   echo "(slot free after $(secs)s)"
 }
 
@@ -152,10 +175,10 @@ changed_files() {
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
-run_tests() { slot_free_cached "$@"; }
-slot_free_cached() { a_test "$@"; }
+run_tests() { merge_guard; a_test "$@"; }
 
 run_check() {
+  merge_guard
   a_build || return 1
   a_check
 }
