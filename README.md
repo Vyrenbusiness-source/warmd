@@ -37,6 +37,20 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 
 </div>
 
+## When it helps, and when it does not
+
+warmd helps most when your engine is slow to start or your agents burn tokens on logs. It helps less in some setups, so here is the honest split:
+
+| Your situation | What you get |
+|---|---|
+| Large Unity project | The full gain, 95% faster test runs |
+| Godot project | No warm process, Godot starts in 0.2 s. You keep the cache, affected tests, short output and agent splitting |
+| You already have filtered logs and test tiers | Keep them. Point `build=` and `test=` at your tools, warmd adds the cache, the queue and worktrees around them |
+| Tokens go to images, long docs and agent context | `warmd audit` shows those costs first, `warmd map` and small screenshots cut them |
+| Quality comes before cost | Set `floor=mid` or `floor=top`. No task runs below that tier |
+
+The cheap tier only ever reads. Anything that edits a file starts at the mid tier, because a failed cheap attempt costs more than it saves.
+
 ## Why
 
 An AI agent working on a game spends most of its time waiting for the engine, and every wait gets paid for again in context. A 300-line build log costs tokens on each following turn. A second run of the same test costs the same minute again.
@@ -151,6 +165,7 @@ warmd test [filter]          run tests, green results are cached by code hash
 warmd check                  build, then only the tests your change touches
 warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
 warmd map <file>             outline with line numbers instead of reading the file
+warmd audit                  what your agents really pay for, biggest first
 warmd stop                   end the warm process for real
 
 warmd route <goal> [files]   cheapest fitting model tier
@@ -182,6 +197,7 @@ Everything is optional. Put a `warmd.conf` in the project root:
 | `idle_min` | Minutes until an idle daemon ends itself | 30 |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
+| `floor` | Lowest tier this project accepts: `mid` or `top` | none |
 | `top_paths` | Paths that need the top tier (regex) | none |
 | `shot_method` | Unity capture method | none |
 | `package_method`, `package_args` | Unity player build for `warmd package` | none |
@@ -218,7 +234,20 @@ No. It uses the Chrome, Edge or Chromium you already have.
 Yes. It is a fast test runner for people too.
 
 **Is it safe to install with `curl | bash`?**
-Read [install.sh](install.sh) first, it is 12 lines. You can also clone the repo and run `bin/warmd` directly.
+Read [install.sh](install.sh) first, it is 13 lines. You can also clone the repo and run `bin/warmd` directly. See [Safety](#safety).
+
+**Does it start my tasks on the cheapest model?**
+Only tasks that read. Editing starts at the mid tier, and `floor=mid` or `floor=top` raises that for the whole project.
+
+## Safety
+
+warmd is about 1135 lines of bash plus one C# and one GDScript file. You can read it in one sitting.
+
+- **No network.** It sends nothing anywhere, there is no telemetry. Only `warmd finish` talks to the outside, and only with `git push` to your own remote.
+- **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. `warmd init` adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
+- **What it can undo.** `warmd merge` only starts from a clean checkout. On red it runs `git reset --hard HEAD`, which is safe there because the tree was clean before.
+- **What it kills.** Only processes it started. An editor you opened by hand is never touched, warmd refuses to run instead.
+- **Pin a version.** `WARMD_VERSION_TAG=v0.2.0 bash install.sh`, or clone and read it first.
 
 ## Tested on
 

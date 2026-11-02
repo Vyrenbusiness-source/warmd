@@ -3,7 +3,7 @@
 
 route_tier() { # goal files
   local goal="$1" files="${2:-}"
-  if [ -z "$files" ] || [ "$files" = none ]; then echo cheap; return; fi
+  if [ -z "$files" ] || [ "$files" = none ]; then apply_floor cheap; return; fi
   local tier=mid
   if echo "$goal" | grep -qiE "$CFG_top_words"; then tier=top; fi
   if [ -n "$CFG_top_paths" ] && echo "$files" | grep -qE "$CFG_top_paths"; then tier=top; fi
@@ -13,13 +13,22 @@ route_tier() { # goal files
     n="$(grep -c "^escalated	$area$" "$STATE/history.tsv" 2>/dev/null)"
     [ "${n:-0}" -ge 2 ] && tier=top
   fi
-  echo "$tier"
+  apply_floor "$tier"
+}
+# floor in warmd.conf: the lowest tier this project accepts. Quality projects set mid or top, a failed cheap attempt costs more than it saves.
+apply_floor() {
+  case "$CFG_floor:$1" in
+    top:*) echo top;;
+    mid:cheap) echo mid;;
+    *) echo "$1";;
+  esac
 }
 area_of() { echo "$1" | cut -d, -f1 | sed 's#/[^/]*$##'; }
 tier_model() { case "$1" in cheap) echo "$CFG_cheap";; top) echo "$CFG_top";; *) echo "$CFG_mid";; esac; }
 tier_budget() { case "$1" in cheap) echo "$CFG_budget_cheap";; top) echo "$CFG_budget_top";; *) echo "$CFG_budget_mid";; esac; }
 tier_next() { case "$1" in cheap) echo mid;; mid) echo top;; *) echo "";; esac; }
 tier_agent() { case "$1" in cheap) echo warmd-scout;; *) echo warmd-worker;; esac; }
+# Editing never runs on the cheap tier, whatever the config says: that tier only reads
 
 route_print() {
   local t; t="$(route_tier "${1:-}" "${2:-}")"
@@ -148,7 +157,7 @@ team_split() {
     name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     tier="$(route_tier "$goal" "$files")"
-    if [ "$tier" = cheap ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $wt"; fi
+    if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $wt"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")

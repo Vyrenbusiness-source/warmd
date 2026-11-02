@@ -22,6 +22,7 @@ Everyday
   warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
   warmd map <file>             outline with line numbers instead of reading the file
+  warmd audit                  what your agents really pay for, biggest first
   warmd stop                   end the warm process for real
 
 Agents
@@ -66,6 +67,7 @@ case "$CMD" in
   package) a_package;;
   call)    a_call "$@";;
   map)     code_map "$@";;
+  audit)   common_audit;;
   route)   route_print "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;

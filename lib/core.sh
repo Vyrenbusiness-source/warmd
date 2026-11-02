@@ -53,7 +53,7 @@ detect_project() {
 
 CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=30
 CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_package_args=""; CFG_shot_method=""
-CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
+CFG_floor=""; CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
 CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
 load_config() {
@@ -183,12 +183,12 @@ code_map() {
   [ -n "${1:-}" ] || { echo "warmd map <file or name>"; return 2; }
   local files
   if [ -f "$1" ]; then files="$1"
-  else files="$(find "$PROJECT" -type f \( -name "$1" -o -name "$1.*" \) -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.godot/*' -not -path '*/dist/*' -not -path '*/build/*' | sort | head -8)"; fi
+  else files="$(find "$PROJECT" -type f \( -name "$1" -o -name "$1.*" \) -not -name '*.meta' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.godot/*' -not -path '*/dist/*' -not -path '*/build/*' | sort | head -8)"; fi
   [ -n "$files" ] || { echo "warmd map: nothing named $1"; return 1; }
   printf '%s\n' "$files" | while IFS= read -r f; do
     echo "== ${f##*/}"
     case "$f" in
-      *.cs) grep -nE '^ {0,8}(\[[^]]*\] *)?((public|private|protected|internal|static|override|sealed|partial|abstract|async|virtual|unsafe|readonly) +)*(class|struct|enum|interface) |^ {4,8}(\[[^]]*\] *)?((public|private|protected|internal|static|override|sealed|abstract|async|virtual|unsafe) +)*[A-Za-z_][A-Za-z_0-9<>,.\[\]]* +[A-Za-z_][A-Za-z_0-9]*(<[^>]*>)? *\(' "$f" | grep -vE ':\s*(return|new|await|throw|else|if|for|foreach|while|switch|using|var) ';;
+      *.cs) grep -nE '^ {0,8}(\[[^]]*\] *)?((public|private|protected|internal|static|override|sealed|partial|abstract|async|virtual|unsafe|readonly) +)*(class|struct|enum|interface) |^ {4,8}(\[[^]]*\] *)?((public|private|protected|internal|static|override|sealed|abstract|async|virtual|unsafe) +)*[A-Za-z_][][A-Za-z_0-9<>,.]* +[A-Za-z_][A-Za-z_0-9]*(<[^>]*>)? *\(' "$f" | grep -vE ':\s*(return|new|await|throw|else|if|for|foreach|while|switch|using|var) ';;
       *.gd) grep -nE '^(class_name|class|extends|signal|enum|const|@export|static func|func) ' "$f";;
       *.ts|*.tsx|*.js|*.jsx|*.mjs|*.vue|*.svelte) grep -nE '^(export +)?(default +)?(async +)?(function|class|const|interface|type|enum) ' "$f";;
       *.py) grep -nE '^\s*(async +)?(def|class) ' "$f";;
@@ -212,16 +212,33 @@ common_doctor() {
   [ -n "$GIT_ROOT" ] && echo "ok git repo" || echo "note: not a git repo, cache and agent commands are off"
 }
 
-# Instructions for any agent: short, because this text is loaded on every turn.
+# What an agent pays for before it does anything. Tests are rarely the biggest cost, this shows the real one.
+common_audit() {
+  local root="${GIT_ROOT:-$PROJECT}" f size total=0
+  echo "loaded on every turn (each line costs on all following turns):"
+  for f in CLAUDE.md AGENTS.md .cursorrules; do
+    [ -f "$root/$f" ] || continue
+    size="$(wc -c < "$root/$f" | tr -d ' ')"; total=$((total + size))
+    echo "  ~$((size / 4)) tokens  every turn  $f"
+  done
+  [ "$total" -gt 20000 ] && echo "  warning: over 5k tokens, move detail to files read on demand"
+  echo "largest documents an agent may read:"
+  { git -C "$root" ls-files '*.md' '*.txt' 2>/dev/null || find "$root" -name '*.md' -not -path '*/node_modules/*'; } | tr -d '\r' | while IFS= read -r f; do
+    [ -f "$root/$f" ] && echo "$(wc -c < "$root/$f" | tr -d ' ') $f"
+  done | sort -rn | head -6 | awk '{printf "  ~%d tokens  %s\n", $1/4, $2}'
+  echo "images: about width x height / 750 tokens. warmd shot costs ~520 (desktop) and ~560 (phone), a full 1440x900 shot ~1730."
+}
+
+# Instructions for any agent: short, because this text is loaded on every turn. Claude Code reads agents and CLAUDE.md from the repo root.
 common_init() {
-  local f block="$WARMD_HOME/agents/INSTRUCTIONS.md" done=0
-  mkdir -p "$PROJECT/.claude/agents"
-  cp "$WARMD_HOME"/agents/warmd-*.md "$PROJECT/.claude/agents/"
+  local f block="$WARMD_HOME/agents/INSTRUCTIONS.md" done=0 root="${GIT_ROOT:-$PROJECT}"
+  mkdir -p "$root/.claude/agents"
+  cp "$WARMD_HOME"/agents/warmd-*.md "$root/.claude/agents/"
   for f in CLAUDE.md AGENTS.md; do
-    [ -f "$PROJECT/$f" ] || continue
-    grep -q 'warmd' "$PROJECT/$f" || { printf '\n' >> "$PROJECT/$f"; cat "$block" >> "$PROJECT/$f"; }
+    [ -f "$root/$f" ] || continue
+    grep -q 'warmd' "$root/$f" || { printf '\n' >> "$root/$f"; cat "$block" >> "$root/$f"; }
     done=1
   done
-  [ $done = 1 ] || cp "$block" "$PROJECT/AGENTS.md"
+  [ $done = 1 ] || cp "$block" "$root/AGENTS.md"
   echo "OK agent definitions in .claude/agents, instructions in CLAUDE.md or AGENTS.md"
 }

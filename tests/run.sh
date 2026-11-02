@@ -74,6 +74,12 @@ expect "new models are one config line" '^mid model=sonnet-next' "$("$WARMD" rou
 expect "paths can force the top tier" '^top' "$("$WARMD" route 'tidy' src/net/sync.ts)"
 rm warmd.conf
 
+printf 'floor=mid\n' > warmd.conf
+expect "floor keeps read-only work off the cheap tier" '^mid' "$("$WARMD" route 'list all TODOs')"
+printf 'floor=top\n' > warmd.conf
+expect "floor top sends everything to the top tier" '^top' "$("$WARMD" route 'add a footer' src/footer.css)"
+rm warmd.conf
+
 # ---- split, escalate, finish ----
 cat > tasks.txt <<'EOF'
 # name | goal | done check | files
@@ -103,6 +109,7 @@ expect "finish reports facts in one line" '^DONE main [0-9a-f]+' "$("$WARMD" fin
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"
 
 git worktree add -q -b warmd/done "$(dirname "$PWD")/wt-done" HEAD 2>/dev/null
+mkdir "$(dirname "$PWD")/wt-done/node_modules"
 printf 'again | second task | warmd test passes | src/two.css\n' > again.txt
 git add -A; git commit -qm tasks
 git -C "$(dirname "$PWD")/wt-done" merge -q --ff-only main 2>/dev/null
@@ -115,6 +122,25 @@ export function alpha() {}
 const beta = 1;
 EOF
 expect "map shows line numbers" '^1 export function alpha' "$("$WARMD" map app.ts | sed -n 2p)"
+
+cat > Ship.cs <<'EOF'
+public class Ship
+{
+    public void Sail(int speed)
+    {
+    }
+
+    int[] Crew() { return null; }
+}
+EOF
+out="$("$WARMD" map Ship)"
+expect "map finds C# methods" '3 public void Sail' "$out"
+expect "map finds array return types" 'int\[\] Crew' "$out"
+expect "map skips meta files" '^== Ship.cs$' "$(echo "$out" | head -1)"
+rm Ship.cs
+printf 'x%.0s' $(seq 1 9000) > CLAUDE.md
+expect "audit names what is loaded on every turn" 'every turn.*CLAUDE.md' "$("$WARMD" audit)"
+rm CLAUDE.md
 
 # ---- merge rolls back on red ----
 git add -A; git commit -qm more
