@@ -9,6 +9,7 @@ WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/daemon.sh"
 . "$WARMD_HOME/lib/team.sh"
+. "$WARMD_HOME/lib/handoff.sh"
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,7 @@ Agents
   warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
+  warmd handoff <name> <done> <next>  context filling up: save state, get the line for a fresh agent
   warmd finish                 push and print a one-line report
   warmd board                  all worktrees at a glance
   warmd merge <branch>         safe merge into the base branch, rolls back on red
@@ -74,6 +76,7 @@ case "$CMD" in
   route)   route_print "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
+  handoff) team_handoff "$@";;
   note)    team_note "$@";;
   finish)  team_finish;;
   board)   team_board;;

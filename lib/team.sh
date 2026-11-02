@@ -131,7 +131,9 @@ write_task() { # name tier goal done files wt
     echo "Files you own: ${files:-none, read only}"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
+    echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
   } > "$f"
+  handoff_register "$name" "$(native_path "$f")" "$tier"
   echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
 }
 

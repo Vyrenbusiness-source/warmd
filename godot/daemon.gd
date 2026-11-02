@@ -93,7 +93,7 @@ func _compile() -> Array:
 ## class_name scripts resolve to the cached instance, so a changed one has to reload in place.
 func _refresh() -> void:
 	for path in _scripts("res://"):
-		var stamp := FileAccess.get_modified_time(path)
+		var stamp := FileAccess.get_md5(path)   # file times have one-second steps, two quick edits look like none
 		if seen.get(path, stamp) != stamp:
 			var script: GDScript = load(path)
 			script.source_code = FileAccess.get_file_as_string(path)

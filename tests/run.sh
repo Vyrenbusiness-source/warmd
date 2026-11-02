@@ -144,6 +144,18 @@ printf 'a | x | y | src/same.ts\nb | x | y | src/same.ts\n' > clash.txt
 out="$("$WARMD" split clash.txt)"
 expect "split refuses two owners of a file" 'already owned' "$out"
 [ ! -d "$(dirname "$PWD")/.warmd-worktrees/app/a" ] && ok "a refused batch creates nothing" || no "refused batch created a worktree"
+expect "a task names the handoff rule" 'warmd handoff footer' "$(cat .warmd/tasks/footer.md)"
+wtf="$(dirname "$PWD")/.warmd-worktrees/app/footer"
+echo x > "$wtf/open.txt"; git -C "$wtf" add open.txt
+expect "handoff refuses uncommitted work" 'commit your work first' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+git -C "$wtf" commit -qm wip
+out="$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+expect "handoff prints the line for a fresh agent" 'AGENT footer:.*continue from there' "$out"
+note="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-handoff/footer.md"
+expect "the note holds done and next" 'Next: write tests' "$(cat "$note")"
+expect "the note lists the commits" 'wip' "$(cat "$note")"
+(cd "$wtf" && "$WARMD" handoff footer a b && "$WARMD" handoff footer c d) > /dev/null
+expect "a fourth handoff asks for a split instead" 'handed off 3 times' "$(cd "$wtf" && "$WARMD" handoff footer e f)"
 expect "finish reports facts in one line" '^DONE main [0-9a-f]+' "$("$WARMD" finish)"
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"
 
