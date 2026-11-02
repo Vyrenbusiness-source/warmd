@@ -68,7 +68,7 @@ case "$CMD" in
   package) a_package;;
   call)    a_call "$@";;
   map)     code_map "$@";;
-  audit)   common_audit;;
+  audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit;;
   feedback) common_feedback;;
   route)   route_print "$@";;
   split)   team_split "$@";;
