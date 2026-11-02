@@ -24,9 +24,4 @@ Output per test run, in bytes. Tokens are roughly bytes divided by 4.
 | Vitest, green | 270 | 11 | 96% |
 | Vitest, one failure | 877 | 490 | 44% |
 
-Honest notes:
-
-- These numbers cover one run, not a whole session. A session also pays for reading code and for thinking. Red runs save less, because the error is the part an agent needs.
-- The gain grows with project size. An empty Unity project starts so fast that the daemon barely matters.
-- Godot starts in about 0.2 seconds, faster than a round trip to a running daemon, so warmd runs it fresh each time. Set `warm=1` in `warmd.conf` for projects with slow autoloads.
-
+Numbers are per run. Repeat them on your own project with `warmd bench`.

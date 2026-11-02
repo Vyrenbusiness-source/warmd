@@ -27,6 +27,9 @@ done
 mkdir -p "$TMP/mono/game"; git -C "$TMP/mono" init -q; echo x > "$TMP/mono/game/project.godot"
 expect "detect a project one level below the git root" "godot project" "$(cd "$TMP/mono" && "$WARMD" status)"
 
+mkdir -p "$TMP/cs"; echo x > "$TMP/cs/App.csproj"
+expect "one csproj alone is a dotnet project" 'dotnet project' "$(cd "$TMP/cs" && "$WARMD" status)"
+
 # ---- build, test, cache ----
 new_repo app
 cat > package.json <<'EOF'
@@ -205,7 +208,7 @@ head_sha="$(git log -1 --format=%s)"
 if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red merge passed: $out"; fi
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
 
-bash "$HERE/tests/ledger.sh" || fails=$((fails+1))
+for t in ledger digest affected perf; do bash "$HERE/tests/$t.sh" || fails=$((fails+1)); done
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"

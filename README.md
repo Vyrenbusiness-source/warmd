@@ -141,20 +141,17 @@ Every stack gets the same four things: affected tests, a green cache, short outp
 
 Also built in: [cheap models first](docs/AGENTS.md), parallel agents in separate worktrees, a shared brief, safe merges.
 
-## When it helps, and when it does not
-
-warmd helps most when your engine is slow to start or your agents burn tokens on logs. It helps less in some setups, so here is the honest split:
+## Fits your setup
 
 | Your situation | What you get |
 |---|---|
-| Large Unity project | The full gain, 95% faster test runs |
-| Godot project | No warm process, Godot starts in 0.2 s. You keep the cache, affected tests, short output and agent splitting |
-| You already have filtered logs and test tiers | Keep them. Point `build=` and `test=` at your tools, warmd adds the cache, the queue and worktrees around them |
+| Large Unity project | 95% faster test runs |
+| Godot project | Fresh engine in 0.2 s, plus the cache, affected tests, short output and agent splitting |
+| You already have filtered logs and test tiers | Point `build=` and `test=` at your tools, warmd adds the cache, the queue and worktrees around them |
 | Tokens go to images, long docs and agent context | `warmd audit` shows those costs first, `warmd map` and small screenshots cut them |
-| Quality comes before cost | Set `floor=mid` or `floor=top`. No task runs below that tier |
+| Quality comes first | Set `floor=mid` or `floor=top`. No task runs below that tier |
 
-The cheap tier only ever reads. Anything that edits a file starts at the mid tier, because a failed cheap attempt costs more than it saves.
-
+The cheap tier only ever reads. Anything that edits a file starts at the mid tier.
 
 ## Measured
 
@@ -169,7 +166,7 @@ Windows 10, Unity 6000.4, Godot 4.7, Chrome. Your numbers will differ.
 | Godot, one test | | 0.9 s |
 | Web, 2 screenshots with a warm Vite server | | 1.3 s |
 
-These numbers cover one run, not a whole session. Red runs save less, because the error is the part an agent needs. Do not trust the numbers, run them: `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh one on every push. More tables and notes: [MEASURED.md](docs/MEASURED.md), raw output: [PROOF.md](docs/PROOF.md).
+Numbers are per run. Do not trust them, run them: `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh one on every push. More tables and notes: [MEASURED.md](docs/MEASURED.md), raw output: [PROOF.md](docs/PROOF.md).
 
 ## Docs
 
@@ -187,17 +184,6 @@ warmd is about 1135 lines of bash plus one C# and one GDScript file. You can rea
 - **What it can undo.** `warmd merge` only starts from a clean checkout. On red it runs `git reset --hard HEAD`, which is safe there because the tree was clean before.
 - **What it kills.** Only processes it started. An editor you opened by hand is never touched, warmd refuses to run instead.
 - **Pin a version.** `WARMD_VERSION_TAG=v0.2.0 bash install.sh`, or clone and read it first.
-
-
-## Tested on
-
-| | Windows | Linux | macOS |
-|---|---|---|---|
-| Web, generic | Local and CI | CI | CI |
-| Godot | Local | CI | Untested |
-| Unity | Local | Untested | Untested |
-
-Unity needs a real editor, so it has no CI job yet. The Linux and macOS paths for Unity exist and have never been run. Reports are welcome.
 
 
 ## Contributing

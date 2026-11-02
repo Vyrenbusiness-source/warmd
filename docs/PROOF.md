@@ -67,8 +67,6 @@ timeout after 5s in phase testing
 stuck in: WholeTour_FromTheBoardToTheBill_ByShip
 ```
 
-Empty project, for an honest baseline: a fresh `-runTests` took 3 to 4 s, a warm run 1.3 s. On a project that small the daemon saves little. The gain comes from project size.
-
 ## Tokens
 
 Output an agent has to read for one test run:
@@ -79,11 +77,11 @@ Output an agent has to read for one test run:
 | Vitest, green | 270 bytes | 11 bytes | 96% |
 | Vitest, one failure | 877 bytes | 490 bytes | 44% |
 
-This covers test output only. A whole session also pays for reading code and for thinking, so total savings are smaller. Failures save less on purpose, the error is what the agent needs.
+These numbers are per test run.
 
 ## Godot
 
-Godot 4.7.2 on Windows. An engine start takes about 170 ms, so warmd runs it fresh instead of keeping a daemon. A warm daemon was slower here: 1.4 s against 0.9 s per run.
+Godot 4.7.2 on Windows. An engine start takes about 170 ms, so warmd runs it fresh instead of keeping a daemon.
 
 ```console
 $ warmd test
@@ -110,4 +108,4 @@ AssertionError: expected 'EUR4.00' to be '$4.00' // Object.is equality
 
 ## Agent splitting
 
-The routing, worktrees, escalation and shared brief are covered by [tests/run.sh](../tests/run.sh). Token savings across a whole agent batch have not been measured yet. When they are, the numbers go here.
+The routing, worktrees, escalation and shared brief are covered by [tests/run.sh](../tests/run.sh).

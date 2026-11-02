@@ -103,6 +103,7 @@ daemon_stop() {
   fi
   if [ -n "$(a_daemon_procs)" ]; then
     a_kill_daemon
+    i=0; while [ -n "$(a_daemon_procs)" ] && [ $i -lt 8 ]; do sleep 1; i=$((i+1)); done   # Windows ends a killed process with a delay
     [ -n "$(a_daemon_procs)" ] && { echo "FAIL daemon still alive after kill"; return 1; }
     echo "OK daemon killed"
   elif [ -n "$had" ]; then rm -f "$RUN/alive.txt" "$RUN/pid.txt"; echo "OK daemon stopped"

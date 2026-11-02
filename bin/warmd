@@ -46,6 +46,7 @@ Setup
   warmd init                   install the engine side, agent definitions and instructions
   warmd doctor                 check what is missing
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
+  warmd update                 fetch the newest version, only when you run it
   warmd package                build a player with your own method (Unity)
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
@@ -77,6 +78,7 @@ case "$CMD" in
   map)     code_map "$@";;
   audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit;;
   feedback) common_feedback;;
+  update)  common_update;;
   route)   route_print "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;

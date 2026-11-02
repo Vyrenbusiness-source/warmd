@@ -53,7 +53,7 @@ kind_of() {
   elif [ -f "$d/Cargo.toml" ]; then echo rust
   elif [ -f "$d/go.mod" ]; then echo go
   elif [ -f "$d/pyproject.toml" ] || [ -f "$d/setup.py" ] || [ -f "$d/requirements.txt" ]; then echo python
-  elif ls "$d"/*.sln "$d"/*.slnx "$d"/*.csproj >/dev/null 2>&1; then echo dotnet
+  elif compgen -G "$d/*.sln" >/dev/null || compgen -G "$d/*.slnx" >/dev/null || compgen -G "$d/*.csproj" >/dev/null; then echo dotnet
   fi
 }
 
@@ -254,6 +254,15 @@ code_map() {
       *) grep -nE '^[A-Za-z#]' "$f";;
     esac | sed -E 's/^([0-9]+):[[:space:]]*/\1 /' | cut -c1-110
   done | head -60
+}
+
+# Only on request: a silent self-update would run new code on every machine and break the promise that warmd sends and fetches nothing by itself.
+common_update() {
+  [ -d "$WARMD_HOME/.git" ] || { echo "FAIL not a git install, run install.sh again"; return 2; }
+  local before; before="$(git -C "$WARMD_HOME" rev-parse --short HEAD)"
+  git -C "$WARMD_HOME" pull -q --ff-only || { echo "FAIL could not update, local changes in $(native_path "$WARMD_HOME")?"; return 1; }
+  local after; after="$(git -C "$WARMD_HOME" rev-parse --short HEAD)"
+  if [ "$before" = "$after" ]; then echo "OK already current ($after)"; else echo "OK updated $before to $after"; fi
 }
 
 common_status() {
