@@ -28,15 +28,16 @@ test_cmd() { # filter
 }
 a_test() { slot_take; cached "test|${1:-}" test_cmd "${1:-}"; }
 
-# Only tests whose file mentions a changed module. Vitest and Jest take file filters as plain arguments.
+# Tests that reach a changed file through imports, transitive ones included (lib/affected.sh). Vitest and Jest take file filters as plain arguments.
 a_check() {
-  local names hits
-  names="$(changed_names '\.(ts|tsx|js|jsx|mjs|vue|svelte)$')"
-  [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
-  hits="$(grep -rlE "\b($names)\b" "$PROJECT" --include='*.test.*' --include='*.spec.*' --exclude-dir=node_modules --exclude-dir=dist 2>/dev/null | sed "s#^$PROJECT/##" | paste -sd' ' -)"
-  if [ -z "$hits" ]; then echo "(no tests touched, running all)"; a_test; return; fi
-  echo "(touched: $(echo "$hits" | wc -w | tr -d ' ') test files)"
-  a_test "$hits"
+  . "$WARMD_HOME/lib/affected.sh"
+  affected_select js
+  case "$AFF_MODE" in
+    CLEAN) echo "OK no code changed against $(base_branch)";;
+    NONE) echo "OK no test depends on this change";;
+    ALL) echo "(running all tests: $AFF_REASON)"; a_test;;
+    *) echo "(affected: $(echo "$AFF_FILES" | wc -w | tr -d ' ') test files)"; a_test "$AFF_FILES";;
+  esac
 }
 
 server_url() { cat "$RUN/dev.url" 2>/dev/null; }

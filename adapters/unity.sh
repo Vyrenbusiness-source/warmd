@@ -87,18 +87,22 @@ a_test() {
 
 # Test classes that mention a changed class, per mode
 a_check() {
-  local names m hits flag ran=0 files
-  names="$(changed_names '^.*\.cs$')"
-  [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
-  for m in Edit Play; do
-    files="$(find "$PROJECT/Assets" -path "*${m}Mode*" -name '*.cs' 2>/dev/null | xargs -r grep -lE "\b($names)\b" 2>/dev/null | xargs -r grep -lE '\[(Unity)?Test' 2>/dev/null)"
-    [ -n "$files" ] || continue
-    hits="$(echo "$files" | xargs grep -ohE '\bclass +[A-Za-z_0-9]+' | awk '{print $2}' | sort -u | paste -sd'|' -)"
-    ran=1; flag=--edit; [ "$m" = Play ] && flag=--play
-    echo "(touched $m: $(echo "$hits" | tr '|' ' ' | cut -c1-120))"
-    a_test "($hits)" "$flag" || return 1
+  . "$WARMD_HOME/lib/affected.sh"
+  affected_select cs Assets Packages
+  case "$AFF_MODE" in
+    CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
+    NONE) echo "OK no test depends on this change"; return 0;;
+    ALL) echo "(running all tests: $AFF_REASON)"; a_test --edit && a_test --play; return;;
+  esac
+  local f ed="" pl="" other=0 e p
+  for f in $AFF_FILES; do
+    case "$f" in *PlayMode*) pl="$pl $f";; *EditMode*) ed="$ed $f";; *) other=1;; esac
   done
-  [ $ran = 1 ] || echo "OK no tests touch this change"
+  if [ $other = 1 ]; then echo "(a test sits outside EditMode and PlayMode, running all)"; a_test --edit && a_test --play; return; fi
+  for f in $ed; do e="${e:+$e|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
+  for f in $pl; do p="${p:+$p|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
+  if [ -n "$e" ]; then echo "(touched Edit: $(echo "$e" | tr '|' ' ' | cut -c1-120))"; a_test "($e)" --edit || return 1; fi
+  if [ -n "$p" ]; then echo "(touched Play: $(echo "$p" | tr '|' ' ' | cut -c1-120))"; a_test "($p)" --play || return 1; fi
 }
 
 a_call() { [ -n "${1:-}" ] || { echo "warmd call Namespace.Class.StaticMethod"; return 2; }; slot_take; job call "method=$1"; }
