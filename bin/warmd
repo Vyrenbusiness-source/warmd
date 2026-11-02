@@ -10,6 +10,7 @@ WARMD_VERSION=0.2.0
 . "$WARMD_HOME/lib/daemon.sh"
 . "$WARMD_HOME/lib/team.sh"
 . "$WARMD_HOME/lib/handoff.sh"
+. "$WARMD_HOME/lib/perf.sh"
 
 usage() {
   cat <<'EOF'
@@ -81,6 +82,7 @@ case "$CMD" in
   finish)  team_finish;;
   board)   team_board;;
   merge)   team_merge "$@";;
+  perf)    perf_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init;;
   doctor)  common_doctor; a_doctor;;

@@ -243,5 +243,6 @@ team_merge() {
   if [ -n "$CFG_gate" ]; then
     if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(echo "$m" | tail -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(echo "$m" | head -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
+  if [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return 1; }; fi
   git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }
