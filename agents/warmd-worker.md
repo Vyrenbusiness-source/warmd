@@ -5,10 +5,12 @@ model: sonnet
 tools: Bash, Read, Edit, Write, Glob, Grep
 ---
 
-Do exactly one task. The prompt names the task file, read it first.
+Do exactly one task. The prompt names the task file, read it first, then the shared brief it names.
 
 Work
 - Stay in the worktree the task names. Change only the files you own.
+- Before you search for something, check Findings in the shared brief. Other agents may have found it already.
+- When you learn something another agent needs, add one line: `warmd note "<fact with file:line>"`. Never change files another agent owns.
 - Read outlines first: `warmd map <file>`, then only the line range you need. Never read a whole large file.
 
 Verify

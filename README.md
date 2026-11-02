@@ -17,10 +17,10 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>56 s → 3 s</h3>one Unity test class<br><sub>large HDRP project</sub></td>
-<td align="center" width="25%"><h3>26 s → 8 s</h3>full PlayMode run<br><sub>with <code>--speed 8</code></sub></td>
+<td align="center" width="25%"><h3>95% faster</h3>one Unity test class<br><sub>56 s → 3 s, large HDRP project</sub></td>
+<td align="center" width="25%"><h3>99% fewer tokens</h3>per green Unity test run<br><sub>33 KB log → 41 bytes</sub></td>
 <td align="center" width="25%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub>green results are cached</sub></td>
-<td align="center" width="25%"><h3>15 lines</h3>most output an agent ever sees<br><sub>the full log stays on disk</sub></td>
+<td align="center" width="25%"><h3>26 s → 8 s</h3>full PlayMode run<br><sub>with <code>--speed 8</code></sub></td>
 </tr>
 </table>
 
@@ -94,6 +94,7 @@ OK 3 tasks split
 - **Stays current by itself.** Tiers map to the aliases `haiku`, `sonnet` and `opus`, which always point to the newest release. When a new model ships there is nothing to change.
 - **Cheap first, then up.** An agent stops after two failed fixes. `warmd escalate <name>` hands the same task to the next tier, with the earlier commits as context.
 - **It learns.** An area that needed escalation twice starts one tier higher next time.
+- **A shared brief.** `warmd split` writes one short file that all agents of a batch read: who owns which file, plus findings. An agent adds a fact with `warmd note "price lives in src/price.ts:3"`, and the next one skips that search. It lives in the git directory, so every worktree sees the same copy and it is never committed. It keeps the newest 40 findings.
 - **One-line reports.** `warmd finish` pushes and prints facts from git and the last run, so a final report costs almost nothing.
 
 Any other model name works too, including other vendors. Tiers are config:
@@ -121,8 +122,17 @@ Windows 10, Unity 6000.4, Godot 4.7, Chrome. Your numbers will differ.
 | Web, 2 screenshots with a warm Vite server | | 1.3 s |
 | Vitest, touched test only instead of all | 4 s | 1.9 s |
 
-Two honest notes:
+Output per test run, in bytes. Tokens are roughly bytes divided by 4.
 
+| Run | Raw output | warmd | Saved |
+|---|---|---|---|
+| Unity, green | 33,323 | 41 | 99.9% |
+| Vitest, green | 270 | 11 | 96% |
+| Vitest, one failure | 877 | 490 | 44% |
+
+Honest notes:
+
+- These numbers cover one run, not a whole session. A session also pays for reading code and for thinking. Red runs save less, because the error is the part an agent needs.
 - The gain grows with project size. An empty Unity project starts so fast that the daemon barely matters.
 - Godot starts in about 0.2 seconds, faster than a round trip to a running daemon, so warmd runs it fresh each time. Set `warm=1` in `warmd.conf` for projects with slow autoloads.
 
@@ -139,6 +149,7 @@ warmd stop                   end the warm process for real
 
 warmd route <goal> [files]   cheapest fitting model tier
 warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
+warmd note "<one line>"      add a finding to the brief all agents of a batch share
 warmd escalate <name>        same task, next model tier
 warmd finish                 push and print a one-line report
 warmd board                  all worktrees at a glance

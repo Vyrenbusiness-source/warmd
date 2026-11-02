@@ -42,6 +42,40 @@ wt_create() { # name
   echo "$wt"
 }
 
+# Shared brief: one short file all agents of a batch read. It lives in the common git dir, so every worktree sees the same copy and it never gets committed.
+# It stops parallel agents from searching for the same thing twice and shows who owns which file.
+shared_file() { echo "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-shared.md"; }
+shared_start() { # tasks file
+  local name goal check files f; f="$(shared_file)"
+  {
+    echo "# Shared brief"
+    echo "Read once at the start. Before searching, check Findings. Add what others need: warmd note \"one line\"."
+    echo
+    echo "## Who owns what"
+    while IFS='|' read -r name goal check files; do
+      name="$(echo "$name" | xargs)"; files="$(echo "$files" | tr -d ' ')"
+      case "$name" in \#*|"") continue;; esac
+      echo "- $name: ${files:-none}"
+    done < <(tr -d '\r' < "$1")
+    echo
+    echo "## Findings"
+  } > "$f"
+}
+# Only the newest 40 findings stay, so the brief never grows into the next HANDOFF
+team_note() {
+  need_git
+  local text="${1:-}" f who keep; f="$(shared_file)"
+  [ -f "$f" ] || { echo "FAIL no shared brief, warmd split creates it"; return 2; }
+  [ -n "$text" ] || { echo "warmd note \"one line\""; return 2; }
+  [ ${#text} -le 160 ] || { echo "FAIL over 160 characters, keep it to one fact"; return 2; }
+  grep -qF -- "$text" "$f" && { echo "OK already noted"; return 0; }
+  who="$(git -C "$GIT_ROOT" branch --show-current)"
+  echo "- ${who#warmd/}: $text" >> "$f"
+  keep="$(awk '/^## Findings/{print NR}' "$f")"
+  if [ "$(( $(wc -l < "$f") - keep ))" -gt 40 ]; then { head -n "$keep" "$f"; tail -n 40 "$f"; } > "$f.tmp"; mv "$f.tmp" "$f"; fi
+  echo "OK noted"
+}
+
 write_task() { # name tier goal done files wt
   local name="$1" tier="$2" goal="$3" check="$4" files="$5" wt="$6" f port
   mkdir -p "$STATE/tasks"; f="$STATE/tasks/$name.md"
@@ -52,6 +86,7 @@ write_task() { # name tier goal done files wt
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
     echo "Budget: under $(tier_budget "$tier")k tokens."
+    echo "Shared brief: $(native_path "$(shared_file)")"
   } > "$f"
   echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
 }
@@ -74,6 +109,7 @@ team_split() {
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
+  shared_start "$file"
   while IFS='|' read -r name goal check files <&3; do
     name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac

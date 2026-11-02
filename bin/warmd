@@ -26,6 +26,7 @@ Everyday
 Agents
   warmd route <goal> [files]   cheapest fitting model tier
   warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
+  warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
   warmd finish                 push and print a one-line report
   warmd board                  all worktrees at a glance
@@ -63,6 +64,7 @@ case "$CMD" in
   route)   route_print "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
+  note)    team_note "$@";;
   finish)  team_finish;;
   board)   team_board;;
   merge)   team_merge "$@";;
