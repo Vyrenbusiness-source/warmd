@@ -2,13 +2,15 @@
 # Files survive a domain reload or a script reload, so a reload in the middle of a job loses nothing.
 HANG_MS=$(( ${WARMD_HANG:-600} * 1000 ))
 now_ms() {
-  local t; t="$(date +%s%3N)"
+  local t
+  if [ -n "${EPOCHREALTIME:-}" ]; then t="${EPOCHREALTIME//[.,]/}"; echo "${t%???}"; return; fi
+  t="$(date +%s%3N)"
   case "$t" in *N) echo "$(date +%s)000";; *) echo "$t";; esac
 }
 
-daemon_pid() { cat "$RUN/pid.txt" 2>/dev/null | tr -d '\r\n'; }
+daemon_pid() { local p=""; { read -r p < "$RUN/pid.txt"; } 2>/dev/null; echo "${p%$'\r'}"; }
 daemon_alive() {
-  local a age; a="$(cat "$RUN/alive.txt" 2>/dev/null)"; [ -n "$a" ] || return 1
+  local a="" age; { read -r a < "$RUN/alive.txt"; } 2>/dev/null; a="${a%$'\r'}"; [ -n "$a" ] || return 1
   age=$(( $(now_ms) - a ))
   [ "$age" -lt 3000 ] && return 0   # a fresh heartbeat proves it, a process lookup costs 100 ms on Windows
   pid_alive "$(daemon_pid)" && [ "$age" -lt "$HANG_MS" ]
