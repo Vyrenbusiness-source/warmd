@@ -157,11 +157,7 @@ cached() {
 }
 
 # Queue: at most <slots> heavy runs per machine across all projects. A slot is a directory (mkdir is atomic) holding the owner pid, dead owners expire.
-slots_max() {
-  if [ -n "$CFG_slots" ]; then echo "$CFG_slots"; return; fi
-  if [ "$ADAPTER" = unity ]; then echo 2; return; fi
-  local n=$(( $(cpu_count) / 2 )); [ "$n" -lt 2 ] && n=2; echo "$n"
-}
+slots_max() { tune_slots; }
 slot_try() {
   [ -n "$SLOT" ] && return 0
   local i holder dir="$CACHE_ROOT/slots"

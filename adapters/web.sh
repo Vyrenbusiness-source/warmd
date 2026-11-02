@@ -7,7 +7,7 @@ pm() {
 }
 has_script() { [ -f "$PROJECT/package.json" ] && grep -qE "\"$1\"[[:space:]]*:" "$PROJECT/package.json"; }
 has_dep() { [ -f "$PROJECT/package.json" ] && grep -qE "\"$1\"[[:space:]]*:" "$PROJECT/package.json"; }
-in_project() { ( cd "$PROJECT" && "$@" ); }
+in_project() { ( cd "$PROJECT" && $(tune_prefix) "$@" ); }
 
 a_build() {
   if [ -n "$CFG_build" ]; then run_bounded build in_project sh -c "$CFG_build"; return; fi
@@ -21,7 +21,7 @@ a_build() {
 
 test_cmd() { # filter
   if [ -n "$CFG_test" ]; then run_bounded test in_project sh -c "$CFG_test ${1:-}"
-  elif has_dep vitest; then run_bounded test in_project ./node_modules/.bin/vitest run ${1:-}
+  elif has_dep vitest; then run_bounded test in_project ./node_modules/.bin/vitest run --maxWorkers="$(tune_threads)" ${1:-}
   elif has_dep jest; then run_bounded test in_project ./node_modules/.bin/jest ${1:-}
   elif has_script test; then run_bounded test in_project "$(pm)" test -- ${1:-}
   else echo "OK no tests configured"; fi
@@ -60,12 +60,13 @@ a_start_server() {
 }
 
 browser_shot() { # exe width height scale url png
-  "$1" --headless=new --disable-gpu --hide-scrollbars --no-first-run --user-data-dir="$(native_path "$RUN/browser")"     --force-device-scale-factor="$4" --window-size="$2,$3" --virtual-time-budget=3000 --allow-file-access-from-files     --screenshot="$(native_path "$6")" "$5" >/dev/null 2>&1
+  $(tune_prefix) "$1" --headless=new --disable-gpu --hide-scrollbars --no-first-run --user-data-dir="$(native_path "$RUN/browser")"     --force-device-scale-factor="$4" --window-size="$2,$3" --virtual-time-budget=3000 --allow-file-access-from-files     --screenshot="$(native_path "$6")" "$5" >/dev/null 2>&1
 }
 
 # Two widths in one call, at a scale that keeps each image small: an agent sees layout breaks for a fraction of the tokens.
 a_shot() {
   local target="${1:-}" browser out="$RUN/shots"
+  gfx_take
   browser="$(find_browser)" || { echo "FAIL no Chrome, Edge or Chromium found, set WARMD_BROWSER"; return 1; }
   if [ -z "$target" ]; then
     if [ -f "$PROJECT/index.html" ] && ! has_script dev; then target="file:///$(native_path "$PROJECT/index.html")"

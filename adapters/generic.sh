@@ -1,13 +1,13 @@
 # Rust, Go, Python, .NET and anything set in warmd.conf. Nothing to keep warm, the value is the bounded output, the cache and the queue.
-in_project() { ( cd "$PROJECT" && "$@" ); }
+in_project() { ( cd "$PROJECT" && $(tune_prefix) "$@" ); }
 
 a_build() {
   if [ -n "$CFG_build" ]; then run_bounded build in_project sh -c "$CFG_build"; return; fi
   case "$KIND" in
-    rust) run_bounded check in_project cargo check --quiet --all-targets;;
+    rust) run_bounded check in_project cargo check -j "$(tune_threads)" --quiet --all-targets;;
     go) run_bounded build in_project go build ./...;;
     python) if command -v ruff >/dev/null 2>&1; then run_bounded ruff in_project ruff check .; else run_bounded compile in_project python -m compileall -q .; fi;;
-    dotnet) run_bounded build in_project dotnet build --nologo -v q;;
+    dotnet) run_bounded build in_project dotnet build -m:"$(tune_threads)" --nologo -v q;;
     *) echo "OK nothing to compile, set build= in warmd.conf";;
   esac
 }
@@ -15,10 +15,10 @@ a_build() {
 test_cmd() {
   if [ -n "$CFG_test" ]; then run_bounded test in_project sh -c "$CFG_test ${1:-}"; return; fi
   case "$KIND" in
-    rust) run_bounded test in_project cargo test --quiet ${1:-};;
+    rust) run_bounded test in_project cargo test -j "$(tune_threads)" --quiet ${1:-};;
     go) run_bounded test in_project go test ./... ${1:+-run "$1"};;
     python) run_bounded test in_project python -m pytest -q ${1:--x};;
-    dotnet) run_bounded test in_project dotnet test --nologo -v q ${1:+--filter "$1"};;
+    dotnet) run_bounded test in_project dotnet test -m:"$(tune_threads)" --nologo -v q ${1:+--filter "$1"};;
     *) echo "OK no tests configured, set test= in warmd.conf";;
   esac
 }
