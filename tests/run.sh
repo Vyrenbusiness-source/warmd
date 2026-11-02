@@ -86,8 +86,8 @@ sleep 30 & h1=$!; sleep 30 & h2=$!
 echo "$h1" > "$XDG_CACHE_HOME/warmd/slots/1/pid"; echo "$h2" > "$XDG_CACHE_HOME/warmd/slots/2/pid"
 printf 'slots=2\n' > warmd.conf; echo '// orphan' >> test.js
 # The caller dies while the run waits for a slot: it has to end by itself and free nothing it does not own
-( bash "$WARMD" test > "$XDG_CACHE_HOME/orphan.out" 2>&1 & echo $! > "$XDG_CACHE_HOME/orphan.pid" ) &
-sub=$!; sleep 1; wait "$sub" 2>/dev/null
+( bash "$WARMD" test > "$XDG_CACHE_HOME/orphan.out" 2>&1 & echo $! > "$XDG_CACHE_HOME/orphan.pid"; sleep 2 ) &
+sub=$!; wait "$sub" 2>/dev/null
 i=0; while kill -0 "$(cat "$XDG_CACHE_HOME/orphan.pid")" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done
 expect "a run without caller ends by itself" 'caller is gone' "$(cat "$XDG_CACHE_HOME/orphan.out")"
 kill "$h1" "$h2" 2>/dev/null; wait "$h1" "$h2" 2>/dev/null
