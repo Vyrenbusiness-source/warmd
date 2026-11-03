@@ -105,7 +105,10 @@ ms() { date +%s%N | cut -c1-13; }
 fast() { # name, ms -> the hook returned within 2 s
   [ "$2" -lt 2000 ] && ok "$1 returns in $2 ms" || no "$1 took $2 ms, the limit is 2000"
 }
-waitfor() { local i=0; until eval "$1"; do i=$((i+1)); [ $i -gt 300 ] && return 1; sleep 0.1; done; }
+# A detached job gets 20 s, then the test fails fast and shows the job logs instead of waiting for the CI timeout
+waitfor() { local end=$((SECONDS + ${WAIT_MAX:-20})); until eval "$1"; do
+  [ $SECONDS -ge $end ] && { echo "  waited ${WAIT_MAX:-20}s for: $1" >&2; tail -n 6 "$C/warmd-hook.log" "$C/warmd-automerge.log" 2>/dev/null | sed 's/^/  /' >&2; return 1; }
+  sleep 0.2; done; }
 B="$TMP/origin.git"; git init -q --bare "$B"
 R="$TMP/repo"; mkdir -p "$R" && cd "$R" && git init -q -b main . && git config core.autocrlf false && git config user.name t && git config user.email t@example.com || exit 1
 echo '{ "name": "t", "scripts": { "test": "true" } }' > package.json
