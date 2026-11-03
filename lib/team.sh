@@ -149,12 +149,20 @@ team_agents() {
   echo "$n"
 }
 # Worktrees of the batch whose agent has not stopped yet (the stop hook writes warmd-batch-done).
+# One spelling per folder: the Windows runner mixes 8.3 short names (RUNNER~1) with long names for the same path
+wt_norm() { # path -> long, absolute form
+  local p; p="$(cd "$1" 2>/dev/null && pwd -P)" || p="$1"
+  if command -v cygpath >/dev/null 2>&1; then p="$(cygpath -u "$(cygpath -l -w "$p" 2>/dev/null || echo "$p")" 2>/dev/null || echo "$p")"; fi
+  printf '%s\n' "$p"
+}
+
 team_running() { # batchfile
-  local wt n=0 done="$1-done"
+  local wt n=0 done="$1-done" dl=""
   [ -f "$1" ] || { echo 0; return; }
+  if [ -f "$done" ]; then dl="$(cut -f1 "$done" | while IFS= read -r wt; do [ -n "$wt" ] && wt_norm "$wt"; done)"; fi
   while IFS= read -r wt; do
     [ -n "$wt" ] || continue
-    [ -f "$done" ] && cut -f1 "$done" | grep -qxF "$wt" && continue
+    [ -n "$dl" ] && printf '%s\n' "$dl" | grep -qxF "$(wt_norm "$wt")" && continue
     n=$((n+1))
   done < "$1"
   echo "$n"
