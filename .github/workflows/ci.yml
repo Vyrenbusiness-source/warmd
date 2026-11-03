@@ -19,12 +19,18 @@ jobs:
       - run: bash tests/run.sh
       - run: bash tests/tune.sh
 
-  # Static check of the scripts only, independent of the target OS (warmd targets Windows)
   shellcheck:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh
+      - name: Install shellcheck
+        run: |
+          curl -fsSL -o sc.zip https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.zip
+          unzip -q sc.zip -d "$HOME/sc"
+      - run: '"$HOME/sc/shellcheck.exe" --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh'
 
   proof:
     runs-on: windows-latest
