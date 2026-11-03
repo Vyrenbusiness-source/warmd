@@ -84,31 +84,41 @@ hook_run() {
   return $rc
 }
 
-# ---- shared lookups, git and files only, so every hook stays far below 2 s ----
+# ---- shared lookups: builtins where they can, every fork costs 10 to 30 ms on Windows and a hook gets 2 s ----
 hook_common() { git ${1:+-C "$1"} rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
-hook_mainwt() { git --git-dir="$1" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p'; }   # common dir -> shared checkout
-hook_same() { [ "$(cd "$1" 2>/dev/null && pwd)" = "$(cd "$2" 2>/dev/null && pwd)" ]; }                  # C:/x and /c/x are one path
-hook_task_wt() { sed -n 's/.*First run: cd "\([^"]*\)".*/\1/p' "$1" | head -1; }
-hook_task_of() { # common dir, worktree -> task file of that worktree
-  local f wt main; main="$(hook_mainwt "$1")"
-  for f in "$1"/warmd-handoff/*.task; do
+hook_mainwt() { local l; l="$(git --git-dir="$1" worktree list --porcelain 2>/dev/null)"; l="${l%%$'\n'*}"; echo "${l#worktree }"; }   # common dir -> shared checkout
+hook_abs() { REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"; }   # C:/x and /c/x become one form
+hook_task_wt() { # task file -> REPLY = its worktree as written in the task
+  REPLY=""; local line re='First run: cd "([^"]*)"'
+  while IFS= read -r line || [ -n "$line" ]; do [[ $line =~ $re ]] && { REPLY="${BASH_REMATCH[1]}"; return 0; }; done < "$1"
+  return 1
+}
+# Index of every task of this repo: HOOK_TF task files, HOOK_TW their worktrees (absolute). Handoff index first, task dirs as fallback.
+hook_index() { # common dir, shared checkout
+  HOOK_TF=(); HOOK_TW=(); local f tf seen=" "
+  for f in "$1"/warmd-handoff/*.task "$2"/.warmd/tasks/*.md "$2"/*/.warmd/tasks/*.md; do
     [ -f "$f" ] || continue
-    wt="$(sed -n 1p "$f")"; [ -f "$wt" ] || continue
-    hook_same "$(hook_task_wt "$wt")" "$2" && { echo "$wt"; return 0; }
+    if [ "${f%.task}" != "$f" ]; then IFS= read -r tf < "$f" || continue; tf="${tf%$'\r'}"; else tf="$f"; fi
+    case "$seen" in *" ${tf##*/} "*) continue;; esac
+    [ -f "$tf" ] && hook_task_wt "$tf" && hook_abs "$REPLY" || continue
+    HOOK_TF+=("$tf"); HOOK_TW+=("$REPLY"); seen="$seen${tf##*/} "
   done
-  for f in "$main"/.warmd/tasks/*.md "$main"/*/.warmd/tasks/*.md; do
-    [ -f "$f" ] || continue
-    hook_same "$(hook_task_wt "$f")" "$2" && { echo "$f"; return 0; }
-  done
+}
+hook_task_of() { # absolute worktree -> REPLY = its task file
+  local i; REPLY=""
+  for i in "${!HOOK_TW[@]}"; do [ "${HOOK_TW[$i]}" = "$1" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }; done
   return 1
 }
 hook_agent_line() { # common dir, task file -> AGENT line to start or continue the task
-  local tf="$2" name tier agent model conf note m
-  name="$(basename "$tf" .md)"
-  tier="$(sed -n 2p "$1/warmd-handoff/$name.task" 2>/dev/null)"; [ -n "$tier" ] || tier="$(cat "${tf%.md}.tier" 2>/dev/null)"
+  local tf="$2" name tier="" agent model note k v
+  name="${tf##*/}"; name="${name%.md}"
+  { read -r _; read -r tier; } < "$1/warmd-handoff/$name.task" 2>/dev/null
+  [ -n "$tier" ] || read -r tier < "${tf%.md}.tier" 2>/dev/null
+  tier="${tier%$'\r'}"
   case "$tier" in cheap) agent=warmd-scout; model=haiku;; top) agent=warmd-worker; model=opus;; *) tier=mid; agent=warmd-worker; model=sonnet;; esac
-  conf="$(dirname "$(dirname "$(dirname "$tf")")")/warmd.conf"
-  if [ -f "$conf" ]; then m="$(sed -n "s/^ *$tier *= *//p" "$conf" | tr -d '\r" ' | tail -1)"; [ -n "$m" ] && model="$m"; fi
+  if [ -f "$HOOK_PROJ/warmd.conf" ]; then
+    while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; done < "$HOOK_PROJ/warmd.conf"
+  fi
   note="$1/warmd-handoff/$name.md"
   if [ -f "$note" ]; then
     echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
@@ -120,34 +130,40 @@ hook_agent_line() { # common dir, task file -> AGENT line to start or continue t
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
 # the shared checkout gets the running batch: who is done, who is open, the AGENT line for each open one, the last merge result.
 hook_session() {
-  local in src common here tf brief main batch done wt br ahead dirty state open=0 n=0 log
-  in="$(cat)"
-  src="$(printf '%s' "$in" | tr -d '\n\r' | sed -n 's/.*"source" *: *"\([a-z]*\)".*/\1/p')"
+  local in src="" common here tf brief main batch done wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
+  local -A state=()
+  in="$(cat)"; [[ $in =~ $re ]] && src="${BASH_REMATCH[1]}"
   here="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
   common="$(hook_common)" || return 0
   [ -n "$(type -t native_path)" ] || . "$WARMD_HOME/lib/platform.sh"
   main="$(hook_mainwt "$common")"
-  if ! hook_same "$here" "$main" && tf="$(hook_task_of "$common" "$here")"; then
+  hook_index "$common" "$main"
+  hook_abs "$here"; here="$REPLY"; hook_abs "$main"; main="$REPLY"
+  if [ "$here" != "$main" ] && hook_task_of "$here"; then
+    tf="$REPLY"
     echo "warmd: session ${src:-restarted}. Your task and the shared brief again, continue the task."
     cat "$tf"
-    [ -f "$common/warmd-handoff/$(basename "$tf" .md).md" ] && { echo; cat "$common/warmd-handoff/$(basename "$tf" .md).md"; }
+    l="$common/warmd-handoff/${tf##*/}"; [ -f "$l" ] && { echo; cat "$l"; }
     brief="$common/warmd-shared.md"
     [ -f "$brief" ] && { echo; cat "$brief"; }
     return 0
   fi
   batch="$common/warmd-batch"; done="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
   if [ -s "$batch" ]; then
-    echo "warmd: a batch runs ($( [ "$src" = compact ] && echo "context compacted, agents may still run, start only the ones you do not see" || echo "session ${src:-restarted}, agents of the old session are gone, start the open ones" ))."
-    while read -r wt; do
-      [ -n "$wt" ] || continue; n=$((n+1))
-      br="$(git -C "$wt" branch --show-current 2>/dev/null)"
-      ahead="$(git -C "$wt" rev-list --count "$(git -C "$main" branch --show-current)..HEAD" 2>/dev/null || echo '?')"
-      dirty="$(git -C "$wt" status --porcelain -uno 2>/dev/null | wc -l | tr -d ' ')"
-      state="$(grep -F "$wt	" "$done" 2>/dev/null | tail -1 | cut -f2)"
-      if [ -n "$state" ]; then echo "- ${br:-$wt}: done ($state), $ahead ahead, $dirty uncommitted"
+    [ -f "$done" ] && while IFS='	' read -r wt l; do [ -n "$wt" ] && state[$wt]="$l"; done < "$done"
+    base="$(git -C "$main" branch --show-current)"
+    HOOK_PROJ="${HOOK_TF[0]%/.warmd/tasks/*}"
+    if [ "$src" = compact ]; then echo "warmd: a batch runs (context compacted, agents may still run, start only the ones you do not see)."
+    else echo "warmd: a batch runs (session ${src:-restarted}, agents of the old session are gone, start the open ones)."; fi
+    while IFS= read -r wt; do
+      wt="${wt%$'\r'}"; [ -n "$wt" ] || continue; n=$((n+1))
+      br=""; dirty=0
+      while IFS= read -r l; do case "$l" in "# branch.head "*) br="${l#\# branch.head }";; \#*) ;; ?*) dirty=$((dirty+1));; esac; done < <(git -C "$wt" status --porcelain=v2 --branch -uno 2>/dev/null)
+      ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null)" || ahead='?'
+      if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
         open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
-        tf="$(hook_task_of "$common" "$wt")" && echo "  $(hook_agent_line "$common" "$(native_path "$tf")")"
+        hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")")"
       fi
     done < "$batch"
     echo "$open of $n open. When the last one stops, warmd merges the finished branches by itself."
@@ -209,7 +225,7 @@ hook_subagent() {
     common="$(hook_common)" && tf="$(sed -n 1p "$common/warmd-handoff/$name.task" 2>/dev/null)"
     [ -f "$tf" ] || return 0
   fi
-  wt="$(hook_task_wt "$tf")"; [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
   common="$(hook_common "$wt")" || return 0
   ( cd "$wt" && WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome" >> "$common/warmd-hook.log" 2>&1 < /dev/null & )
   return 0
