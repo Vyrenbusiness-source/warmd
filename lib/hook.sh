@@ -212,8 +212,13 @@ if not task:
 tok = "-"
 if usage:
     tok = str(sum(int(u.get(k) or 0) for u in usage.values() for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+# ctx: how full the context is now, the last turn only. tok above is the cost over all turns.
+ctx = "-"
+if usage:
+    last = list(usage.values())[-1]
+    ctx = str(sum(int(last.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
-print("\t".join([task[0], task[1], tok, str(len(calls)), out]))
+print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
 
 # SubagentStop: parse, then hand everything slow (ledger, push, merge) to a detached job and return at once.
@@ -222,7 +227,7 @@ hook_subagent() {
   in="$(cat)"
   py="$(hook_py)" || return 0
   r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
-  IFS='	' read -r name tf tokens calls outcome <<< "$r"
+  IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
     common="$(hook_common)" && tf="$(sed -n 1p "$common/warmd-handoff/$name.task" 2>/dev/null)"

@@ -82,7 +82,7 @@ auto_pre() { # hook JSON
   [ $(( now - ${last:-0} )) -ge "$AUTO_EVERY" ] || return 1
   mkdir -p "$d" && echo "$now" > "$d/$key.t"
   r="$(printf '{"agent_transcript_path":"%s"}' "$(auto_esc "$tp")" | "$(hook_py)" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 1
-  IFS='	' read -r name tf tok calls _ <<< "$r"
+  IFS='	' read -r name tf _ calls _ tok <<< "$r"   # tok: context fill of the last turn, not the cost over all turns
   [ -f "$tf" ] || return 1
   budget="$(sed -n 's/^Budget: under \([0-9]*\)k.*/\1/p' "$tf")"; budget=$(( ${budget:-0} * 1000 ))
   [ "$budget" -gt 0 ] && [ "$tok" != - ] && pct=$(( tok * 100 / budget )) || pct=0
