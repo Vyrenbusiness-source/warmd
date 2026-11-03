@@ -283,8 +283,25 @@ common_status() {
 
 common_doctor() {
   echo "detected: $KIND at $(native_path "$PROJECT")"
-  command -v git >/dev/null 2>&1 && echo "ok git" || echo "MISSING git (cache, check and agents need it)"
-  [ -n "$GIT_ROOT" ] && echo "ok git repo" || echo "note: not a git repo, cache and agent commands are off"
+  local fix_git="install git with your package manager" fix_py="install python 3 with your package manager" bin="${WARMD_BIN:-$HOME/.local/bin}"
+  [ "$OS" = win ] && { fix_git="winget install --id Git.Git -e"; fix_py="winget install --id Python.Python.3.12 -e"; }
+  # printf %()T needs bash 4.2, macOS ships 3.2
+  if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" = 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then echo "ok bash $BASH_VERSION"
+  else echo "MISSING bash 4.2 or newer, this is $BASH_VERSION. Fix: $([ "$OS" = win ] && echo "$fix_git" || echo "install a current bash")"; fi
+  command -v git >/dev/null 2>&1 && echo "ok git" || echo "MISSING git (cache, check and agents need it). Fix: $fix_git"
+  [ -n "$GIT_ROOT" ] && echo "ok git repo" || echo "note: not a git repo, cache and agent commands are off. Fix: git init"
+  if command -v warmd >/dev/null 2>&1; then echo "ok warmd on PATH"
+  else echo "MISSING warmd on PATH in this shell. Fix: echo 'export PATH=\"$bin:\$PATH\"' >> ~/.bashrc, then open a new terminal"; fi
+  if [ "$OS" = win ]; then
+    command -v powershell.exe >/dev/null 2>&1 && echo "ok powershell.exe" || echo "MISSING powershell.exe on PATH (process checks need it). Fix: add C:\\Windows\\System32\\WindowsPowerShell\\v1.0 to PATH"
+    # Git Bash takes PATH from Windows, so a folder seen here is seen by PowerShell and cmd too
+    if [ ! -f "$bin/warmd.cmd" ]; then echo "MISSING warmd.cmd, PowerShell and cmd cannot start warmd. Fix: run install.sh again in Git Bash"
+    else case ":$PATH:" in *":$bin:"*) echo "ok warmd.cmd for PowerShell and cmd";;
+      *) echo "MISSING $(native_path "$bin") on the Windows user PATH. Fix: run install.sh again, or in PowerShell: [Environment]::SetEnvironmentVariable('Path', \"\$([Environment]::GetEnvironmentVariable('Path','User'));$(cygpath -w "$bin" 2>/dev/null)\", 'User')";; esac; fi
+  fi
+  # The Store alias python.exe exists but runs nothing, so try a real import
+  local p ok_py=""; for p in python3 python; do "$p" -c 'import json' >/dev/null 2>&1 && { ok_py="$p"; break; }; done
+  [ -n "$ok_py" ] && echo "ok $ok_py (agent hooks)" || echo "MISSING python (only agent hooks need it, warmd init works without). Fix: $fix_py"
 }
 
 # What an agent pays for before it does anything. Tests are rarely the biggest cost, this shows the real one.
