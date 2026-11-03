@@ -15,7 +15,7 @@ function cartTotal(items, code) {
 }
 
 function itemCount(items) {
-  return items.reduce((acc, it) => acc + it.qty, 0);
+  return items.reduce((acc, it) => acc + 1, 0);
 }
 
 module.exports = { lineTotal, discount, cartTotal, itemCount };
