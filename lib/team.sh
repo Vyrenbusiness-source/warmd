@@ -51,11 +51,20 @@ wt_free() { # path
   a_has_cache "$p${rel:+/$rel}" || return 1
   [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
 }
+# A branch already merged into base holds nothing new: the worktree starts again from base, so the next task never builds on a stale state.
+wt_fresh() { # path name
+  local p="$1" base; base="$(base_branch)"
+  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$')" ] || return 0
+  git -C "$p" merge-base --is-ancestor HEAD "$base" 2>/dev/null || return 0
+  [ "$(git -C "$p" rev-parse HEAD)" = "$(git -C "$p" rev-parse "$base")" ] && return 0
+  git -C "$p" checkout -q -B "warmd/$2" "$base"
+}
 wt_reuse() { # name
   local name="$1" p br base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
   # A worktree that already holds this task's branch keeps it and its commits: earlier work is never reset.
   while IFS='|' read -r p br; do
     [ "$br" = "warmd/$name" ] && [ "$p" != "$main" ] || continue
+    wt_fresh "$p" "$name"
     echo "$p"; return 0
   done < <(git -C "$GIT_ROOT" worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch /{b=$2; sub("refs/heads/","",b); print p"|"b}')
   while IFS='|' read -r p br; do
@@ -67,6 +76,7 @@ wt_reuse() { # name
     git -C "$p" checkout -q -- . 2>/dev/null
     if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/warmd/$name" >/dev/null; then
       git -C "$p" checkout -q "warmd/$name" || continue   # existing branch: keep its commits
+      wt_fresh "$p" "$name"
     else
       git -C "$p" checkout -q -B "warmd/$name" "$base" || continue
     fi
@@ -79,7 +89,7 @@ wt_reuse() { # name
 wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
-  if [ -d "$wt" ]; then echo "$wt"; return 0; fi
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; echo "$wt"; return 0; fi
   wt_reuse "$name" && return 0
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
@@ -92,21 +102,45 @@ wt_create() { # name
 # Shared brief: one short file all agents of a batch read. It lives in the common git dir, so every worktree sees the same copy and it never gets committed.
 # It stops parallel agents from searching for the same thing twice and shows who owns which file.
 shared_file() { echo "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-shared.md"; }
-shared_start() { # tasks file
-  local name goal check files f; f="$(shared_file)"
+shared_start() { # owner lines
+  local f; f="$(shared_file)"
   {
     echo "# Shared brief"
     echo "Read once at the start. Before searching, check Findings. Add what others need: warmd note \"one line\"."
     echo
     echo "## Who owns what"
-    while IFS='|' read -r name goal check files; do
-      name="$(echo "$name" | xargs)"; files="$(echo "$files" | tr -d ' ')"
-      case "$name" in \#*|"") continue;; esac
-      echo "- $name: ${files:-none}"
-    done < <(tr -d '\r' < "$1")
+    printf '%s' "$1"
     echo
     echo "## Findings"
   } > "$f"
+}
+# A split into a running batch adds its owners and keeps the findings of the agents already at work.
+shared_add() { # owner lines
+  local f; f="$(shared_file)"
+  [ -f "$f" ] || { shared_start "$1"; return; }
+  OWN="$1" awk '$0=="" {blank++; next} $0=="## Findings" && !d {printf "%s", ENVIRON["OWN"]; d=1} {while (blank>0) {print ""; blank--}; print} END {while (blank>0) {print ""; blank--}}' "$f" > "$f.$$" && mv -f "$f.$$" "$f"
+}
+# Files owned by the running batch, from the brief.
+shared_owned() { sed -n '/^## Who owns what/,/^## Findings/s/^- [^:]*: //p' "$(shared_file)" 2>/dev/null | tr ',' ' ' | grep -v '^none$'; }
+
+# agents= in warmd.conf caps the running tasks. Unset: half the cores and one per 4 GB RAM, the smaller one, at least 1.
+team_agents() {
+  if [ -n "${CFG_agents:-}" ]; then echo "$CFG_agents"; return; fi
+  local v c r a b n; v="$(hw)"; c="${v% *}"; r="${v#* }"
+  a=$(( c / 2 )); b=$(( r / 4096 ))
+  n=$a; [ "$b" -lt "$n" ] && n=$b; [ "$n" -lt 1 ] && n=1
+  echo "$n"
+}
+# Worktrees of the batch whose agent has not stopped yet (the stop hook writes warmd-batch-done).
+team_running() { # batchfile
+  local wt n=0 done="$1-done"
+  [ -f "$1" ] || { echo 0; return; }
+  while IFS= read -r wt; do
+    [ -n "$wt" ] || continue
+    [ -f "$done" ] && cut -f1 "$done" | grep -qxF "$wt" && continue
+    n=$((n+1))
+  done < "$1"
+  echo "$n"
 }
 # Only the newest 40 findings stay, so the brief never grows into the next HANDOFF
 team_note() {
@@ -193,9 +227,19 @@ wt_idle() { # worktree limit batchfile
   echo "$age"
 }
 
+# An agent that died at start (API or billing error) never commits. Its transcript names the reason. Transcripts: WARMD_TRANSCRIPTS, default ~/.claude/projects.
+agent_dead() { # worktree name -> reason
+  local wt="$1" name="$2" root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}" f
+  [ "$(git -C "$wt" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo 1)" = 0 ] || return 1
+  [ -d "$root" ] || return 1
+  f="$(find "$root" -name '*.jsonl' -mmin -1440 -exec grep -lF "tasks/$name.md" {} + 2>/dev/null | head -1)"
+  [ -n "$f" ] || return 1
+  grep -oiE '(API Error|credit balance|billing|usage limit|rate.?limit|overloaded|authentication_error|invalid.?api.?key)[^"\]{0,80}' "$f" | head -1 | grep .
+}
+
 team_watch() {
   need_git
-  local once=0 limit=5 batch wt age name stalled
+  local once=0 limit=5 batch wt age name stalled reason
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-5}"
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
@@ -205,6 +249,12 @@ team_watch() {
     stalled=0
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
+      name="$(wt_task "$wt")"
+      grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
+      if reason="$(agent_dead "$wt" "$name")"; then
+        echo "DEAD $name: died at start, no commit. Reason: $reason. Fix the cause, then start it again: \"Read $(native_path "$STATE/tasks/$name.md") and do it.\""
+        echo "$name" >> "$batch-dead"; stalled=1; continue
+      fi
       age="$(wt_idle "$wt" "$limit" "$batch")"
       if [ "$age" -gt 0 ]; then
         name="$(wt_task "$wt")"
@@ -224,8 +274,12 @@ trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
 team_split() {
   need_git
-  local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0
+  local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
+  batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
+  if [ -f "$batch" ]; then append=1; running="$(team_running "$batch")"; seen="$(shared_owned | tr '\n' ' ')"; fi
+  cap="$(team_agents)"
   while IFS='|' read -r name goal check files <&3; do
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
@@ -239,30 +293,34 @@ team_split() {
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
-  shared_start "$file"
-  local batch; batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
-  : > "$batch"
+  [ $append = 1 ] || { : > "$batch"; rm -f "$batch-dead" "$batch-done"; }
   while IFS='|' read -r name goal check files <&3; do
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
+    if [ "$running" -ge "$cap" ]; then
+      echo "WAIT $name: $running of $cap agents run (agents= in warmd.conf), split it again when one is done"; waited=$((waited+1)); continue
+    fi
+    running=$((running+1)); own="$own- $name: ${files:-none}"$'\n'
     tier="$(route_tier "$goal" "$files")"
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     if [ -n "$files" ] && [ "$files" != none ]; then
-      ( cd "$wt" && pwd ) >> "$batch"
+      grep -qxF "$(cd "$wt" && pwd)" "$batch" || ( cd "$wt" && pwd ) >> "$batch"
       prewarm "$wt"
     fi
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
   done 3< <(tr -d '\r' < "$file")
-  echo "OK $n tasks split. Start now, in the background: warmd watch"
+  if [ $append = 1 ]; then shared_add "$own"; else shared_start "$own"; fi
+  echo "OK $((n-waited)) tasks split$([ $waited = 0 ] || echo ", $waited waiting"). Start now, in the background: warmd watch"
 }
 
 team_escalate() {
   need_git
   local name="${1:-}" f="$STATE/tasks/${1:-}.md" tier next area
   [ -f "$f" ] || { echo "warmd escalate <name>: unknown task"; return 2; }
-  tier="$(cat "$STATE/tasks/$name.tier" 2>/dev/null || echo mid)"; next="$(tier_next "$tier")"
+  tier="$(apply_floor "$(cat "$STATE/tasks/$name.tier" 2>/dev/null || echo mid)")"; next="$(tier_next "$tier")"
   [ -n "$next" ] || { echo "FAIL $name is at the top tier, this one needs a human"; return 1; }
+  next="$(apply_floor "$next")"
   area="$(area_of "$(sed -n 's/^Files you own: //p' "$f")")"
   printf 'escalated\t%s\n' "$area" >> "$STATE/history.tsv"
   grep -q '^Earlier attempt' "$f" || echo "Earlier attempt failed. Read its commits on this branch first, then take a different approach." >> "$f"
