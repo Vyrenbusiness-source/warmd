@@ -6,6 +6,8 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
+# One path form on Windows: long names, no /tmp mount. A runner TEMP like RUNNER~1 otherwise differs from what git reports
+command -v cygpath >/dev/null 2>&1 && TMP="$(cygpath -u "$(cygpath -l -m "$TMP")")"
 export XDG_CACHE_HOME="$TMP/cache" AUTO_EVERY=0
 fails=0
 ok() { echo "ok   $1"; }

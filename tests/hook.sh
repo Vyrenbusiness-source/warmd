@@ -6,6 +6,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 FIX="$HERE/tests/fixtures/digest"
 TMP="$(mktemp -d)"
+# One path form on Windows: long names, no /tmp mount. A runner TEMP like RUNNER~1 otherwise differs from what git reports
+command -v cygpath >/dev/null 2>&1 && TMP="$(cygpath -u "$(cygpath -l -m "$TMP")")"
 export XDG_CACHE_HOME="$TMP/cache"
 fails=0
 ok() { echo "ok   $1"; }
@@ -222,6 +224,15 @@ out="$(cd "$R" && "$WARMD" init)"
 echo "$out" | grep -q '^OK hooks installed' && [ "$(grep -c 'hook-session' "$S2")" = 1 ] && grep -q 'hook-subagent' "$S2" && grep -q 'hook-pre' "$S2" && ! grep -q '/old/bin' "$S2" && ok "warmd init installs all hooks and replaces old ones" || no "init: $out"
 (cd "$R" && "$WARMD" init --no-hooks >/dev/null); [ ! -e "$S2" ] && ok "warmd init --no-hooks removes them" || no "no-hooks left: $(cat "$S2")"
 cd "$TMP"
+
+# ---- path forms: an 8.3 short name and the long name are the same worktree ----
+if command -v cygpath >/dev/null 2>&1; then
+  mkdir -p "$TMP/a long worktree name"; sn="$(cygpath -u "$(cygpath -s -m "$TMP/a long worktree name")" 2>/dev/null)"
+  if [[ $sn == *'~'* ]]; then
+    a="$(OS=win; . "$HERE/lib/hook.sh"; hook_abs "$sn"; echo "$REPLY")"; b="$(OS=win; . "$HERE/lib/hook.sh"; hook_abs "$TMP/a long worktree name"; echo "$REPLY")"
+    [ "$a" = "$b" ] && ok "short and long name give one path" || no "short name $a, long name $b"
+  else ok "8.3 names off on this drive, path form check skipped"; fi
+fi
 
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails FAILED"; exit 1; }

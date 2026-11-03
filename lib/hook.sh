@@ -89,7 +89,15 @@ hook_run() {
 # ---- shared lookups: builtins where they can, every fork costs 10 to 30 ms on Windows and a hook gets 2 s ----
 hook_common() { git ${1:+-C "$1"} rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
 hook_mainwt() { local l; l="$(git --git-dir="$1" worktree list --porcelain 2>/dev/null)"; l="${l%%$'\n'*}"; echo "${l#worktree }"; }   # common dir -> shared checkout
-hook_abs() { REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"; }   # C:/x and /c/x become one form
+# C:/x and /c/x become one form. A short 8.3 name (RUNNER~1) or a mount (/tmp on a short TEMP) is not the long form git reports:
+# cygpath -l makes it long, the fork only happens for those paths.
+hook_abs() {
+  REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"
+  if [ "${OS:-}" = win ] && { [[ $REPLY == *'~'* ]] || [[ $REPLY != /?/* ]]; }; then
+    local w; w="$(cygpath -l -m "$REPLY" 2>/dev/null)" || return 0; [[ $w == ?:/* ]] || return 0
+    local d="${w:0:1}"; REPLY="/${d,,}${w:2}"
+  fi
+}
 hook_task_wt() { # task file -> REPLY = its worktree as written in the task
   REPLY=""; local line re='First run: cd "([^"]*)"'
   while IFS= read -r line || [ -n "$line" ]; do [[ $line =~ $re ]] && { REPLY="${BASH_REMATCH[1]}"; return 0; }; done < "$1"

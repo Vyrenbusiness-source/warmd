@@ -16,12 +16,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Path diagnostics for the hook tests
-        run: |
-          echo "TEMP=$TEMP TMP=$TMP TMPDIR=${TMPDIR:-unset}"; d="$(mktemp -d)"; echo "mktemp=$d pwd=$(cd "$d" && pwd -W)"
-          cd "$d" && git init -q -b main . && echo "toplevel=$(git rev-parse --show-toplevel) common=$(git rev-parse --path-format=absolute --git-common-dir)"
-          git -c user.name=t -c user.email=t@e commit -q --allow-empty -m i && git worktree add -q "$d/wt" -b w1 && git worktree list --porcelain | grep '^worktree'
-          cd "$d/wt" && echo "wt toplevel=$(git rev-parse --show-toplevel) cygpath -l=$(cygpath -l -m "$d/wt")"
       - run: bash tests/run.sh
       - run: bash tests/tune.sh
 
