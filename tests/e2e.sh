@@ -11,7 +11,9 @@ KEEP="${E2E_KEEP:-0}"; WAIT="${E2E_WAIT:-300}"
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
-trap '[ "$KEEP" = 1 ] && echo "kept $TMP" || rm -rf "$TMP"' EXIT
+# the live session leaves its transcripts under ~/.claude/projects/<mangled path>: removed with the rest
+cleanup() { [ "$KEEP" = 1 ] && { echo "kept $TMP"; return; }; rm -rf "$TMP" "$HOME"/.claude/projects/*"$(basename "$TMP" | tr '.' '-')"-app 2>/dev/null; }
+trap cleanup EXIT
 
 # ---- sample project with a local bare remote ----
 git init -q --bare "$TMP/remote.git"
@@ -50,9 +52,10 @@ lines="$(echo "$lines" | sed -E 's/model=[a-z0-9.-]+/model=haiku/; s/subagent_ty
 # ---- one live claude session starts both agents ----
 prompt="Start these two subagents now, both in ONE message so they run in parallel, with the Task/Agent tool. Use exactly the subagent_type, model and prompt of each line. When both have finished, reply with the word DONE and nothing else.
 $lines"
+# no --no-session-persistence: without the agent transcripts SubagentStop has no tokens and does nothing
 echo "live: claude -p haiku, this takes a few minutes"
 t0=$SECONDS
-echo "$prompt" | timeout 600 claude -p --model haiku --permission-mode bypassPermissions --no-session-persistence > "$TMP/claude.out" 2>&1
+echo "$prompt" | timeout 600 claude -p --model haiku --permission-mode bypassPermissions > "$TMP/claude.out" 2>&1
 echo "claude exit $?, $((SECONDS - t0))s: $(tail -n 2 "$TMP/claude.out" | tr '\n' ' ' | cut -c1-160)"
 # ---- from here on no warmd command typed by hand: only watch the hooks work ----
 COMMON="$(git rev-parse --path-format=absolute --git-common-dir)"
