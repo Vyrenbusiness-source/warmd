@@ -124,7 +124,9 @@ transcript() { # file, prompt, last text
     printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"see .warmd/tasks/zz.md"}]}}\n'
     printf 'not json, a torn line\n'
     printf '{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{}}],%s}}\n' "$u"
-    printf '{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":%s}],%s}}\n' "$(jstr "$3")" "$u"
+    printf '{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"working"}],%s}}\n' "$u"
+    printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"ok"}]}}\n'
+    printf '{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":%s}],"usage":{"input_tokens":3,"cache_creation_input_tokens":30,"cache_read_input_tokens":3000,"output_tokens":9}}}\n' "$(jstr "$3")"
   } > "$1"
 }
 stop() { # name, last text [, prompt]: the SubagentStop the session sends for that agent
@@ -145,7 +147,9 @@ stop a "All done.
 DONE warmd/a" > "$TMP/stop.out"; fast "SubagentStop" "$STOP_MS"
 [ "$STOP_RC" = 0 ] && [ ! -s "$TMP/stop.out" ] && ok "SubagentStop prints nothing and exits 0" || no "SubagentStop rc=$STOP_RC out=$(cat "$TMP/stop.out")"
 waitfor 'grep -qF "$W/a	" "$C/warmd-batch-done" 2>/dev/null' || no "job for a never finished: $(tail -3 "$C/warmd-hook.log")"
-[ "$(row a)" = "$(printf '2227\t2\tok')" ] && ok "ledger has the transcript's tokens and calls" || no "ledger row a: $(row a)"
+[ "$(row a)" = "$(printf '6384\t2\tok')" ] && ok "ledger sums tokens over all 3 turns, a turn split in 2 lines once, and counts calls" || no "ledger row a: $(row a), want 6384 = 1115 + 2227 + 3042"
+if [ "$OS" = win ]; then grep -q ' a stopped: .*(detached via cim)' "$C/warmd-hook.log" && ok "job started through Win32_Process.Create, outside the session's tree" || no "job not via cim: $(grep ' a stopped' "$C/warmd-hook.log")"; fi
+waitfor '[ -z "$(ls "$C"/warmd-job-*.sh 2>/dev/null)" ]' && ok "job script removed after the run" || no "job script left: $(ls "$C"/warmd-job-*.sh)"
 pushed a && ok "branch of a pushed" || no "a not pushed: $(tail -3 "$C/warmd-hook.log")"
 [ -s "$C/warmd-batch" ] && [ ! -f "$R/a.txt" ] && ok "first of four stops: no merge yet" || no "merged too early"
 
@@ -181,7 +185,7 @@ waitfor '[ "$(wc -l < "$C/warmd-batch-done")" = 3 ]'
 [ -s "$C/warmd-batch" ] && [ ! -f "$R/a.txt" ] && ok "three of four stopped: still no merge" || no "merged before the last agent"
 stop d "DONE warmd/d"
 waitfor '[ -f "$C/warmd-automerge.log" ] && grep -qE "^(OK|STOP) .*batch" "$C/warmd-automerge.log"' || no "automerge never ended: $(tail -5 "$C/warmd-hook.log")"
-[ "$(row c)" = "$(printf '2227\t2\tescalated')" ] && ok "escalation recorded" || no "ledger c: $(row c)"
+[ "$(row c)" = "$(printf '6384\t2\tescalated')" ] && ok "escalation recorded" || no "ledger c: $(row c)"
 [ -f "$R/a.txt" ] && [ -f "$R/d.txt" ] && [ -f "$R/d1.txt" ] && ok "last stop merged the green branches" || no "not merged: $(cat "$C/warmd-automerge.log")"
 [ ! -f "$R/red" ] && grep -q '^FAIL merge warmd/b' "$C/warmd-automerge.log" && ok "red branch rolled back" || no "red branch: $(cat "$C/warmd-automerge.log")"
 [ -z "$(git -C "$R" status --porcelain -uno)" ] && ! git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null && ok "shared checkout clean after the merges" || no "checkout dirty"
@@ -194,7 +198,7 @@ echo "$out" | grep -q 'last automatic merge' && no "merge result shown twice" ||
 
 stop c "DONE warmd/c"
 waitfor '[ ! -f "$C/warmd-batch" ]' && [ -f "$R/c.txt" ] && ok "relaunched escalation merges and ends the batch" || no "batch not ended: $(cat "$C/warmd-automerge.log")"
-[ "$(row c)" = "$(printf '2227\t2\tok')" ] && ok "second attempt replaces the row of the same tier" || no "ledger c: $(row c)"
+[ "$(row c)" = "$(printf '6384\t2\tok')" ] && ok "second attempt replaces the row of the same tier" || no "ledger c: $(row c)"
 out="$(cd "$R" && printf '{}' | "$WARMD" hook-session)"; out="$(cd "$R" && printf '{}' | "$WARMD" hook-session)"
 [ -z "$out" ] && ok "no batch: SessionStart is silent" || no "no batch output: $out"
 
@@ -204,9 +208,9 @@ printf '%s\n' "$W/c" > "$C/warmd-batch"; printf '%s\tok\n' "$W/c" > "$C/warmd-ba
 mkdir "$C/warmd-automerge.lock"
 (cd "$R" && "$WARMD" hook-merge)
 [ ! -f "$R/c2.txt" ] && [ ! -f "$C/warmd-automerge.log" ] && ok "a held lock means someone else merges" || no "merged under a held lock"
-rmdir "$C/warmd-automerge.lock"; echo dirty >> "$R/gate.sh"
+echo 999999 > "$C/warmd-automerge.lock/pid"; echo dirty >> "$R/gate.sh"
 (cd "$R" && "$WARMD" hook-merge)
-grep -q '^STOP the shared checkout is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
+grep -q '^STOP the shared checkout is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "lock of a dead merge taken over; dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
 git -C "$R" checkout -q -- gate.sh
 (cd "$R" && "$WARMD" hook-merge)
 [ -f "$R/c2.txt" ] && [ ! -f "$C/warmd-batch" ] && ok "retry after the fix merges" || no "retry: $(cat "$C/warmd-automerge.log")"
