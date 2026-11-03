@@ -4,11 +4,11 @@
 
 # warmd
 
-**Your coding agent waits less and reads less. Unity tests in 3 seconds instead of 56, and 41 bytes of output instead of 33,323.**
+**Install once. After that warmd runs the slow parts for your coding agent, and you do nothing.**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
-cd your-project && warmd init && warmd check
+cd your-project && warmd init
 ```
 
 [![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
@@ -18,7 +18,7 @@ cd your-project && warmd init && warmd check
 ![Godot](https://img.shields.io/badge/Godot-4-478cbf?logo=godotengine&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-ff7a30)
 
-<img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
+<img src="docs/assets/demo.gif" alt="An agent runs a Unity test, it fails, the agent fixes it and the test passes" width="720">
 
 <sub>Illustrative session. Timings come from [the measurements](docs/MEASURED.md).</sub>
 
@@ -33,88 +33,95 @@ cd your-project && warmd init && warmd check
 
 **Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers).** One click, and others find it.
 
-**[Features](#features) · [Why](#why) · [Install](#install) · [What you get](#what-you-get) · [Measured](#measured) · [Docs](#docs) · [Safety](#safety)**
-
 </div>
 
-A headless daemon and one-command CLI for games, websites and ordinary programs. It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
+## What happens on its own
 
-**Everything stays readable.** Only the output of builds and tests is shortened, never your code. On red you get the error lines with file and line, and the full log stays in `.warmd/run/last.log`.
+`warmd init` installs the engine side, agent definitions and a short instruction block in `CLAUDE.md` or `AGENTS.md`. Your agent reads it and calls warmd by itself. From then on:
 
-## Features
+1. The slow engine, such as the Unity editor or a dev server, stays open between runs.
+2. A passing run stays passing until the code changes.
+3. Only the tests that touch your change run.
+4. Output shrinks to one line on success and the error lines on failure.
+5. Each task goes to the cheapest model tier that fits it.
+6. Larger work splits across parallel agents, each in its own worktree.
+7. Real tokens and dollars are read from the session transcripts.
+8. A watcher reports an agent whose worktree stopped changing.
+9. Finished branches merge into the base branch, and a red result rolls back.
 
-Every number below is measured. Sources: [docs/MEASURED.md](docs/MEASURED.md), [docs/PROOF.md](docs/PROOF.md), [docs/ab.md](docs/ab.md), `tests/`. Your numbers will differ, `warmd bench` measures your own project.
+Your code is never shortened. On red the full log stays in `.warmd/run/last.log`. Details for each step follow. People who want to run a step by hand find the syntax in the [reference](docs/COMMANDS.md).
 
-| Command | What it does | Measured |
-|---|---|---|
-| `warmd check` | Builds, then runs only the tests that mention what you changed. Green runs are cached | Unity test class 56 s → 3 s, repeat 0.4 s |
-| `warmd gain` | Reads your Claude Code transcripts and prints tokens and dollars per session. Offline | A/B on one task: 100,805 → 92,791 tokens, 0.0294 → 0.0238 usd per run ([ab.md](docs/ab.md)) |
-| `warmd init --slim` | Gives agents without a `tools` line the cheapest useful tool set | Start tokens 15,334 → 3,762, Bash adds back 1,867 ([MEASURED.md](docs/MEASURED.md#agent-start-cost-warmd-init---slim)) |
-| `warmd layout` | Layout problems as text lines at desktop and phone width, no screenshot | Test: `tests/layout.sh` |
-| `warmd shot` | Desktop and 390 px phone screenshot, sized to cost few tokens | 2 screenshots in 1.3 s |
-| `warmd map <file>` | Outline with line numbers instead of the whole file | Test: `tests/run.sh` |
-| `warmd watch` | Runs in the background and ends when an agent stalls or the batch is over | Test: `tests/run.sh` |
-| `warmd handoff` | Context filling up: saves state and prints the line for a fresh agent | Test: `tests/run.sh` |
-| `warmd perf` | Compares load time and bundle size to a stored baseline, refuses a regression over 5% | Test: `tests/perf.sh` |
-| `warmd audit` | Shows what your agents really pay for, biggest cost first | Test: `tests/run.sh` |
-| `warmd report` | Cost per model tier and what escalation wasted | Test: `tests/ledger.sh` |
-| `warmd update` | Fetches the newest version, only when you run it | Only runs on request, nothing is fetched otherwise |
+## Warm engine
 
-**Faster inner loop ([MEASURED.md](docs/MEASURED.md#code-hash-speed-code_key)).** The code hash behind the cache needs fewer process forks. With 40 changed files it takes 115 ms instead of 662 ms per call (10-call average). With 1 changed file it stays at about 100 ms. A green-cache hit no longer waits for a slot in the queue.
+The engine stays open between runs, so no call pays the start again. Unity runs as a headless editor, a web project as a dev server, Godot starts fresh in 0.2 s.
 
-## Why
+**Measured:** one Unity test class takes 3 s instead of 56 s on a large HDRP project.
 
-An AI agent working on a game spends most of its time waiting for the engine, and every wait gets paid for again in context. A 300-line build log costs tokens on each following turn. A second run of the same test costs the same minute again.
+![Bars: Unity test class 56 s to 3 s, PlayMode 54 s to 26 s and 8 s with time lapse, repeat run 0.4 s](docs/assets/speed.png)
 
-| One Unity test run | Plain test command | warmd |
-|---|---|---|
-| Time, one test class, large project | 56 s | 3 s |
-| Time, same code run again | 3 s | 0.4 s |
-| Output the agent reads | 33,323 bytes | 41 bytes |
+## Green cache
 
-The 56 s baseline comes from a private project. Method and raw output: [PROOF.md](docs/PROOF.md).
+A passing run stays passing until the code changes, across all worktrees. Red is never cached.
 
-## Every advantage, one sentence
+**Measured:** a repeat run with unchanged code takes 0.4 s instead of 3 s. The hash behind the cache takes 115 ms instead of 662 ms with 40 changed files ([MEASURED.md](docs/MEASURED.md#code-hash-speed-code_key)).
 
-### Speed
+## Affected tests only
 
-![Bars: Unity test class 56 s to 3 s, PlayMode 54 s to 26 s and 8 s with --speed 8, repeat run 0.4 s](docs/assets/speed.png)
+After a change warmd builds, then runs only the tests that mention what changed.
 
-- **Warm engine.** The Unity editor or the web dev server stays open between runs, so no call pays the start again.
-- **`warmd check`.** Builds, then runs only the tests that mention what you changed.
-- **Green cache.** A passing run stays passing until the code changes, across all worktrees. Red is never cached.
-- **`warmd bench`.** Measures cold, warm and cached timings on your own project, so you can check every number here.
+**Measured:** Vitest runs the touched test in 1.9 s instead of 4 s for all.
 
-### Tokens
+## Short output
+
+The agent reads one line when a run is green. When it is red it reads only the error lines, with file and line where the stack allows it.
+
+**Measured:** 33,323 bytes become 41 bytes for a green Unity run. These figures are per test run, not per session.
 
 ![Bars: Unity green 33,323 to 41 bytes, Vitest green 270 to 11, Vitest red 877 to 490](docs/assets/tokens.png)
 
-- **Short output.** One line on success. On failure only the error lines, with file and line where the stack allows it. These figures are per test run, not per session.
-- **`warmd shot`.** A desktop and a real 390 px phone screenshot in about 1.3 seconds, sized to cost few tokens.
-- **`warmd map <file>`.** An outline with line numbers instead of reading the whole file.
-- **`warmd audit`.** Shows what your agents really pay for, biggest cost first.
+## Cheap models first
 
-### Many agents
+Each task is routed to the cheapest tier that fits. The cheap tier only reads. Anything that edits a file starts at the mid tier. After a failure the same task moves up one tier with the earlier commits as context, and an area that needed it twice starts higher next time. A project can set its lowest tier.
 
-![Flow: task list, warmd split, Haiku, Sonnet and Opus each in a worktree, warmd merge with rollback, warmd escalate](docs/assets/flow.png)
+The aliases `haiku`, `sonnet` and `opus` follow new releases, so nothing needs changing when a model ships.
 
-- **`warmd split`.** Turns a task list into worktrees, model tiers and one-line prompts. Haiku only reads, edits start at Sonnet.
-- **Shared brief.** All agents of a batch read one short file. `warmd note "..."` adds a finding, so the next agent skips that search.
-- **`warmd escalate`.** After a failure the same task goes to the next tier, with the earlier commits as context. Areas that needed it twice start higher next time.
-- **Routing you control.** `floor=mid` or `floor=top` sets the lowest tier. The aliases `haiku`, `sonnet` and `opus` follow new releases, so nothing needs changing when a model ships.
-- **`warmd finish`.** Pushes and prints a one-line report from git and the last run.
-- **`warmd merge`.** Runs the checks on the merged result and rolls back on red.
+## Parallel agents
 
-### Safe by design
+A task list becomes worktrees, model tiers and one-line prompts. All agents of a batch read one short shared brief and add findings to it, so the next agent skips that search. When context fills up, the state is saved and a fresh agent continues.
+
+![Flow: task list, split, Haiku, Sonnet and Opus each in a worktree, merge with rollback, escalate](docs/assets/flow.png)
+
+## Real tokens and dollars
+
+warmd reads the session transcripts on disk and prints tokens and dollars per session, and the cost per tier including what escalation wasted. Everything is offline, prices come from a table you can override.
+
+**Measured:** the same small task with and without warmd, real A/B: 100,805 against 92,791 tokens and 0.0294 against 0.0238 USD per run. Two runs per arm, so this is a direction and not a proof ([docs/ab.md](docs/ab.md)).
+
+## Cheaper agent start
+
+Every subagent pays for its tools, instructions and plugins before its first step. warmd gives project agents without a tool list the cheapest useful set and shows what each source costs.
+
+**Measured:** start tokens fall from 15,334 to 3,762. Adding `Bash` brings back 1,867. Per source: user plugins and hooks +3,184, `CLAUDE.md` +1,713, skills +1,261, one MCP server +244 ([MEASURED.md](docs/MEASURED.md#agent-start-cost-warmd-init---slim)).
+
+## Safe merges
+
+Finished branches merge one by one into the base branch. The merged result runs the project's own checks, and a red result rolls back. A merge starts only from a clean checkout.
+
+## Web checks
+
+A desktop and a real 390 px phone screenshot, sized to cost few tokens. Layout problems also come as plain text lines, such as a clipped text or two overlapping boxes, so no image is needed. A stored baseline of load time and bundle size refuses a regression above 5%.
+
+**Measured:** two screenshots with a warm Vite server take 1.3 s.
 
 ![Tiles: functions and protection](docs/assets/features.png)
+
+## Limits that protect your machine
 
 - **Queue.** At most two heavy Unity runs per machine, so six agents do not take the PC down.
 - **One job per daemon.** A second caller waits instead of overwriting the first result.
 - **Merge lock.** While a merge runs in a checkout, other runs there are refused with a clear message.
 - **Caller gone.** A run whose agent or shell has died ends itself and frees the queue.
 - **Idle end.** An idle daemon stops after 30 minutes.
-- **`warmd feedback`.** Prints a prefilled GitHub issue with your bench numbers. Nothing is sent, you decide.
 
 ## Install
 
@@ -122,39 +129,20 @@ The 56 s baseline comes from a private project. Method and raw output: [PROOF.md
 curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
 cd your-project
 warmd init
-warmd check
 ```
-
-`warmd init` installs what your stack needs, adds agent definitions to `.claude/agents`, and adds a short block to `CLAUDE.md` or `AGENTS.md`. Your agent picks it up from there.
 
 Needs bash and git. On Windows, use Git Bash. Pin a version with `WARMD_VERSION_TAG=v0.2.0 bash install.sh`.
 
-## What you get
+## Supported projects
 
 warmd detects the project from its files. There is nothing to configure.
 
-| Stack | Kept warm | `build` | `test` | `shot` |
-|---|---|---|---|---|
-| **Unity** | Headless editor | `dotnet`, no Unity needed | EditMode and PlayMode through the Test Runner API | Your own capture method |
-| **Godot** | Nothing by default, it starts in 0.2 s | Parses every script | Built-in runner, GUT or gdUnit4 | One frame of a scene |
-| **Web** | Dev server | Typecheck and lint | Vitest, Jest or your script | Desktop and phone width |
-| **Rust, Go, Python, .NET** | Nothing to keep warm | `cargo check`, `go build`, `ruff`, `dotnet` | Native test runner | |
-
-Every stack gets the same four things: affected tests, a green cache, short output, and a queue of at most two heavy Unity runs per machine. For web work, `warmd shot` takes a desktop and a real 390 px phone screenshot in about 1.3 seconds, sized to cost few tokens.
-
-Also built in: [cheap models first](docs/AGENTS.md), parallel agents in separate worktrees, a shared brief, safe merges.
-
-## Fits your setup
-
-| Your situation | What you get |
-|---|---|
-| Large Unity project | 95% faster test runs |
-| Godot project | Fresh engine in 0.2 s, plus the cache, affected tests, short output and agent splitting |
-| You already have filtered logs and test tiers | Point `build=` and `test=` at your tools, warmd adds the cache, the queue and worktrees around them |
-| Tokens go to images, long docs and agent context | `warmd audit` shows those costs first, `warmd map` and small screenshots cut them |
-| Quality comes first | Set `floor=mid` or `floor=top`. No task runs below that tier |
-
-The cheap tier only ever reads. Anything that edits a file starts at the mid tier.
+| Stack | Kept warm | Tests | Screenshot |
+|---|---|---|---|
+| **Unity** | Headless editor | EditMode and PlayMode through the Test Runner API | Your own capture method |
+| **Godot** | Nothing by default | Built-in runner, GUT or gdUnit4 | One frame of a scene |
+| **Web** | Dev server | Vitest, Jest or your script | Desktop and phone width |
+| **Rust, Go, Python, .NET** | Nothing to keep warm | Native test runner | |
 
 ## Measured
 
@@ -164,35 +152,23 @@ Windows 10, Unity 6000.4, Godot 4.7, Chrome. Your numbers will differ.
 |---|---|---|
 | Unity, one test class, large HDRP project | 56 s | 3 s |
 | Unity, full PlayMode test, same project | 54 s | 26 s |
-| Same test with `--speed 8` | 54 s | 8 s |
+| Same test with time lapse `--speed 8` | 54 s | 8 s |
 | Unity, repeat with unchanged code | 3 s | 0.4 s |
 | Godot, one test | | 0.9 s |
 | Web, 2 screenshots with a warm Vite server | | 1.3 s |
 
-Numbers are per run. Do not trust them, run them: `warmd bench` measures your own project, and the [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh one on every push. More tables and notes: [MEASURED.md](docs/MEASURED.md), raw output: [PROOF.md](docs/PROOF.md).
-
-## Docs
-
-- [Commands and configuration](docs/COMMANDS.md)
-- [Cheap models first and parallel agents](docs/AGENTS.md)
-- [Measured](docs/MEASURED.md) and [Proof](docs/PROOF.md)
-- [FAQ](docs/FAQ.md)
+Do not trust the numbers, run them. The [public CI run](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh project on every push. More tables and the method: [MEASURED.md](docs/MEASURED.md). Raw output: [PROOF.md](docs/PROOF.md).
 
 ## Safety
 
 warmd is about 2,263 lines of bash plus one C# and one GDScript file. You can read it in one sitting.
 
-- **No network.** It sends nothing anywhere, there is no telemetry. Only `warmd finish` talks to the outside, and only with `git push` to your own remote.
-- **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. `warmd init` adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
-- **What it can undo.** `warmd merge` only starts from a clean checkout. On red it runs `git reset --hard HEAD`, which is safe there because the tree was clean before.
+- **No network.** It sends nothing anywhere, there is no telemetry. Only the final report talks to the outside, and only with `git push` to your own remote.
+- **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. The setup adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
+- **What it can undo.** A merge only starts from a clean checkout. On red it runs `git reset --hard HEAD`, which is safe there because the tree was clean before.
 - **What it kills.** Only processes it started. An editor you opened by hand is never touched, warmd refuses to run instead.
 - **Pin a version.** `WARMD_VERSION_TAG=v0.2.0 bash install.sh`, or clone and read it first.
 
+## More
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: run `bash tests/run.sh`, it needs no engine.
-
-## License
-
-MIT
+[Reference for every command and setting](docs/COMMANDS.md) · [Cheap models and parallel agents](docs/AGENTS.md) · [Measured](docs/MEASURED.md) · [Proof](docs/PROOF.md) · [FAQ](docs/FAQ.md) · [Contributing](CONTRIBUTING.md) · MIT license

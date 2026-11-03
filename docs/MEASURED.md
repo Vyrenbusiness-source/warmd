@@ -29,14 +29,24 @@ Numbers are per run. Repeat them on your own project with `warmd bench`.
 ## Agent start cost (`warmd init --slim`)
 
 Measured 2026-11-03 with real `claude -p` runs on a throwaway project, `SLIM_LIVE=1 bash tests/slim.sh` (function `slim_matrix` in `lib/slim.sh`). Unit: input tokens of the first call of one subagent. Source: commit `b04fe81`.
+Per source, added to a base of 15,334 start tokens (haiku, 13 live runs, 2026-11-03):
 
-| Tool set of the agent | Start tokens |
+| Source | Start tokens added |
 |---|---|
-| All tools (agent has no `tools` line) | 15,334 |
-| `Read, Grep, Glob, Edit, Write` (the `--slim` default) | 3,762 |
-| Same set plus `Bash` | 5,629 (+1,867) |
+| `CLAUDE.md` (40 rules) | +1,713 |
+| 30 skills | +1,261 |
+| 15 agents | -5 |
+| One MCP server with 25 tools | +244 |
+| User plugins and hooks | +3,184 |
 
-The probe project switches each source on and off: `CLAUDE.md` (40 rules), 30 skills, 15 agents, one MCP server with 25 tools. `slim_matrix` prints name, before, after and delta for each source. Run it to get the per-source rows for your own setup. They are not copied here because they depend on your setup.
+Tool sets of one agent, start tokens:
+
+| Tool set | Start tokens |
+|---|---|
+| `Read` | 1,804 |
+| `Read, Grep, Glob` | 3,040 |
+| `Read, Grep, Glob, Edit, Write` (the `--slim` default) | 3,762 |
+| `Bash, Read, Edit, Write` | 5,629 |
 
 ## Code hash speed (`code_key`)
 
