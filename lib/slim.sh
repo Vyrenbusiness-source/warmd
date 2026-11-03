@@ -91,5 +91,5 @@ slim_init() {
     n=$((n + 1))
   done
   echo "OK slim: $n agent(s) now list tools ($tools), $s already did"
-  echo "   add Bash to an agent that needs it: the tool schema costs about 2800 tokens per start"
+  echo "   add Bash to an agent that needs it: the tool schema costs about 1900 tokens per start, measured"
 }
