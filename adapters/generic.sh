@@ -43,7 +43,8 @@ a_check() {
     if [ -n "$CFG_test" ]; then a_test "'$flt'"; else a_test "$flt"; fi
     return
   fi
-  names="$(changed_names '\.(py|rs|go|cs)$')"
+  # With your own test= command warmd cannot know which files matter, so any change counts (shell projects too).
+  if [ -n "$CFG_test" ]; then names="$(changed_names '.')"; else names="$(changed_names '\.(py|rs|go|cs)$')"; fi
   [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
   a_test
 }
