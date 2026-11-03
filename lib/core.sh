@@ -298,6 +298,8 @@ common_status() {
   echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"
   local held=("$CACHE_ROOT"/slots/*); [ -e "${held[0]}" ] || held=()
   echo "heavy runs: ${#held[@]} of $(slots_max)"
+  [ -n "$(type -t team_agents)" ] || . "$WARMD_HOME/lib/team.sh" 2>/dev/null
+  [ -n "$(type -t team_agents)" ] && echo "parallel agents: up to $(team_agents)${CFG_agents:+ (warmd.conf)}"
 }
 
 common_doctor() {

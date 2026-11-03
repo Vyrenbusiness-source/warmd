@@ -81,8 +81,10 @@ One line per saver: what it saves, and why.
 - **Green cache.** Saves the whole run, because a passing result stays valid until the code changes, across all worktrees. Red is never cached.
 - **Affected tests.** Saves test time on large suites, because only the tests that reach the changed files through imports run. On small suites it does not pay off.
 - **Outline instead of the full file.** Saves tokens, because the agent first gets the structure with line numbers and then reads only the lines it needs.
+- **Repo map.** Saves the first round of file reads, because the agent gets the most referenced symbols of the whole project in one short map: 248 instead of 567 tokens on the web sample, 177 instead of 445 on the Python sample.
+- **Tool lists only when needed.** Saves start tokens, because the setup check names every MCP server that loads all its tools up front and the setting that defers them.
 - **Lean agent start.** Saves tokens on every subagent, because each starts with only the tools it needs: 3,762 start tokens instead of 15,334.
-- **Cheapest fitting model.** Saves cost, because a task starts on the cheapest tier that can do it and moves up one tier only after a real failure.
+- **Cheapest fitting model.** Saves cost, because a task starts on the cheapest tier that can do it and moves up one tier on its own after a real failure. A project can set the lowest tier and the number of parallel agents.
 - **Shared brief.** Saves repeated searches, because all agents of a batch read one short file with who owns what and what the others found.
 - **Handoff.** Saves the price of a full context, because an agent near its limit writes down its state and a fresh agent continues from there.
 - **Wake on stall.** Saves idle time, because an agent whose worktree has not moved for 5 minutes is caught and told its next step.
@@ -92,7 +94,7 @@ One line per saver: what it saves, and why.
 
 ## Runs itself
 
-Install once and set up each project once. The setup adds a short block to `CLAUDE.md` or `AGENTS.md`, agent definitions and hooks, and from then on your agent calls warmd by itself. A session that restarts or compacts picks up its batch where it was. When an agent finishes, its real token count is recorded and its branch is pushed. When the last agent of a batch is done, the branches merge with rollback on red. Your code is never shortened.
+Install once and set up each project once. The setup adds a short block to `CLAUDE.md` or `AGENTS.md`, agent definitions and hooks, and from then on your agent calls warmd by itself. A session that restarts or compacts picks up its batch where it was. When an agent finishes, its real token count is recorded and its branch is pushed. When the last agent of a batch is done, the branches merge with rollback on red; with a CI on GitHub they go through one pull request, wait for the checks and merge on green. An agent near its context limit hands over to a fresh one by itself, and a failed task moves to the next model by itself. Your code is never shortened.
 
 The syntax of every step is in the [reference](docs/COMMANDS.md), for when you want to run one by hand.
 
