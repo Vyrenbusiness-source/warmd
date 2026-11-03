@@ -169,9 +169,39 @@ wt_busy() { # worktree
     pid="$(cat "$f" 2>/dev/null)"
     [ -n "$pid" ] && shell_alive "$pid" && return 0
   done
-  local pat; pat="$(native_path "$wt")"; pat="${pat//\\//}"
-  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\\&/g')"
-  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ]
+  # A merge started through Win32_Process.Create (hook_detach) need not share this shell's msys pid table: its Windows pid counts
+  pid="$(cat "$wt/.warmd/merge.owner.win" 2>/dev/null)"
+  [ -f "$wt/.warmd/merge.owner" ] && [ -n "$pid" ] && pid_alive "$pid" && return 0
+  local pat; pat="$(native_path "$wt")"; pat="${pat//\//}"
+  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\&/g')"
+  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ] && return 0
+  wt_ci_wait "$wt"
+}
+
+# Command lines of running gh calls that wait on remote CI: gh run watch, gh pr checks --watch
+gh_watchers() {
+  if [ "$OS" = win ]; then
+    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match 'gh(\.exe)?.? +(run|pr) ' -and \$_.CommandLine -notmatch 'Get-CimInstance' } | ForEach-Object { \$_.CommandLine }" 2>/dev/null | tr -d '\r'
+  else
+    ps -eo args= 2>/dev/null | grep -E '(^|[/ ])gh +(run|pr) ' | grep -v grep
+  fi | grep -E 'run +watch|pr +checks.*--watch'
+}
+
+# An agent that waits on CI for its branch is working: the gh watch names the branch, a PR number or a run id of that branch.
+wt_ci_wait() { # worktree
+  local wt="$1" lines b tok ids want
+  lines="$(gh_watchers)"; [ -n "$lines" ] || return 1
+  b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null)"; [ -n "$b" ] && [ "$b" != HEAD ] || return 1
+  ids=""
+  for tok in $(printf '%s\n' "$lines" | tr -d "\"'"); do
+    [ "$tok" = "$b" ] && return 0
+    case "$tok" in */pull/*|*/runs/*) tok="${tok##*/}";; esac
+    case "$tok" in ''|*[!0-9]*) ;; *) ids="$ids $tok";; esac
+  done
+  [ -n "$ids" ] && command -v gh >/dev/null 2>&1 || return 1
+  want="$( cd "$wt" && { gh pr list --head "$b" --state all --json number -q '.[].number'; gh run list --branch "$b" --limit 30 --json databaseId -q '.[].databaseId'; } 2>/dev/null | tr -d '\r')"
+  for tok in $ids; do printf '%s\n' "$want" | grep -qx "$tok" && return 0; done
+  return 1
 }
 
 # Task name of a worktree: the branch warmd/<name>, else the folder name.
@@ -326,6 +356,8 @@ team_merge() {
     echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
   fi
   MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"; export WARMD_IN_MERGE=1
+  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
+  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
   if [ -n "$CFG_gate" ]; then
