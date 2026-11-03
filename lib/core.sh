@@ -130,22 +130,25 @@ summarize_errors() {
     || { tail -13 "$1" | cut -c1-200; }
 }
 
-# One git call for the tree, one for the file list, one hashes all changed files, one hashes the lot. Names are part of the key, so a deleted or renamed file changes it too.
+# Two git calls (tree, file list) and two sha1sum calls (all changed files in chunks, then the lot). Names are part of the key, so a deleted or renamed file changes it too.
 code_key() {
-  local top="${GIT_ROOT:-}" tree f k list="" paths=""
+  local top="${GIT_ROOT:-}" tree list f k i
+  local -a files=() have=()
   [ -n "$top" ] || return 1
   tree="$(git -C "$top" rev-parse 'HEAD^{tree}' 2>/dev/null)"
-  while IFS= read -r f; do
-    f="${f%$''}"; [ -n "$f" ] || continue
-    list+="$f"$'
-'
-    [ -f "$top/$f" ] && paths+="$f"$'
-'
-  done < <(git -C "$top" ls-files -mo --exclude-standard)
-  k="$({ echo "$tree"; printf '%s' "$list"; [ -n "$paths" ] && printf '%s' "$paths" | git -C "$top" hash-object --no-filters --stdin-paths; } | git hash-object --stdin)"
+  list="$(git -C "$top" ls-files -mo --exclude-standard)"
+  list="${list//$'\r'/}"
+  [ -z "$list" ] || mapfile -t files <<< "$list"
+  for f in "${files[@]}"; do [ -f "$top/$f" ] && have+=("$f"); done
+  k="$(cd "$top" && {
+    echo "$tree"; echo "$list"
+    for (( i = 0; i < ${#have[@]}; i += 100 )); do
+      { sha1sum -- "${have[@]:i:100}" 2>/dev/null || shasum -- "${have[@]:i:100}"; }
+    done
+  } | { sha1sum 2>/dev/null || shasum; })"
   echo "${k:0:20}"
 }
-sha_of() { local k; k="$(printf '%s' "$1" | git hash-object --stdin 2>/dev/null)" || return 1; echo "${k:0:12}"; }
+sha_of() { local k; k="$(printf '%s' "$1" | { sha1sum 2>/dev/null || shasum; })"; echo "${k:0:12}"; }
 
 # A green run stays green until the code changes, across all worktrees. Red is never cached.
 cached() {
