@@ -232,6 +232,12 @@ out="$("$WARMD" merge bad 2>&1)"
 head_sha="$(git log -1 --format=%s)"
 if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red merge passed: $out"; fi
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
+printf 'gate=printf "ok   alpha\\\\nFAIL beta broke\\\\nok   gamma\\\\nFAIL delta broke\\\\n\\\\n2 failed\\\\n"; exit 1\n' >> warmd.conf
+git merge --abort 2>/dev/null; git add warmd.conf; git commit -qm gatecmd
+git checkout -qb side; echo 'side' > side.txt; git add side.txt; git commit -qm side; git checkout -q main
+out="$("$WARMD" merge side 2>&1)"
+expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
+git reset -q --hard HEAD~1; git branch -qD side
 
 for t in ledger digest affected perf tune layout; do
   # The perf test needs a headless Chrome run that does not work on the hosted Windows runner yet
