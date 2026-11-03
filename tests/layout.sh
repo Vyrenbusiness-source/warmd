@@ -41,6 +41,20 @@ out="$("$WARMD" layout clean.html 2>&1)"; rc=$?
 expect "clean page is one OK line" '^OK [0-9]+s layout' "$out"
 [ "$rc" = 0 ] && ok "clean page exits zero" || no "clean page exited $rc"
 
+# GitHub-style hidden parts: screen-reader text clipped to 1x1, a tracking pixel, a faded-out label over the text. None is visible.
+cat > hidden.html <<'HTML'
+<!doctype html><body style="margin:0">
+<p id="t">Visible text stays readable.</p>
+<span id="sr" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap">Skip to content and a long hidden label</span>
+<h2 id="sr2" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"><span>Hidden heading for screen readers</span></h2>
+<img id="px" width="1" height="1" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+<div id="fade" style="position:absolute;top:16px;left:0;opacity:0"><span>Copied!</span></div>
+</body>
+HTML
+out="$("$WARMD" layout hidden.html 2>&1)"; rc=$?
+expect "hidden and 1x1 parts leave a clean page clean" '^OK [0-9]+s layout' "$out"
+[ "$rc" = 0 ] && ok "hidden parts exit zero" || no "hidden parts exited $rc: $(echo "$out" | head -3)"
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE"; rm -rf "$TMP" 2>/dev/null

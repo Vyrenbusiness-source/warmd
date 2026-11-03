@@ -6,10 +6,14 @@ CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
 LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
 PARENT_PID="$PPID"
 on_exit() {
+  local rc=$?
+  # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
+  case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
   [ -n "$SLOT" ] && rm -rf "$SLOT"
+  [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
-  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK"
+  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
   return 0
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
@@ -37,8 +41,9 @@ merge_guard() {
   local f="$STATE/merge.owner" owner
   if [ -f "$f" ]; then
     owner="$(cat "$f" 2>/dev/null)"
-    if shell_alive "$owner"; then echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4; fi
-    rm -f "$f"
+    # A merge started through Win32_Process.Create (hook_detach) may sit outside this shell's msys pid table: its Windows pid counts too
+    if shell_alive "$owner" || { [ -s "$f.win" ] && pid_alive "$(cat "$f.win" 2>/dev/null)"; }; then echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4; fi
+    rm -f "$f" "$f.win"
   fi
   batch_guard
 }
@@ -116,8 +121,11 @@ base_branch() {
 
 # run_bounded <label> <cmd...>: agents see one line on success, the error lines on failure, the rest stays in .warmd/last.log
 run_bounded() {
-  local label="$1" rc; shift
+  local label="$1" rc t; shift
+  t="$(now_ms)"
   "$@" > "$RUN/last.log" 2>&1; rc=$?
+  # Real (uncached) full suite: its time lets warmd check pick the full suite when that is cheaper than build plus selection
+  [ "$label" = test ] && [ "${FULL_RUN:-0}" = 1 ] && echo $(( $(now_ms) - t )) > "$STATE/full.ms" 2>/dev/null
   if [ $rc = 0 ]; then echo "OK $(secs)s $label"; return 0; fi
   echo "FAIL $(secs)s $label (full log: $(native_path "$RUN/last.log"))"
   summarize_errors "$RUN/last.log"
@@ -195,18 +203,29 @@ changed_files() {
   [ -n "$GIT_ROOT" ] || return 0
   local base mb; base="$(base_branch)"
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
-  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb"; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u
+  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
-run_tests() { merge_guard; SLOT_LAZY=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
 
+# Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
+# (full.ms) was faster than the last selective check (check.ms), check runs the full suite instead and stays under it.
 run_check() {
   merge_guard
+  local full chk t rc
+  full="$(cat "$STATE/full.ms" 2>/dev/null)"; chk="$(cat "$STATE/check.ms" 2>/dev/null)"
+  if [ "${WARMD_SELECT:-0}" != 1 ] && [ -n "$full" ] && [ -n "$chk" ] && [ "$full" -lt "$chk" ] 2>/dev/null; then
+    echo "(running all tests: the full suite took ${full}ms, build plus selection ${chk}ms)"
+    run_tests; return
+  fi
+  t="$(now_ms)"
   a_build || return 1
-  a_check
+  a_check; rc=$?
+  echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
+  return $rc
 }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
@@ -283,8 +302,25 @@ common_status() {
 
 common_doctor() {
   echo "detected: $KIND at $(native_path "$PROJECT")"
-  command -v git >/dev/null 2>&1 && echo "ok git" || echo "MISSING git (cache, check and agents need it)"
-  [ -n "$GIT_ROOT" ] && echo "ok git repo" || echo "note: not a git repo, cache and agent commands are off"
+  local fix_git="install git with your package manager" fix_py="install python 3 with your package manager" bin="${WARMD_BIN:-$HOME/.local/bin}"
+  [ "$OS" = win ] && { fix_git="winget install --id Git.Git -e"; fix_py="winget install --id Python.Python.3.12 -e"; }
+  # printf %()T needs bash 4.2, macOS ships 3.2
+  if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" = 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then echo "ok bash $BASH_VERSION"
+  else echo "MISSING bash 4.2 or newer, this is $BASH_VERSION. Fix: $([ "$OS" = win ] && echo "$fix_git" || echo "install a current bash")"; fi
+  command -v git >/dev/null 2>&1 && echo "ok git" || echo "MISSING git (cache, check and agents need it). Fix: $fix_git"
+  [ -n "$GIT_ROOT" ] && echo "ok git repo" || echo "note: not a git repo, cache and agent commands are off. Fix: git init"
+  if command -v warmd >/dev/null 2>&1; then echo "ok warmd on PATH"
+  else echo "MISSING warmd on PATH in this shell. Fix: echo 'export PATH=\"$bin:\$PATH\"' >> ~/.bashrc, then open a new terminal"; fi
+  if [ "$OS" = win ]; then
+    command -v powershell.exe >/dev/null 2>&1 && echo "ok powershell.exe" || echo "MISSING powershell.exe on PATH (process checks need it). Fix: add C:\\Windows\\System32\\WindowsPowerShell\\v1.0 to PATH"
+    # Git Bash takes PATH from Windows, so a folder seen here is seen by PowerShell and cmd too
+    if [ ! -f "$bin/warmd.cmd" ]; then echo "MISSING warmd.cmd, PowerShell and cmd cannot start warmd. Fix: run install.sh again in Git Bash"
+    else case ":$PATH:" in *":$bin:"*) echo "ok warmd.cmd for PowerShell and cmd";;
+      *) echo "MISSING $(native_path "$bin") on the Windows user PATH. Fix: run install.sh again, or in PowerShell: [Environment]::SetEnvironmentVariable('Path', \"\$([Environment]::GetEnvironmentVariable('Path','User'));$(cygpath -w "$bin" 2>/dev/null)\", 'User')";; esac; fi
+  fi
+  # The Store alias python.exe exists but runs nothing, so try a real import
+  local p ok_py=""; for p in python3 python; do "$p" -c 'import json' >/dev/null 2>&1 && { ok_py="$p"; break; }; done
+  [ -n "$ok_py" ] && echo "ok $ok_py (agent hooks)" || echo "MISSING python (only agent hooks need it, warmd init works without). Fix: $fix_py"
 }
 
 # What an agent pays for before it does anything. Tests are rarely the biggest cost, this shows the real one.

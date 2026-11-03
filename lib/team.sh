@@ -211,7 +211,8 @@ prewarm() { # worktree
 # A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
 # it ends, and so wakes the session, as soon as an agent has been idle for <minutes> (default 5) or the batch is over.
 # An agent counts as active when a file or a commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it.
-# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3.
+# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued automatic lines (lib/auto.sh) end it the same way.
+# A paused task (its agent stopped, or warmd watch --pause <name>) never alarms until its worktree moves again.
 
 # Does a warmd run or any other process work inside this worktree right now?
 wt_busy() { # worktree
@@ -220,9 +221,39 @@ wt_busy() { # worktree
     pid="$(cat "$f" 2>/dev/null)"
     [ -n "$pid" ] && shell_alive "$pid" && return 0
   done
-  local pat; pat="$(native_path "$wt")"; pat="${pat//\\//}"
-  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\\&/g')"
-  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ]
+  # A merge started through Win32_Process.Create (hook_detach) need not share this shell's msys pid table: its Windows pid counts
+  pid="$(cat "$wt/.warmd/merge.owner.win" 2>/dev/null)"
+  [ -f "$wt/.warmd/merge.owner" ] && [ -n "$pid" ] && pid_alive "$pid" && return 0
+  local pat; pat="$(native_path "$wt")"; pat="${pat//\//}"
+  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\&/g')"
+  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ] && return 0
+  wt_ci_wait "$wt"
+}
+
+# Command lines of running gh calls that wait on remote CI: gh run watch, gh pr checks --watch
+gh_watchers() {
+  if [ "$OS" = win ]; then
+    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match 'gh(\.exe)?.? +(run|pr) ' -and \$_.CommandLine -notmatch 'Get-CimInstance' } | ForEach-Object { \$_.CommandLine }" 2>/dev/null | tr -d '\r'
+  else
+    ps -eo args= 2>/dev/null | grep -E '(^|[/ ])gh +(run|pr) ' | grep -v grep
+  fi | grep -E 'run +watch|pr +checks.*--watch'
+}
+
+# An agent that waits on CI for its branch is working: the gh watch names the branch, a PR number or a run id of that branch.
+wt_ci_wait() { # worktree
+  local wt="$1" lines b tok ids want
+  lines="$(gh_watchers)"; [ -n "$lines" ] || return 1
+  b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null)"; [ -n "$b" ] && [ "$b" != HEAD ] || return 1
+  ids=""
+  for tok in $(printf '%s\n' "$lines" | tr -d "\"'"); do
+    [ "$tok" = "$b" ] && return 0
+    case "$tok" in */pull/*|*/runs/*) tok="${tok##*/}";; esac
+    case "$tok" in ''|*[!0-9]*) ;; *) ids="$ids $tok";; esac
+  done
+  [ -n "$ids" ] && command -v gh >/dev/null 2>&1 || return 1
+  want="$( cd "$wt" && { gh pr list --head "$b" --state all --json number -q '.[].number'; gh run list --branch "$b" --limit 30 --json databaseId -q '.[].databaseId'; } 2>/dev/null | tr -d '\r')"
+  for tok in $ids; do printf '%s\n' "$want" | grep -qx "$tok" && return 0; done
+  return 1
 }
 
 # Task name of a worktree: the branch warmd/<name>, else the folder name.
@@ -257,30 +288,39 @@ agent_dead() { # worktree name -> reason
 team_watch() {
   need_git
   local once=0 limit=5 batch wt age name stalled reason
+  local common live paused
+  common="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)"
+  case "${1:-}" in   # a task whose agent was stopped by hand: watch leaves it alone until its worktree moves again
+    --pause) [ -n "${2:-}" ] || { echo "warmd watch --pause <name>"; return 2; }; auto_pause "$common" "$2"; echo "OK $2 paused, watch skips it until its worktree moves"; return 0;;
+  esac
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-5}"
-  batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  batch="$common/warmd-batch"
+  auto_drain "$common" && return 3
   [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
   while :; do
+    auto_drain "$common" && return 3   # an automatic escalation waits for the session to start the next agent
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
-    stalled=0
+    stalled=0; live=0; paused=""
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
       name="$(wt_task "$wt")"
+      if auto_paused "$common" "$name" "$wt"; then paused="$paused $name"; continue; fi   # no agent runs there, nothing to wake
       grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
       if reason="$(agent_dead "$wt" "$name")"; then
         echo "DEAD $name: died at start, no commit. Reason: $reason. Fix the cause, then start it again: \"Read $(native_path "$STATE/tasks/$name.md") and do it.\""
         echo "$name" >> "$batch-dead"; stalled=1; continue
       fi
+      live=1
       age="$(wt_idle "$wt" "$limit" "$batch")"
       if [ "$age" -gt 0 ]; then
-        name="$(wt_task "$wt")"
         echo "WAKE $name: idle $age min in $(native_path "$wt"). Send to the $name agent: \"Idle for $age minutes. Reply in one line with your state and next step, or run: warmd handoff $name \\\"what is done\\\" \\\"what is next\\\" and end with its AGENT line.\""
         stalled=1
       fi
     done < "$batch"
     [ $stalled = 1 ] && return 3
-    [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes"; return 0; }
+    [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
+    [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
     sleep 30
   done
 }
@@ -343,8 +383,13 @@ team_escalate() {
   area="$(area_of "$(sed -n 's/^Files you own: //p' "$f")")"
   printf 'escalated\t%s\n' "$area" >> "$STATE/history.tsv"
   grep -q '^Earlier attempt' "$f" || echo "Earlier attempt failed. Read its commits on this branch first, then take a different approach." >> "$f"
+  # The earlier commits as context: the next tier starts from what was tried, not from zero
+  local log; log="$(git -C "$GIT_ROOT" log --format='%h %s' "$(base_branch)..warmd/$name" 2>/dev/null | head -8 | cut -c1-72 | awk 'NR>1{printf "; "}{printf "%s",$0}')"
+  sed -i.bak '/^Earlier commits: /d' "$f"; rm -f "$f.bak"
+  [ -n "$log" ] && echo "Earlier commits: $log" >> "$f"
   echo "$next" > "$STATE/tasks/$name.tier"
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
+  handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
   echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.\""
 }
 
@@ -403,6 +448,8 @@ team_merge() {
     echo "$out" | grep -q "Already up to date" && { echo "OK nothing to merge"; return 0; }
   fi
   MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"; export WARMD_IN_MERGE=1
+  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
+  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
   if [ -n "$CFG_gate" ]; then
@@ -411,3 +458,5 @@ team_merge() {
   if [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return 1; }; fi
   git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }
+
+. "$WARMD_HOME/lib/auto.sh"
