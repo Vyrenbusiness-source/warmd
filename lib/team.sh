@@ -158,29 +158,63 @@ prewarm() { # worktree
 }
 
 # A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
-# it ends, and so wakes the session, as soon as a worktree has not changed for <minutes> or the batch is over.
+# it ends, and so wakes the session, as soon as an agent has been idle for <minutes> (default 5) or the batch is over.
+# An agent counts as active when a file or a commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it.
+# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3.
+
+# Does a warmd run or any other process work inside this worktree right now?
+wt_busy() { # worktree
+  local wt="$1" f pid
+  for f in "$wt/.warmd/job.lock/pid" "$wt/.warmd/merge.owner"; do
+    pid="$(cat "$f" 2>/dev/null)"
+    [ -n "$pid" ] && shell_alive "$pid" && return 0
+  done
+  local pat; pat="$(native_path "$wt")"; pat="${pat//\\//}"
+  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\\&/g')"
+  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ]
+}
+
+# Task name of a worktree: the branch warmd/<name>, else the folder name.
+wt_task() { # worktree
+  local b; b="$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  case "$b" in warmd/*) echo "${b#warmd/}";; *) basename "$1";; esac
+}
+
+# Minutes since the last movement in a worktree, 0 while a run or process is active.
+wt_idle() { # worktree limit batchfile
+  local wt="$1" limit="$2" batch="$3" last started
+  if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.warmd/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)" ]; then echo 0; return; fi
+  # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
+  last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; started="$(date -r "$batch" +%s 2>/dev/null || echo 0)"
+  [ "$started" -gt "$last" ] && last="$started"
+  local age=$(( ($(date +%s) - last) / 60 ))
+  [ "$age" -lt "$limit" ] && { echo 0; return; }
+  wt_busy "$wt" && { echo 0; return; }
+  echo "$age"
+}
+
 team_watch() {
   need_git
-  local once=0 limit=15 batch wt fresh age last started
+  local once=0 limit=5 batch wt age name stalled
   [ "${1:-}" = --once ] && { once=1; shift; }
-  limit="${1:-15}"
+  limit="${1:-5}"
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
   while :; do
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
+    stalled=0
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
-      fresh="$(find "$wt" -type f -mmin "-$limit" -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.warmd/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)"
-      if [ -z "$fresh" ]; then
-        # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
-        last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; started="$(date -r "$batch" +%s 2>/dev/null || echo 0)"
-        [ "$started" -gt "$last" ] && last="$started"
-        age=$(( ($(date +%s) - last) / 60 ))
-        if [ "$age" -ge "$limit" ]; then echo "STALLED $(native_path "$wt"): nothing changed for $limit minutes"; return 3; fi
+      age="$(wt_idle "$wt" "$limit" "$batch")"
+      if [ "$age" -gt 0 ]; then
+        name="$(wt_task "$wt")"
+        echo "WAKE $name: idle $age min in $(native_path "$wt"). Send to the $name agent: \"Idle for $age minutes. Reply in one line with your state and next step, or run: warmd handoff $name \\\"what is done\\\" \\\"what is next\\\" and end with its AGENT line.\""
+        stalled=1
       fi
     done < "$batch"
+    [ $stalled = 1 ] && return 3
     [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes"; return 0; }
-    sleep 60
+    sleep 30
   done
 }
 

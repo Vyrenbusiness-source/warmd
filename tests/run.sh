@@ -128,8 +128,24 @@ GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty -
 expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 out="$("$WARMD" watch --once 15)"; rc=$?
-expect "watch reports a stalled agent" 'STALLED .*footer' "$out"
+expect "watch reports a stalled agent" 'WAKE footer: idle' "$out"
 [ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"
+expect "the wake line carries the message for the session" 'Send to the footer agent: .*warmd handoff footer' "$out"
+out="$("$WARMD" watch --once)"; rc=$?
+expect "idle for hours alarms with the default limit" 'WAKE footer' "$out"
+[ "$rc" = 3 ] && ok "default limit alarm exits 3" || no "default alarm exited $rc"
+mkdir -p "$wtw/.warmd/job.lock"; echo $$ > "$wtw/.warmd/job.lock/pid"
+out="$("$WARMD" watch --once)"; rc=$?
+expect "a running warmd run does not alarm" 'OK all worktrees moved in the last 5' "$out"
+[ "$rc" = 0 ] && ok "a running run exits 0" || no "running run exited $rc"
+rm -rf "$wtw/.warmd/job.lock"
+out="$("$WARMD" watch --once)"
+expect "alarm returns when the run is over" 'WAKE footer' "$out"
+touch "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+GIT_COMMITTER_DATE="$(date -u +%FT%T)" git -C "$wtw" commit -q --allow-empty -m new
+expect "a fresh commit does not alarm" 'OK all worktrees moved' "$("$WARMD" watch --once)"
+touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+git -C "$wtw" commit -q --amend --allow-empty --date='2020-01-01T00:00:00' -m old
 out="$("$WARMD" test 2>&1)"; rc=$?
 expect "the shared checkout refuses runs during a batch" 'batch runs' "$out"
 [ "$rc" = 5 ] && ok "batch refusal has its own exit code" || no "batch refusal exited $rc"
