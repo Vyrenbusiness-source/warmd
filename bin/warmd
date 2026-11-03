@@ -13,6 +13,7 @@ WARMD_VERSION=0.3.0
 . "$WARMD_HOME/lib/team.sh"
 . "$WARMD_HOME/lib/handoff.sh"
 . "$WARMD_HOME/lib/perf.sh"
+. "$WARMD_HOME/lib/layout.sh"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +26,7 @@ Everyday
   warmd check                  build, then only the tests your change touches
   warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
+  warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd map <file>             outline with line numbers instead of reading the file
   warmd audit                  what your agents really pay for, biggest first
   warmd stop                   end the warm process for real
@@ -74,6 +76,7 @@ case "$CMD" in
   check)   run_check;;
   bench)   run_bench "$@";;
   shot)    merge_guard; a_shot "$@";;
+  layout)  merge_guard; layout_run "$@";;
   stop)    a_stop;;
   ping)    job ping;;
   package) a_package;;
