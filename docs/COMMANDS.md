@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md). warmd decides and acts on its own, you rarely type these. This page is the reference for when you want to.
 
-Examples show real output from a throwaway Node project (`tests/ab/sample`, one failing test) and from `tests/fixtures`. Long paths are shortened to `<project>`. Exit code 0 means success, 1 a failed run, 2 a usage error, 3 a stalled agent.
+Examples show real output from a small throwaway Node project with one failing test (not part of the repo) and from `tests/fixtures`. Long paths are shortened to `<project>`. Exit code 0 means success, 1 a failed run, 2 a usage error, 3 a stalled agent.
 
 ## Everyday
 
