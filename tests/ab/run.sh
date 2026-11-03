@@ -5,7 +5,7 @@
 #
 # Usage
 #   tests/ab/run.sh measure <web|py>                 output size, cached repeat time, affected tests. No tokens spent
-#   tests/ab/run.sh tokens <web|py>                  real token count of each captured output (claude -p, haiku, about 4 calls)
+#   tests/ab/run.sh tokens <web|py>                  real token count of each captured output (claude -p, haiku, 5 one-turn calls)
 #   tests/ab/run.sh agent <web|py> [runs=5] [model=haiku]   full agent A/B: fix the bug, plain vs warmd, runs one after another
 #
 # Needs bash (Git Bash on Windows), node + npm, python + pytest, git, claude. Results go to $AB_OUT (default: a temp dir),
@@ -73,7 +73,7 @@ pytest_files() { sed -n 's#^\(tests/test_[a-z_]*\.py\).*#\1#p' "$1" | sort -u | 
 
 # ---- measure: no model calls ----
 measure() {
-  setup_area "$1"; local d="$OUT/$AREA-measure" rows="$OUT/$AREA-measure.tsv" i t0 ms raw_ms=() w_ms=() f n
+  setup_area "$1"; local d="$OUT/$AREA-measure" rows="$OUT/$AREA-measure.tsv" i t0 rms wms raw_ms=() w_ms=() f n
   export XDG_CACHE_HOME="$OUT/$AREA-cache"; rm -rf "$XDG_CACHE_HOME"
   copy_area "$d"; : > "$rows"
   # 1. what an agent reads from one red run
@@ -95,8 +95,9 @@ measure() {
   # 3. one-file change: all tests (plain) vs the tests that reach the file (warmd check)
   for f in "$LEAF" "$SHARED"; do
     ( cd "$d" && git checkout -q -- . && echo "$CMT ab change" >> "$f" )
-    raw_run "$d" > "$OUT/$AREA-raw-all.txt" 2>&1
-    ( cd "$d" && "$WARMD" check ) > "$OUT/$AREA-warmd-check.txt" 2>&1
+    t0="$(now_ms)"; raw_run "$d" > "$OUT/$AREA-raw-all.txt" 2>&1; rms=$(( $(now_ms) - t0 ))
+    # warmd check = compile or typecheck step plus the affected tests, so its time includes the build
+    t0="$(now_ms)"; ( cd "$d" && "$WARMD" check ) > "$OUT/$AREA-warmd-check.txt" 2>&1; wms=$(( $(now_ms) - t0 ))
     cp "$d/.warmd/run/last.log" "$OUT/$AREA-warmd-check-full.txt" 2>/dev/null || : > "$OUT/$AREA-warmd-check-full.txt"
     read -r rf rt < <(count_run "$OUT/$AREA-raw-all.txt")
     read -r wf wt < <(count_run "$OUT/$AREA-warmd-check-full.txt")
@@ -105,6 +106,7 @@ measure() {
       wf="$(sed -n 's/.*affected: \([0-9]*\) test files.*/\1/p' "$OUT/$AREA-warmd-check.txt")"; [ -n "$wf" ] || wf="$rf"
     fi
     printf 'affected %s\t%s files, %s tests\t%s files, %s tests\n' "$f" "$rf" "$rt" "$wf" "$wt" >> "$rows"
+    printf 'check-ms %s\t%s\t%s\n' "$f" "$rms" "$wms" >> "$rows"
     printf 'check-bytes %s\t%s\t%s\n' "$f" "$(wc -c < "$OUT/$AREA-raw-all.txt")" "$(wc -c < "$OUT/$AREA-warmd-check.txt")" >> "$rows"
   done
   echo "== $AREA: measure   (metric, without warmd, with warmd)"
