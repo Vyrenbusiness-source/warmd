@@ -297,6 +297,16 @@ team_board() {
   done
 }
 
+# Why a run went red, in one line: the summary plus the FAIL lines that name the failing tests.
+# Without such lines: the first or last 3 lines of the output.
+red_lines() { # output head|tail
+  local names sum
+  names="$(printf '%s\n' "$1" | grep -E '^[[:space:]]*(FAIL|FAILED|not ok|Failed:?|✗|×)[[:space:]]' | sed 's/^[[:space:]]*//' | head -5 | cut -c1-120 | awk 'NR>1{printf " | "}{printf "%s",$0}')"
+  sum="$(printf '%s\n' "$1" | grep -E '[0-9]+ (failed|failing|failures?)' | tail -1 | sed 's/^[[:space:]]*//' | cut -c1-60)"
+  if [ -n "$names" ]; then echo "${sum:+$sum: }$names" | cut -c1-600
+  else printf '%s\n' "$1" | "${2:-tail}" -3 | tr '\n' ' ' | cut -c1-200; fi
+}
+
 # merge <branch>: only into the base branch, only from a clean tree, then the fastest checks. Red rolls back.
 team_merge() {
   need_git
@@ -319,8 +329,8 @@ team_merge() {
   mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard HEAD; return 1; }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --cached --check 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
   if [ -n "$CFG_gate" ]; then
-    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(echo "$m" | tail -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
-  elif ! m="$(run_check 2>&1)"; then mfail "$(echo "$m" | head -3 | tr '\n' ' ' | cut -c1-200)"; return 1; fi
+    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return 1; fi
+  elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return 1; fi
   if [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return 1; }; fi
   git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }
