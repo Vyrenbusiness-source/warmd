@@ -1,6 +1,6 @@
 # Project detection, config, bounded output, green cache, machine-wide queue, affected tests, code map.
-T0=$(date +%s)
-secs() { echo $(( $(date +%s) - T0 )); }
+printf -v T0 '%(%s)T' -1
+secs() { local n; printf -v n '%(%s)T' -1; echo $(( n - T0 )); }
 TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
 LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
@@ -130,24 +130,33 @@ summarize_errors() {
     || { tail -13 "$1" | cut -c1-200; }
 }
 
+# Two git calls (tree, file list) and two sha1sum calls (all changed files in chunks, then the lot). Names are part of the key, so a deleted or renamed file changes it too.
 code_key() {
-  local top="${GIT_ROOT:-}"
+  local top="${GIT_ROOT:-}" tree list f k i
+  local -a files=() have=()
   [ -n "$top" ] || return 1
-  ( cd "$top" && {
-      git rev-parse 'HEAD^{tree}' 2>/dev/null
-      git ls-files -mo --exclude-standard | tr -d '\r' | sort -u | while IFS= read -r f; do
-        echo "$f"; [ -f "$f" ] && { sha1sum < "$f" 2>/dev/null || shasum < "$f"; }
-      done
-    } | { sha1sum 2>/dev/null || shasum; } | cut -c1-20 )
+  tree="$(git -C "$top" rev-parse 'HEAD^{tree}' 2>/dev/null)"
+  list="$(git -C "$top" ls-files -mo --exclude-standard)"
+  list="${list//$'\r'/}"
+  [ -z "$list" ] || mapfile -t files <<< "$list"
+  for f in "${files[@]}"; do [ -f "$top/$f" ] && have+=("$f"); done
+  k="$(cd "$top" && {
+    echo "$tree"; echo "$list"
+    for (( i = 0; i < ${#have[@]}; i += 100 )); do
+      { sha1sum -- "${have[@]:i:100}" 2>/dev/null || shasum -- "${have[@]:i:100}"; }
+    done
+  } | { sha1sum 2>/dev/null || shasum; })"
+  echo "${k:0:20}"
 }
-sha_of() { printf '%s' "$1" | { sha1sum 2>/dev/null || shasum; } | cut -c1-12; }
+sha_of() { local k; k="$(printf '%s' "$1" | { sha1sum 2>/dev/null || shasum; })"; echo "${k:0:12}"; }
 
 # A green run stays green until the code changes, across all worktrees. Red is never cached.
 cached() {
-  local what="$1" key f tmp rc; shift
-  key="$(code_key)" || { "$@"; return $?; }
+  local what="$1" key f tmp rc line; shift
+  key="$(code_key)" || { slot_now; "$@"; return $?; }
   f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
-  if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then echo "OK cached, code unchanged: $(cat "$f")"; return 0; fi
+  if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
+  slot_now
   tmp="$(mktemp)"; "$@" > "$tmp"; rc=$?; cat "$tmp"
   if [ $rc = 0 ]; then
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
@@ -160,17 +169,22 @@ cached() {
 slots_max() { tune_slots; }
 slot_try() {
   [ -n "$SLOT" ] && return 0
-  local i holder dir="$CACHE_ROOT/slots"
-  mkdir -p "$dir"
-  for i in $(seq 1 "$(slots_max)"); do
+  local i n holder dir="$CACHE_ROOT/slots"
+  n="$(slots_max)"
+  for (( i = 1; i <= n; i++ )); do
     if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; SLOT="$dir/$i"; return 0; fi
-    holder="$(cat "$dir/$i/pid" 2>/dev/null)"
+    [ -d "$dir" ] || { mkdir -p "$dir"; i=$((i - 1)); continue; }
+    holder=""; read -r holder 2>/dev/null < "$dir/$i/pid"
     if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "$dir/$i"
     elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$dir/$i"; fi
   done
   return 1
 }
+# While SLOT_LAZY=1 (warmd test) the slot is only taken when the test really runs, a cache hit never queues. cached() ends the lazy mode.
+SLOT_LAZY=0
+slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
+  [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
   echo "(queued: $(slots_max) heavy runs active)"
   until slot_try; do sleep 3; orphan_check; done
@@ -187,7 +201,7 @@ changed_files() {
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
-run_tests() { merge_guard; a_test "$@"; }
+run_tests() { merge_guard; SLOT_LAZY=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; return $rc; }
 
 run_check() {
   merge_guard
@@ -263,7 +277,8 @@ common_update() {
 
 common_status() {
   echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"
-  echo "heavy runs: $(ls "$CACHE_ROOT/slots" 2>/dev/null | wc -l | tr -d ' ') of $(slots_max)"
+  local held=("$CACHE_ROOT"/slots/*); [ -e "${held[0]}" ] || held=()
+  echo "heavy runs: ${#held[@]} of $(slots_max)"
 }
 
 common_doctor() {

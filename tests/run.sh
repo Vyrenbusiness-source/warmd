@@ -5,6 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache"
+# The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
+bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
@@ -51,6 +53,7 @@ echo 'console.error("Error: boom at line 7"); process.exit(1)' >> test.js
 out="$("$WARMD" test)"; rc=$?
 [ "$rc" != 0 ] && ok "red exits non-zero" || no "red exited zero"
 expect "red shows the error line" 'Error: boom at line 7' "$out"
+out="$(echo "$out" | grep -vE '^\((queued|RAM|slot free)')"   # a queue wait adds its own lines, they do not count
 [ "$(echo "$out" | wc -l | tr -d ' ')" -le 15 ] && ok "red output stays under 15 lines" || no "red output has $(echo "$out" | wc -l) lines"
 expect "red is not cached" '^FAIL' "$("$WARMD" test)"
 git checkout -q test.js
@@ -131,8 +134,24 @@ GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty -
 expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 touch -t "$t2h" "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 out="$("$WARMD" watch --once 15)"; rc=$?
-expect "watch reports a stalled agent" 'STALLED .*footer' "$out"
+expect "watch reports a stalled agent" 'WAKE footer: idle' "$out"
 [ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"
+expect "the wake line carries the message for the session" 'Send to the footer agent: .*warmd handoff footer' "$out"
+out="$("$WARMD" watch --once)"; rc=$?
+expect "idle for hours alarms with the default limit" 'WAKE footer' "$out"
+[ "$rc" = 3 ] && ok "default limit alarm exits 3" || no "default alarm exited $rc"
+mkdir -p "$wtw/.warmd/job.lock"; echo $$ > "$wtw/.warmd/job.lock/pid"
+out="$("$WARMD" watch --once)"; rc=$?
+expect "a running warmd run does not alarm" 'OK all worktrees moved in the last 5' "$out"
+[ "$rc" = 0 ] && ok "a running run exits 0" || no "running run exited $rc"
+rm -rf "$wtw/.warmd/job.lock"
+out="$("$WARMD" watch --once)"
+expect "alarm returns when the run is over" 'WAKE footer' "$out"
+touch "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+GIT_COMMITTER_DATE="$(date -u +%FT%T)" git -C "$wtw" commit -q --allow-empty -m new
+expect "a fresh commit does not alarm" 'OK all worktrees moved' "$("$WARMD" watch --once)"
+touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+git -C "$wtw" commit -q --amend --allow-empty --date='2020-01-01T00:00:00' -m old
 out="$("$WARMD" test 2>&1)"; rc=$?
 expect "the shared checkout refuses runs during a batch" 'batch runs' "$out"
 [ "$rc" = 5 ] && ok "batch refusal has its own exit code" || no "batch refusal exited $rc"
@@ -219,8 +238,14 @@ out="$("$WARMD" merge bad 2>&1)"
 head_sha="$(git log -1 --format=%s)"
 if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red merge passed: $out"; fi
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
+printf 'gate=printf "ok   alpha\\\\nFAIL beta broke\\\\nok   gamma\\\\nFAIL delta broke\\\\n\\\\n2 failed\\\\n"; exit 1\n' >> warmd.conf
+git merge --abort 2>/dev/null; git add warmd.conf; git commit -qm gatecmd
+git checkout -qb side; echo 'side' > side.txt; git add side.txt; git commit -qm side; git checkout -q main
+out="$("$WARMD" merge side 2>&1)"
+expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
+git reset -q --hard HEAD~1; git branch -qD side
 
-for t in ledger digest affected perf tune layout; do
+for t in ledger digest affected perf tune layout docs; do
   # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
   if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))

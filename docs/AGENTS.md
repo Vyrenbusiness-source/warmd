@@ -24,6 +24,7 @@ OK 3 tasks split
 - **Stays current by itself.** Tiers map to the aliases `haiku`, `sonnet` and `opus`, which always point to the newest release. When a new model ships there is nothing to change.
 - **Cheap first, then up.** An agent stops after two failed fixes. `warmd escalate <name>` hands the same task to the next tier, with the earlier commits as context.
 - **It learns.** An area that needed escalation twice starts one tier higher next time.
+- **Wake loop.** `warmd watch` runs in the background after a split. An agent counts as active when a file or commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it. After 5 idle minutes (`warmd watch <minutes>` changes it) it prints one line per idle agent, `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."`, and exits 3. The session sends that message (state and next step, or `warmd handoff`) and starts the watch again. A fresh batch never alarms in its first minutes.
 - **A shared brief.** `warmd split` writes one short file that all agents of a batch read: who owns which file, plus findings. An agent adds a fact with `warmd note "price lives in src/price.ts:3"`, and the next one skips that search. It lives in the git directory, so every worktree sees the same copy and it is never committed. It keeps the newest 40 findings.
 - **One-line reports.** `warmd finish` pushes and prints facts from git and the last run, so a final report costs almost nothing.
 
