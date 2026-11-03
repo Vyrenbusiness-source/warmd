@@ -85,7 +85,7 @@ case "$CMD" in
   package) a_package;;
   call)    a_call "$@";;
   map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *) code_map "$@";; esac;;
-  audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit;;
+  audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit; mcp_audit;;
   feedback) common_feedback;;
   update)  common_update;;
   route)   route_print "$@";;

@@ -44,3 +44,81 @@ context_audit() {
   awk -v s="$rest" -v t="$total" 'BEGIN{printf "  ~%d tokens  %2d%%  rest: system prompt, tool schemas, skill and MCP lists (not in files)\n", s, 100*s/t}'
   echo "tool schemas are the biggest fixed part. Measured by warmd on one machine, cost of one extra tool: Bash ~2800, Grep ~800, Read ~500, Edit ~300, Write ~200, Glob ~100. warmd init writes agents with the fewest tools that still work."
 }
+
+# MCP servers whose tool lists load on every start. Setting names from code.claude.com/docs/en/mcp.md (tool search):
+# ENABLE_TOOL_SEARCH unset or true defers every MCP tool, false loads all upfront, auto or auto:N loads them upfront below N% of the context.
+# A server entry with "alwaysLoad": true loads upfront anyway; "alwaysLoad": false defers it (Claude Code v2.1.287 or later).
+# Denying ToolSearch in permissions or setting CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS loads everything upfront.
+read -r -d '' MCP_AWK <<'EOK' || true
+function nrm(p) { gsub(/[\\]+/, "/", p); sub(/\/+$/, "", p); return tolower(p) }
+function unq(v) { if (v ~ /^"/) { v = substr(v, 2, length(v) - 2); gsub(/\\"/, "\"", v) } return v }
+function at(i) { return el[i] }
+# one value at depth d: el[1..d] is its path
+function val(v,   scope, n) {
+  if (L == "settings") {
+    if (d == 2 && el[1] == "env" && (el[2] == "ENABLE_TOOL_SEARCH" || el[2] == "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")) print "V\t" F "\t" el[2] "\t" unq(v)
+    if (d == 3 && el[1] == "permissions" && el[2] == "deny" && unq(v) ~ /^ToolSearch/) print "D\t" F
+    if (d == 2 && el[1] == "disabledMcpjsonServers") print "X\t" unq(v)
+    return
+  }
+  # server entries: mcpServers.<name> at the top, or projects.<this project>.mcpServers.<name> in ~/.claude.json
+  if (d == 2 && el[1] == "mcpServers") { n = el[2]; scope = F }
+  else if (d == 4 && el[1] == "projects" && nrm(el[2]) == ROOT && el[3] == "mcpServers") { n = el[4]; scope = F " (this project)" }
+  else if (d == 3 && el[1] == "mcpServers" && el[3] == "alwaysLoad") { print "A\t" el[2] "\t" v; return }
+  else if (d == 5 && el[1] == "projects" && nrm(el[2]) == ROOT && el[3] == "mcpServers" && el[5] == "alwaysLoad") { print "A\t" el[4] "\t" v; return }
+  else return
+  if (v == "{") print "S\t" n "\t" scope
+}
+BEGIN { RS = "\001" }
+{
+  s = $0; d = 0; wk[0] = 0
+  while (s != "") {
+    c = substr(s, 1, 1)
+    if (c ~ /[ \t\r\n]/) { s = substr(s, 2); continue }
+    if (c == ":") { wk[d] = 0; s = substr(s, 2); continue }
+    if (c == ",") { if (ty[d] == "o") wk[d] = 1; else el[d] = ++ix[d]; s = substr(s, 2); continue }
+    if (c == "}" || c == "]") { d--; s = substr(s, 2); continue }
+    if (c == "\"") { match(s, /^"([^"\\]|\\.)*"/); tok = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1)
+      if (d > 0 && ty[d] == "o" && wk[d]) { el[d] = unq(tok); continue }
+      val(tok); continue }
+    if (c == "{" || c == "[") { val("{"); d++; ty[d] = (c == "{" ? "o" : "a"); wk[d] = (c == "{"); ix[d] = 0; el[d] = 0; s = substr(s, 2); continue }
+    match(s, /^[^ \t\r\n,:}\]]+/); if (RLENGTH < 1) break
+    val(substr(s, 1, RLENGTH)); s = substr(s, RLENGTH + 1)
+  }
+}
+EOK
+
+mcp_audit() {
+  local root="${GIT_ROOT:-$PROJECT}" f tmp out ts="" tsf="" up=0 n=0 name scope al line
+  tmp="$(mktemp -d)"
+  for f in "$root/.claude/settings.local.json" "$root/.claude/settings.json" "$HOME/.claude/settings.json"; do
+    [ -f "$f" ] && awk -v L=settings -v F="${f#"$root/"}" "$MCP_AWK" "$f" >> "$tmp/set"
+  done
+  for f in "$HOME/.claude.json" "$root/.mcp.json"; do
+    [ -f "$f" ] && awk -v L=servers -v F="$( [ "$f" = "$root/.mcp.json" ] && echo .mcp.json || echo '~/.claude.json')" -v ROOT="$(native_path "$root" | sed 's#\\#/#g; s#/*$##' | tr 'A-Z' 'a-z')" "$MCP_AWK" "$f" >> "$tmp/srv"
+  done
+  touch "$tmp/set" "$tmp/srv"
+  echo "MCP servers (a tool list loaded upfront is paid on every turn):"
+  if ! grep -q '^S' "$tmp/srv"; then echo "  none configured"; rm -rf "$tmp"; return 0; fi
+  # first match wins: the shell, then settings.local.json, settings.json, ~/.claude/settings.json
+  if [ -n "${ENABLE_TOOL_SEARCH+x}" ]; then ts="$ENABLE_TOOL_SEARCH"; tsf="your shell"
+  else line="$(awk -F'\t' '$1 == "V" && $3 == "ENABLE_TOOL_SEARCH" { print $2 "\t" $4; exit }' "$tmp/set")"; [ -n "$line" ] && { tsf="${line%%	*}"; ts="${line#*	}"; }; fi
+  case "$ts" in
+    false) echo "  ENABLE_TOOL_SEARCH=false ($tsf): every MCP tool loads upfront. Fix: remove it, or set \"ENABLE_TOOL_SEARCH\": \"true\" in the env block of .claude/settings.json"; up=1;;
+    auto*) echo "  ENABLE_TOOL_SEARCH=$ts ($tsf): MCP tools load upfront while they stay under the threshold. Fix: set \"ENABLE_TOOL_SEARCH\": \"true\" in the env block of .claude/settings.json"; up=1;;
+  esac
+  if [ -n "${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-}" ] || grep -q '^V	[^	]*	CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS	.' "$tmp/set"; then
+    echo "  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is set: tool search stays off, every MCP tool loads upfront. Fix: unset it"; up=1; fi
+  if grep -q '^D' "$tmp/set"; then
+    echo "  permissions deny ToolSearch ($(grep '^D' "$tmp/set" | cut -f2 | head -1)): every MCP tool loads upfront. Fix: remove \"ToolSearch\" from permissions.deny"; up=1; fi
+  while IFS="$(printf '\t')" read -r _ name scope; do
+    [ "$scope" = .mcp.json ] && grep -qxF "X	$name" "$tmp/set" && continue
+    n=$((n + 1))
+    al="$(awk -F'\t' -v n="$name" '$1 == "A" && $2 == n { v = $3 } END { print v }' "$tmp/srv")"
+    if [ "$al" = true ]; then echo "  upfront   $name  ($scope, \"alwaysLoad\": true). Fix: set \"alwaysLoad\": false in that entry (Claude Code v2.1.287+)"
+    elif [ $up = 1 ]; then echo "  upfront   $name  ($scope)"
+    else echo "  deferred  $name  ($scope)"; fi
+  done < <(grep '^S' "$tmp/srv")
+  echo "  $n servers. Deferred servers cost only their tool names at start; an upfront server costs its full tool schemas on every turn."
+  rm -rf "$tmp"
+}
