@@ -92,6 +92,7 @@ case "$CMD" in
   board)   team_board;;
   merge)   team_merge "$@";;
   perf)    perf_run "$@";;
+  gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init;;
   doctor)  common_doctor; a_doctor;;
