@@ -2,6 +2,8 @@
 
 Back to the [README](../README.md).
 
+**Which operating system does it support?**
+Windows only, in Git Bash. The numbers were measured on Windows 10, and CI runs on `windows-latest`. Other systems are not tested.
 
 **How do I run Unity tests from the command line without reopening the editor?**
 `warmd init`, then `warmd test MyTests`. The first call starts Unity with `-batchmode -nographics` and leaves it open. Later calls reuse it through the Test Runner API and survive domain reloads.
