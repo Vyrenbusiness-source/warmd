@@ -125,6 +125,8 @@ expect "watch sees moving worktrees" 'OK all worktrees moved' "$("$WARMD" watch 
 wtw="$(dirname "$PWD")/.warmd-worktrees/app/footer"
 find "$wtw" -type f -not -path '*/.git/*' -exec touch -d '2 hours ago' {} +
 GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
+expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
+touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 out="$("$WARMD" watch --once 15)"; rc=$?
 expect "watch reports a stalled agent" 'STALLED .*footer' "$out"
 [ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"
