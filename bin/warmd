@@ -46,6 +46,7 @@ Agents
 
 Setup
   warmd init                   install the engine side, agent definitions and instructions
+  warmd init --slim            also give project agents without a tools line the cheapest useful set
   warmd doctor                 check what is missing
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
@@ -94,7 +95,7 @@ case "$CMD" in
   perf)    perf_run "$@";;
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
-  init)    common_init; a_init;;
+  init)    common_init; a_init; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
   doctor)  common_doctor; a_doctor;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac
