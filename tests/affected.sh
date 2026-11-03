@@ -24,6 +24,12 @@ sel() {
     && affected_select "${@:2}" && echo "$AFF_MODE|$AFF_FILES|$AFF_REASON|$AFF_CLASSES" )
 }
 
+# ---- git noise: with core.autocrlf=true git warns on stderr about LF files, the selection must stay quiet ----
+d="$(fixture js crlf)"; git -C "$d" config core.autocrlf true
+echo '// edit' >> "$d/src/leaf.ts"
+refuse "crlf: the git LF/CRLF warning does not leak" 'CRLF|warning:' "$(sel "$d" js 2>&1 >/dev/null)"
+expect "crlf: the selection still works" '^SOME\|test/top\.test\.ts\|' "$(sel "$d" js 2>/dev/null)"
+
 # ---- JS and TS ----
 d="$(fixture js js)"
 echo '// edit' >> "$d/src/leaf.ts"

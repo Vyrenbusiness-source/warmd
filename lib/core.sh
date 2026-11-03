@@ -37,8 +37,9 @@ merge_guard() {
   local f="$STATE/merge.owner" owner
   if [ -f "$f" ]; then
     owner="$(cat "$f" 2>/dev/null)"
-    if shell_alive "$owner"; then echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4; fi
-    rm -f "$f"
+    # A merge started through Win32_Process.Create (hook_detach) may sit outside this shell's msys pid table: its Windows pid counts too
+    if shell_alive "$owner" || { [ -s "$f.win" ] && pid_alive "$(cat "$f.win" 2>/dev/null)"; }; then echo "FAIL a merge is running in this checkout, work in your own worktree"; exit 4; fi
+    rm -f "$f" "$f.win"
   fi
   batch_guard
 }
@@ -195,7 +196,7 @@ changed_files() {
   [ -n "$GIT_ROOT" ] || return 0
   local base mb; base="$(base_branch)"
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
-  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb"; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u
+  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
