@@ -69,22 +69,28 @@ function val(v,   scope, n) {
   else return
   if (v == "{") print "S\t" n "\t" scope
 }
-BEGIN { RS = "\001" }
+# Records split at every quote: text outside strings and string bodies alternate, so a large ~/.claude.json stays linear.
+BEGIN { RS = "\""; d = 0; wk[0] = 0; ins = 0 }
+ins {
+  buf = buf $0
+  if (match($0, /\\+$/) && RLENGTH % 2) { buf = buf "\""; next }
+  tok = "\"" buf "\""; buf = ""; ins = 0
+  if (d > 0 && ty[d] == "o" && wk[d]) el[d] = unq(tok); else val(tok)
+  next
+}
 {
-  s = $0; d = 0; wk[0] = 0
-  while (s != "") {
-    c = substr(s, 1, 1)
-    if (c ~ /[ \t\r\n]/) { s = substr(s, 2); continue }
-    if (c == ":") { wk[d] = 0; s = substr(s, 2); continue }
-    if (c == ",") { if (ty[d] == "o") wk[d] = 1; else el[d] = ++ix[d]; s = substr(s, 2); continue }
-    if (c == "}" || c == "]") { d--; s = substr(s, 2); continue }
-    if (c == "\"") { match(s, /^"([^"\\]|\\.)*"/); tok = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1)
-      if (d > 0 && ty[d] == "o" && wk[d]) { el[d] = unq(tok); continue }
-      val(tok); continue }
-    if (c == "{" || c == "[") { val("{"); d++; ty[d] = (c == "{" ? "o" : "a"); wk[d] = (c == "{"); ix[d] = 0; el[d] = 0; s = substr(s, 2); continue }
-    match(s, /^[^ \t\r\n,:}\]]+/); if (RLENGTH < 1) break
-    val(substr(s, 1, RLENGTH)); s = substr(s, RLENGTH + 1)
+  s = $0; n = length(s); i = 1
+  while (i <= n) {
+    c = substr(s, i, 1)
+    if (c == ":") { wk[d] = 0; i++; continue }
+    if (c == ",") { if (ty[d] == "o") wk[d] = 1; else el[d] = ++ix[d]; i++; continue }
+    if (c == "}" || c == "]") { d--; i++; continue }
+    if (c == "{" || c == "[") { val("{"); d++; ty[d] = (c == "{" ? "o" : "a"); wk[d] = (c == "{"); ix[d] = 0; el[d] = 0; i++; continue }
+    if (c ~ /[ \t\r\n]/) { i++; continue }
+    j = i; while (j <= n && substr(s, j, 1) !~ /[ \t\r\n,:}\]]/) j++
+    val(substr(s, i, j - i)); i = j
   }
+  ins = 1
 }
 EOK
 
