@@ -1,0 +1,3 @@
+# name | goal | done check | files
+mulfn | Create mul.sh with a shell function mul() that prints $1 times $2, and t_mul.sh that sources mul.sh and exits 1 unless mul 3 4 prints 12. Commit both files. | sh test.sh passes | mul.sh,t_mul.sh
+brksub | In sub.sh change sub() so it prints $1 plus $2 instead of $1 minus $2. This is on purpose: the test must turn red. Commit. | sh test.sh fails in t_sub.sh | sub.sh
