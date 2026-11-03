@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -19,6 +19,7 @@ jobs:
       - run: bash tests/run.sh
       - run: bash tests/tune.sh
 
+  # Static check of the scripts only, independent of the target OS (warmd targets Windows)
   shellcheck:
     runs-on: ubuntu-latest
     steps:
@@ -26,19 +27,25 @@ jobs:
       - run: shellcheck --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh
 
   proof:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Public benchmark, numbers appear in the job summary
         run: bash tests/proof.sh | tee -a "$GITHUB_STEP_SUMMARY"
 
   godot:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Install Godot
         run: |
-          curl -fsSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
+          curl -fsSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_win64.exe.zip
           unzip -q godot.zip -d "$HOME/godot"
-          echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+          echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
