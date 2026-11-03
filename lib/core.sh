@@ -121,8 +121,11 @@ base_branch() {
 
 # run_bounded <label> <cmd...>: agents see one line on success, the error lines on failure, the rest stays in .warmd/last.log
 run_bounded() {
-  local label="$1" rc; shift
+  local label="$1" rc t; shift
+  t="$(now_ms)"
   "$@" > "$RUN/last.log" 2>&1; rc=$?
+  # Real (uncached) full suite: its time lets warmd check pick the full suite when that is cheaper than build plus selection
+  [ "$label" = test ] && [ "${FULL_RUN:-0}" = 1 ] && echo $(( $(now_ms) - t )) > "$STATE/full.ms" 2>/dev/null
   if [ $rc = 0 ]; then echo "OK $(secs)s $label"; return 0; fi
   echo "FAIL $(secs)s $label (full log: $(native_path "$RUN/last.log"))"
   summarize_errors "$RUN/last.log"
@@ -206,12 +209,23 @@ changed_files() {
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
-run_tests() { merge_guard; SLOT_LAZY=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
 
+# Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
+# (full.ms) was faster than the last selective check (check.ms), check runs the full suite instead and stays under it.
 run_check() {
   merge_guard
+  local full chk t rc
+  full="$(cat "$STATE/full.ms" 2>/dev/null)"; chk="$(cat "$STATE/check.ms" 2>/dev/null)"
+  if [ "${WARMD_SELECT:-0}" != 1 ] && [ -n "$full" ] && [ -n "$chk" ] && [ "$full" -lt "$chk" ] 2>/dev/null; then
+    echo "(running all tests: the full suite took ${full}ms, build plus selection ${chk}ms)"
+    run_tests; return
+  fi
+  t="$(now_ms)"
   a_build || return 1
-  a_check
+  a_check; rc=$?
+  echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
+  return $rc
 }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.

@@ -4,7 +4,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache" WARMD_NOCACHE=1
+export XDG_CACHE_HOME="$TMP/cache" WARMD_NOCACHE=1 WARMD_SELECT=1   # selection under test, the shortcut has its own block
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
@@ -50,6 +50,25 @@ expect "the reason is named" 'lib/notest.sh has no tests/notest.sh' "$out"
 change warmd.conf
 out="$("$WARMD" check 2>&1)"
 expect "a change no test belongs to runs nothing" '^none$' "$(ran)"
+
+# ---- small suite: when the full run is cheaper than build plus selection, check runs the full suite ----
+S="$TMP/small"; mkdir -p "$S/src" "$S/tests"; cd "$S" || exit 1
+git init -q -b main .; git config core.autocrlf false; git config user.name t; git config user.email t@example.com
+echo 'v=1' > src/a.py; echo 'pass' > tests/test_a.py
+printf 'build=sleep 2\ntest=true\n' > warmd.conf; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+git checkout -qb w1; echo 'v=2' > src/a.py; git commit -qam c
+ms() { local s e; s="$(date +%s%N)"; "$@" >/dev/null 2>&1; e="$(date +%s%N)"; echo $(( (e - s) / 1000000 )); }
+WARMD_SELECT=0 "$WARMD" test >/dev/null 2>&1
+[ -s .warmd/full.ms ] && ok "a full warmd test records its time" || no "full.ms missing"
+WARMD_SELECT=0 "$WARMD" check >/dev/null 2>&1
+[ -s .warmd/check.ms ] && [ "$(cat .warmd/check.ms)" -ge 2000 ] && ok "a selective check records build plus selection" || no "check.ms: $(cat .warmd/check.ms 2>&1)"
+out="$(WARMD_SELECT=0 "$WARMD" check 2>&1)"; t="$(ms env WARMD_SELECT=0 "$WARMD" check)"
+expect "small suite: check runs the full suite instead" '^\(running all tests: the full suite took' "$out"
+[ "$t" -lt 2000 ] && ok "small suite: check ${t}ms stays under build plus selection" || no "small suite: check took ${t}ms, the build alone is 2000ms"
+WARMD_SELECT=1 "$WARMD" check 2>&1 | grep -q 'running all tests: the full suite' && no "WARMD_SELECT=1 still took the shortcut" || ok "WARMD_SELECT=1 keeps the selection"
+echo 9999999 > .warmd/full.ms
+WARMD_SELECT=0 "$WARMD" check 2>&1 | grep -q 'running all tests: the full suite' && no "a slow full suite still took the shortcut" || ok "a slow full suite keeps build plus selection"
+cd "$HERE"
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"

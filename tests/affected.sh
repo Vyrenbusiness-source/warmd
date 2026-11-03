@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FX="$HERE/tests/fixtures/affected"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_CACHE_HOME="$TMP/cache" WARMD_SELECT=1   # selection under test, never the full-suite shortcut
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
