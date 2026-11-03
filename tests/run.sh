@@ -255,7 +255,7 @@ out="$("$WARMD" merge side 2>&1)"
 expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
 git reset -q --hard HEAD~1; git branch -qD side
 
-for t in ledger digest affected perf tune layout docs hook auto team generic install; do
+for t in ledger digest affected perf tune layout docs hook auto team generic install map ship brakes; do
   # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
   if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))

@@ -38,7 +38,7 @@ Everyday
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
-  warmd map <file>             outline with line numbers instead of reading the file
+  warmd map [file]             repo map by import rank, or one outline with line numbers
   warmd audit                  what your agents really pay for, biggest first
   warmd stop                   end the warm process for real
 
@@ -97,8 +97,8 @@ case "$CMD" in
   ping)    job ping;;
   package) a_package;;
   call)    a_call "$@";;
-  map)     code_map "$@";;
-  audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit;;
+  map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *) code_map "$@";; esac;;
+  audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit; mcp_audit;;
   feedback) common_feedback;;
   update)  common_update;;
   route)   route_print "$@";;
