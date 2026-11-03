@@ -161,7 +161,7 @@ prewarm() { # worktree
 # it ends, and so wakes the session, as soon as a worktree has not changed for <minutes> or the batch is over.
 team_watch() {
   need_git
-  local once=0 limit=15 batch wt fresh age
+  local once=0 limit=15 batch wt fresh age last started
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-15}"
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
@@ -172,7 +172,10 @@ team_watch() {
       [ -d "$wt" ] || continue
       fresh="$(find "$wt" -type f -mmin "-$limit" -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.warmd/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)"
       if [ -z "$fresh" ]; then
-        age=$(( ($(date +%s) - $(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)) / 60 ))
+        # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
+        last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; started="$(date -r "$batch" +%s 2>/dev/null || echo 0)"
+        [ "$started" -gt "$last" ] && last="$started"
+        age=$(( ($(date +%s) - last) / 60 ))
         if [ "$age" -ge "$limit" ]; then echo "STALLED $(native_path "$wt"): nothing changed for $limit minutes"; return 3; fi
       fi
     done < "$batch"
