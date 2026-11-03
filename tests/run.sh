@@ -123,10 +123,13 @@ expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd
 expect "split makes a worktree" 'warmd/footer' "$(git worktree list)"
 expect "watch sees moving worktrees" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 wtw="$(dirname "$PWD")/.warmd-worktrees/app/footer"
-find "$wtw" -type f -not -path '*/.git/*' -exec touch -d '2 hours ago' {} +
+# Two hours ago: stalled for watch, still under the 240 minutes after which the batch guard drops the marker.
+# touch -t is the form GNU and BSD touch share, BSD touch has no -d
+t2h=$(( $(date +%s) - 7200 )); t2h="$(date -d "@$t2h" +%Y%m%d%H%M 2>/dev/null || date -r "$t2h" +%Y%m%d%H%M)"
+find "$wtw" -type f -not -path '*/.git/*' -exec touch -t "$t2h" {} +
 GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
 expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
-touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+touch -t "$t2h" "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 out="$("$WARMD" watch --once 15)"; rc=$?
 expect "watch reports a stalled agent" 'STALLED .*footer' "$out"
 [ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"
@@ -218,8 +221,8 @@ if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red m
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
 
 for t in ledger digest affected perf tune layout; do
-  # The perf test needs a headless Chrome run that does not work on the hosted Windows runner yet
-  if { [ "$t" = perf ] || [ "$t" = layout ]; } && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
+  # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
+  if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))
 done
 bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"

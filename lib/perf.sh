@@ -39,12 +39,17 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const url='http://127.0.0.1:'+srv.address().port+'/';
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'warmd-perf-'));
   const ch=cp.spawn(chrome,['--headless=new','--disable-gpu','--no-first-run','--remote-debugging-port=0','--user-data-dir='+dir,'about:blank'],{stdio:['ignore','ignore','pipe']});
-  let port=0,buf='';
+  let port=0,buf='',gone=null;
   ch.stderr.on('data',d=>{buf+=d;const m=buf.match(/ws:\/\/127\.0\.0\.1:(\d+)\//);if(m)port=+m[1];});
-  const done=c=>{try{ch.kill();}catch(e){}srv.close();process.exit(c);};
-  setTimeout(()=>done(1),60000).unref();
-  for(let i=0;i<200&&!port;i++)await sleep(100);
-  if(!port)return done(1);
+  ch.on('error',e=>{gone='error: browser did not start: '+e.message;});
+  let quit='';ch.on('exit',c=>{if(!port)quit=', the browser launcher exited with code '+c;});
+  const done=(c,why)=>{if(why)console.error(why+(buf?' | browser stderr: '+buf.trim().split(/\r?\n/).slice(-3).join(' / '):''));try{ch.kill();}catch(e){}srv.close();process.exit(c);};
+  setTimeout(()=>done(1,'error: load run timed out after 120s'),120000).unref();
+  // The port comes from stderr or from the DevToolsActivePort file, some Windows sessions never deliver Chrome's stderr
+  const portFile=path.join(dir,'DevToolsActivePort');
+  for(let i=0;i<600&&!port&&!gone;i++){await sleep(100);
+    try{const p=+fs.readFileSync(portFile,'utf8').split(/\r?\n/)[0];if(p>0)port=p;}catch(e){}}
+  if(!port)return done(1,gone||'error: no DevTools port from the browser after 60s'+quit);
   const tab=await (await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'})).json();
   const ws=new WebSocket(tab.webSocketDebuggerUrl);await new Promise(r=>ws.onopen=r);
   let id=0;const waits={};
@@ -59,7 +64,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     for(let k=0;k<300&&v==null;k++){await sleep(100);
       const r=await send('Runtime.evaluate',{expression:"(()=>{const n=performance.getEntriesByType('navigation')[0];return n&&n.loadEventEnd>0?n.loadEventEnd:null})()",returnByValue:true});
       v=r.result&&r.result.result?r.result.result.value:null;}
-    if(v==null)return done(1);
+    if(v==null)return done(1,'error: page did not fire load within 30s: '+url);
     vals.push(v);
   }
   vals.sort((a,b)=>a-b);
@@ -82,7 +87,7 @@ perf_collect() {
         if b="$(find_browser)" && command -v node >/dev/null 2>&1; then
           perf_load_js > "$RUN/perf-load.cjs"
           v="$(node "$(native_path "$RUN/perf-load.cjs")" "$(native_path "$d")" "$(native_path "$b")" "$CFG_perf_runs" 2>"$RUN/perf-load.log")" \
-            || { echo "FAIL perf load metric failed: $(grep -m1 -iE "error|fail" "$RUN/perf-load.log" | cut -c1-160)" >&2; return 1; }
+            || { echo "FAIL perf load metric failed: $( { grep -m1 -iE "error|fail" "$RUN/perf-load.log" || tail -1 "$RUN/perf-load.log"; } | cut -c1-200) (browser $b)" >&2; return 1; }
           echo "load_ms10 $v"
         else echo "(no Chrome or node, load metric skipped)" >&2; fi
       else echo "(no build folder, set perf_dir, size metric skipped)" >&2; fi;;
