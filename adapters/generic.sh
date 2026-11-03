@@ -43,10 +43,53 @@ a_check() {
     if [ -n "$CFG_test" ]; then a_test "'$flt'"; else a_test "$flt"; fi
     return
   fi
-  # With your own test= command warmd cannot know which files matter, so any change counts (shell projects too).
+  if [ "$KIND" = none ] && [ -f "$PROJECT/tests/run.sh" ]; then shell_check; return; fi
+  # With your own test= command warmd cannot know which files matter, so any change counts.
   if [ -n "$CFG_test" ]; then names="$(changed_names '.')"; else names="$(changed_names '\.(py|rs|go|cs)$')"; fi
   [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
   a_test
+}
+
+# Shell projects (warmd itself): tests/<name>.sh is the test of lib/<name>.sh and adapters/<name>.sh, tests/<dir>/ belongs
+# to tests/<dir>.sh, docs to tests/docs.sh. The full suite (test= or tests/run.sh) runs only when bin/ or tests/run.sh changed,
+# or a lib or adapter file has no test of its own: tests/run.sh is its test then.
+shell_affected() { # sets SH_MODE (CLEAN, NONE, ALL) and SH_TESTS
+  local f n t
+  SH_MODE=NONE; SH_TESTS=""; SH_REASON=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$SH_MODE" = NONE ] && SH_MODE=LIST
+    t=""
+    case "$f" in
+      bin/*|tests/run.sh) SH_MODE=ALL; SH_REASON="$f changed"; return;;
+      lib/*.sh|adapters/*.sh)
+        n="${f##*/}"; n="${n%.sh}"
+        [ -f "$PROJECT/tests/$n.sh" ] || { SH_MODE=ALL; SH_REASON="$f has no tests/$n.sh"; return; }
+        t="$n";;
+      tests/*.sh) n="${f#tests/}"; n="${n%.sh}"; case "$n" in */*) ;; *) t="$n";; esac;;
+      tests/*/*) n="${f#tests/}"; n="${n%%/*}"; t="$n";;
+      docs/*|README.md|CONTRIBUTING.md) t=docs;;
+    esac
+    [ -n "$t" ] && [ -f "$PROJECT/tests/$t.sh" ] && case " $SH_TESTS " in *" $t "*) ;; *) SH_TESTS="${SH_TESTS:+$SH_TESTS }$t";; esac
+  done < <(changed_files)
+  [ "$SH_MODE" = NONE ] && SH_MODE=CLEAN
+  [ "$SH_MODE" = LIST ] && [ -z "$SH_TESTS" ] && SH_MODE=NONE
+  return 0
+}
+
+shell_check() {
+  shell_affected
+  case "$SH_MODE" in
+    CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
+    NONE) echo "OK no test depends on this change"; return 0;;
+    ALL) echo "(running all tests: $SH_REASON)"
+      if [ -n "$CFG_test" ]; then a_test; else slot_take; cached "test|" run_bounded test in_project bash tests/run.sh; fi; return;;
+  esac
+  local t list=""; for t in $SH_TESTS; do list="${list:+$list }tests/$t.sh"; done
+  echo "(affected: $list)"
+  slot_take
+  # every file runs, the exit code counts the red ones
+  cached "test|sh:$SH_TESTS" run_bounded test in_project bash -c 'f=0; for t in "$@"; do bash "tests/$t.sh" || f=$((f+1)); done; exit $f' _ $SH_TESTS
 }
 
 a_shot() { echo "warmd shot needs a web, Unity or Godot project"; return 2; }
