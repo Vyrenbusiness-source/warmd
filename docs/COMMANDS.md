@@ -70,6 +70,17 @@ warmd map src/cart.js
 ### warmd audit
 Shows what your agents pay for on every turn, biggest cost first.
 
+### warmd run
+Runs any command and keeps its output short: up to 20 lines pass through unchanged, longer output becomes one OK or FAIL line with the error lines, and the full log stays on disk. After `warmd init` the hooks send noisy known commands (test runners, builds, linters) through it on their own.
+
+```text
+warmd run -- git log --oneline -40
+OK exit 0, 40 lines, 3299 B, 0s, raw log <cache>/runs/20261103-190700-1193.log
+aac9096 warmd checks itself on merge, watch test matches the batch start rule
+e4aac13 WIP hook: SessionStart batch state, SubagentStop ledger+push, automerge, init installs hooks
+2e81174 warmd layout: layout problems as text lines at desktop and phone width
+```
+
 ### warmd stop
 Ends the warm process for real. Only processes warmd started are touched.
 
