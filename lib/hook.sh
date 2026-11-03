@@ -281,12 +281,13 @@ hook_merge() { # common dir
   # One merge at a time: the lock holds the system pid of its merge (a job started through CIM lives in another session,
   # its shell pid means nothing here). A dead pid or a lock older than 60 minutes is stale.
   if [ -d "$lock" ]; then
-    pid=""; read -r pid < "$lock/pid" 2>/dev/null
+    pid=""; read -r pid 2>/dev/null < "$lock/pid"
     { [ -n "$pid" ] && ! pid_alive "$pid"; } || [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] && rm -rf "$lock"
   fi
   mkdir "$lock" 2>/dev/null || return 0
   pid=$$; [ -r "/proc/$$/winpid" ] && read -r pid < "/proc/$$/winpid"
-  echo "$pid" > "$lock/pid"
+  echo "$pid" > "$lock/pid"; local me="$pid"
+  hook_unlock() { local p=""; read -r p 2>/dev/null < "$lock/pid"; [ "$p" = "$me" ] && rm -rf "$lock"; }   # never someone else's lock
   main="$(hook_mainwt "$common")"
   {
     echo "$(date '+%F %T') batch finished, merging into $(git -C "$main" branch --show-current) in $main"
@@ -301,7 +302,7 @@ hook_merge() { # common dir
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
         echo "STOP the shared checkout is not ready, batch stays open. Fix it, then run: warmd hook-merge"
-        rm -rf "$lock"; return 0
+        hook_unlock; return 0
       fi
       first=0
     done < "$batch"
@@ -311,7 +312,7 @@ hook_merge() { # common dir
       rm -f "$batch" "$done"; echo "OK batch ended"
     fi
   } >> "$log" 2>&1
-  rm -rf "$lock"; return 0
+  hook_unlock; return 0
 }
 
 hook_settings() { echo "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/settings.local.json"; }

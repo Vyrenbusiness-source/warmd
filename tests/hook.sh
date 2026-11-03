@@ -197,7 +197,7 @@ out="$(cd "$R" && printf '{}' | "$WARMD" hook-session)"
 echo "$out" | grep -q 'last automatic merge' && no "merge result shown twice" || ok "merge result shown once"
 
 stop c "DONE warmd/c"
-waitfor '[ ! -f "$C/warmd-batch" ]' && [ -f "$R/c.txt" ] && ok "relaunched escalation merges and ends the batch" || no "batch not ended: $(cat "$C/warmd-automerge.log")"
+waitfor '[ ! -f "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ]' && [ -f "$R/c.txt" ] && ok "relaunched escalation merges and ends the batch" || no "batch not ended: $(cat "$C/warmd-automerge.log")"
 [ "$(row c)" = "$(printf '6384\t2\tok')" ] && ok "second attempt replaces the row of the same tier" || no "ledger c: $(row c)"
 out="$(cd "$R" && printf '{}' | "$WARMD" hook-session)"; out="$(cd "$R" && printf '{}' | "$WARMD" hook-session)"
 [ -z "$out" ] && ok "no batch: SessionStart is silent" || no "no batch output: $out"
