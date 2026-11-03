@@ -27,6 +27,7 @@ Everyday
   warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
   warmd layout [url|path]      layout problems as text lines, no screenshot
+  warmd run -- <cmd>           run anything, short output, raw log kept on disk
   warmd map <file>             outline with line numbers instead of reading the file
   warmd audit                  what your agents really pay for, biggest first
   warmd stop                   end the warm process for real
@@ -49,6 +50,8 @@ Agents
 Setup
   warmd init                   install the engine side, agent definitions and instructions
   warmd init --slim            also give project agents without a tools line the cheapest useful set
+  warmd init                   install the engine side, agent definitions, instructions and hooks
+  warmd init --no-hooks        remove the hooks (--hooks installs only them)
   warmd doctor                 check what is missing
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
@@ -66,6 +69,7 @@ case "${1:-status}" in
 esac
 
 CMD="${1:-status}"; [ $# -gt 0 ] && shift
+case "$CMD $*" in run\ *|hook-*|init\ *--hooks*|init\ *--no-hooks*) . "$WARMD_HOME/lib/hook.sh"; hook_main "$CMD" "$@"; exit $?;; esac
 detect_project
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
 
@@ -98,7 +102,7 @@ case "$CMD" in
   perf)    perf_run "$@";;
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
-  init)    common_init; a_init; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
+  init)    common_init; a_init; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them";;
   doctor)  common_doctor; a_doctor;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac
