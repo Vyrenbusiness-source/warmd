@@ -3,7 +3,7 @@
 Back to the [README](../README.md).
 
 **Which operating system does it support?**
-Windows only, in Git Bash. The numbers were measured on Windows 10, and CI runs on `windows-latest`. Other systems are not tested.
+Windows only. warmd runs in Git Bash, and the PowerShell install also puts `warmd.cmd` on the PowerShell PATH. The numbers were measured on Windows 10, and CI runs on `windows-latest`. Other systems are not tested.
 
 **How do I run Unity tests from the command line without reopening the editor?**
 `warmd init`, then `warmd test MyTests`. The first call starts Unity with `-batchmode -nographics` and leaves it open. Later calls reuse it through the Test Runner API and survive domain reloads.
@@ -29,8 +29,8 @@ No. It uses the Chrome, Edge or Chromium you already have.
 **Does it work without an AI agent?**
 Yes. It is a fast test runner for people too.
 
-**Is it safe to install with `curl | bash`?**
-Read [install.sh](../install.sh) first, it is 13 lines. You can also clone the repo and run `bin/warmd` directly. See [Safety](../README.md#safety).
+**Is it safe to install with one line?**
+Read [install.sh](../install.sh) first, it is 56 lines. The PowerShell line runs [install.ps1](../install.ps1), 69 lines, which finds Git Bash and then runs the same install.sh. You can also clone the repo and run `bin/warmd` directly. See [Safety](../README.md#safety).
 
 **Does it start my tasks on the cheapest model?**
 Only tasks that read. Editing starts at the mid tier, and `floor=mid` or `floor=top` raises that for the whole project.
