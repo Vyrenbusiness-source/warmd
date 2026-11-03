@@ -72,6 +72,7 @@ wt_reuse() { # name
     [ "$p" = "$main" ] && continue
     # git prints C:/x, the shell uses /c/x: compare one form, or two tasks land in one worktree
     case " ${USED_WT:-} " in *" $(cd "$p" && pwd) "*) continue;; esac
+    grep -qxF "$(cd "$p" && pwd)" "$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch" 2>/dev/null && continue   # an agent of the running batch works there
     wt_free "$p" || continue
     git -C "$p" checkout -q -- . 2>/dev/null
     if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/warmd/$name" >/dev/null; then
@@ -121,13 +122,29 @@ shared_add() { # owner lines
   OWN="$1" awk '$0=="" {blank++; next} $0=="## Findings" && !d {printf "%s", ENVIRON["OWN"]; d=1} {while (blank>0) {print ""; blank--}; print} END {while (blank>0) {print ""; blank--}}' "$f" > "$f.$$" && mv -f "$f.$$" "$f"
 }
 # Files owned by the running batch, from the brief.
-shared_owned() { sed -n '/^## Who owns what/,/^## Findings/s/^- [^:]*: //p' "$(shared_file)" 2>/dev/null | tr ',' ' ' | grep -v '^none$'; }
+shared_owned() { # file@owner words
+  sed -n '/^## Who owns what/,/^## Findings/s/^- \([^:]*\): \(.*\)$/\1 \2/p' "$(shared_file)" 2>/dev/null | while read -r o fs; do
+    [ "$fs" = none ] && continue
+    for f in ${fs//,/ }; do printf '%s@%s ' "$f" "$o"; done
+  done
+}
+# Is this task already part of the running batch? Then a split again reuses it and takes no new place.
+batch_has() { # batchfile name
+  local wt; [ -f "$1" ] || return 1
+  while IFS= read -r wt; do
+    [ -d "$wt" ] && [ "$(wt_task "$wt")" = "$2" ] || continue
+    [ -f "$1-done" ] && cut -f1 "$1-done" | grep -qxF "$wt" && return 1   # stopped: a new start takes a place
+    return 0
+  done < "$1"
+  return 1
+}
 
-# agents= in warmd.conf caps the running tasks. Unset: half the cores and one per 4 GB RAM, the smaller one, at least 1.
+# agents= in warmd.conf caps the running tasks. Unset: one per core and one per 2 GB RAM, the smaller one, at least 1.
+# Agents wait on the API most of the time, so the default is wider than tune_slots; heavy runs still queue through the slots.
 team_agents() {
   if [ -n "${CFG_agents:-}" ]; then echo "$CFG_agents"; return; fi
   local v c r a b n; v="$(hw)"; c="${v% *}"; r="${v#* }"
-  a=$(( c / 2 )); b=$(( r / 4096 ))
+  a=$c; b=$(( r / 2048 ))
   n=$a; [ "$b" -lt "$n" ] && n=$b; [ "$n" -lt 1 ] && n=1
   echo "$n"
 }
@@ -278,15 +295,16 @@ team_split() {
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
-  if [ -f "$batch" ]; then append=1; running="$(team_running "$batch")"; seen="$(shared_owned | tr '\n' ' ')"; fi
+  if [ -f "$batch" ]; then append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
   cap="$(team_agents)"
   while IFS='|' read -r name goal check files <&3; do
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     if [ -n "$files" ] && [ "$files" != none ]; then
       for f in ${files//,/ }; do
-        case " $seen " in *" $f "*) echo "GAP $name: $f already owned in this batch, two agents would collide"; bad=1;; esac
-        seen="$seen $f"
+        # the same task split again owns its files already, any other owner collides
+        case " $seen " in *" $f@"*) case " $seen " in *" $f@$name "*) ;; *) echo "GAP $name: $f already owned in this batch, two agents would collide"; bad=1;; esac;; esac
+        seen="$seen $f@$name"
       done
     fi
     [ -n "$check" ] || { echo "GAP $name: no done check"; bad=1; }
@@ -297,10 +315,11 @@ team_split() {
   while IFS='|' read -r name goal check files <&3; do
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
-    if [ "$running" -ge "$cap" ]; then
+    if [ $append = 1 ] && batch_has "$batch" "$name"; then :
+    elif [ "$running" -ge "$cap" ]; then
       echo "WAIT $name: $running of $cap agents run (agents= in warmd.conf), split it again when one is done"; waited=$((waited+1)); continue
+    else running=$((running+1)); own="$own- $name: ${files:-none}"$'\n'
     fi
-    running=$((running+1)); own="$own- $name: ${files:-none}"$'\n'
     tier="$(route_tier "$goal" "$files")"
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
