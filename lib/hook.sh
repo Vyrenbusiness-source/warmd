@@ -1,6 +1,11 @@
-# Agent hooks: route noisy shell commands through warmd without the agent asking, and bring the task back after a context compaction.
-# Off by default. warmd init --hooks installs, warmd init --no-hooks removes. Only commands on the known list are touched.
-# Written to .claude/settings.local.json (personal, not committed). Entries are recognised by their command ending in "hook-pre" or "hook-session".
+# Agent hooks: warmd runs itself, nobody types a warmd command.
+#   PreToolUse Bash  noisy known commands go through warmd run, short output, raw log kept
+#   SessionStart     after a restart or compaction: the task in a task worktree, the batch state in the shared checkout
+#   SubagentStop     real tokens from the agent's transcript into the ledger, branch pushed; the last agent of a batch
+#                    starts a detached merge of the finished branches (warmd merge, rollback on red) that ends the batch
+# warmd init installs them, warmd init --no-hooks removes them, warmd init --hooks installs only the hooks.
+# Written to .claude/settings.local.json (personal, not committed). Entries are recognised by their command ending in "hook-<name>".
+# A hook never blocks the session for long: anything slower than reading files runs detached.
 CACHE_ROOT="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}"
 HOOK_RAW_MAX="${HOOK_RAW_MAX:-20}"   # output up to this many lines passes through unchanged
 HOOK_KEEP_LOGS="${HOOK_KEEP_LOGS:-30}"
@@ -14,6 +19,9 @@ hook_main() { # command args...
     run)          hook_run "$@";;
     hook-pre)     hook_pre;;
     hook-session) hook_session;;
+    hook-subagent) hook_subagent;;
+    hook-job)     hook_job "$@";;
+    hook-merge)   hook_merge "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)";;
     init)         case " $* " in *" --no-hooks "*) hook_remove;; *) hook_install;; esac;;
   esac
 }
@@ -76,24 +84,187 @@ hook_run() {
   return $rc
 }
 
-# SessionStart with matcher compact: stdout becomes context again after the compaction
-hook_session() {
-  local top common main here f brief
-  cat > /dev/null
-  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
-  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
-  main="$(dirname "$common")"
-  here="$(native_path "$top")"
+# ---- shared lookups, git and files only, so every hook stays far below 2 s ----
+hook_common() { git ${1:+-C "$1"} rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
+hook_mainwt() { git --git-dir="$1" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p'; }   # common dir -> shared checkout
+hook_same() { [ "$(cd "$1" 2>/dev/null && pwd)" = "$(cd "$2" 2>/dev/null && pwd)" ]; }                  # C:/x and /c/x are one path
+hook_task_wt() { sed -n 's/.*First run: cd "\([^"]*\)".*/\1/p' "$1" | head -1; }
+hook_task_of() { # common dir, worktree -> task file of that worktree
+  local f wt main; main="$(hook_mainwt "$1")"
+  for f in "$1"/warmd-handoff/*.task; do
+    [ -f "$f" ] || continue
+    wt="$(sed -n 1p "$f")"; [ -f "$wt" ] || continue
+    hook_same "$(hook_task_wt "$wt")" "$2" && { echo "$wt"; return 0; }
+  done
   for f in "$main"/.warmd/tasks/*.md "$main"/*/.warmd/tasks/*.md; do
     [ -f "$f" ] || continue
-    grep -qF "cd \"$here\"" "$f" || continue
-    echo "warmd: context was compacted. Your task and the shared brief again, continue the task."
-    cat "$f"
-    brief="$common/warmd-shared.md"
-    if [ -f "$brief" ]; then echo; cat "$brief"; fi
-    return 0
+    hook_same "$(hook_task_wt "$f")" "$2" && { echo "$f"; return 0; }
   done
+  return 1
+}
+hook_agent_line() { # common dir, task file -> AGENT line to start or continue the task
+  local tf="$2" name tier agent model conf note m
+  name="$(basename "$tf" .md)"
+  tier="$(sed -n 2p "$1/warmd-handoff/$name.task" 2>/dev/null)"; [ -n "$tier" ] || tier="$(cat "${tf%.md}.tier" 2>/dev/null)"
+  case "$tier" in cheap) agent=warmd-scout; model=haiku;; top) agent=warmd-worker; model=opus;; *) tier=mid; agent=warmd-worker; model=sonnet;; esac
+  conf="$(dirname "$(dirname "$(dirname "$tf")")")/warmd.conf"
+  if [ -f "$conf" ]; then m="$(sed -n "s/^ *$tier *= *//p" "$conf" | tr -d '\r" ' | tail -1)"; [ -n "$m" ] && model="$m"; fi
+  note="$1/warmd-handoff/$name.md"
+  if [ -f "$note" ]; then
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
+  else
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf and do it.\""
+  fi
+}
+
+# SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
+# the shared checkout gets the running batch: who is done, who is open, the AGENT line for each open one, the last merge result.
+hook_session() {
+  local in src common here tf brief main batch done wt br ahead dirty state open=0 n=0 log
+  in="$(cat)"
+  src="$(printf '%s' "$in" | tr -d '\n\r' | sed -n 's/.*"source" *: *"\([a-z]*\)".*/\1/p')"
+  here="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  common="$(hook_common)" || return 0
+  [ -n "$(type -t native_path)" ] || . "$WARMD_HOME/lib/platform.sh"
+  main="$(hook_mainwt "$common")"
+  if ! hook_same "$here" "$main" && tf="$(hook_task_of "$common" "$here")"; then
+    echo "warmd: session ${src:-restarted}. Your task and the shared brief again, continue the task."
+    cat "$tf"
+    [ -f "$common/warmd-handoff/$(basename "$tf" .md).md" ] && { echo; cat "$common/warmd-handoff/$(basename "$tf" .md).md"; }
+    brief="$common/warmd-shared.md"
+    [ -f "$brief" ] && { echo; cat "$brief"; }
+    return 0
+  fi
+  batch="$common/warmd-batch"; done="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
+  if [ -s "$batch" ]; then
+    echo "warmd: a batch runs ($( [ "$src" = compact ] && echo "context compacted, agents may still run, start only the ones you do not see" || echo "session ${src:-restarted}, agents of the old session are gone, start the open ones" ))."
+    while read -r wt; do
+      [ -n "$wt" ] || continue; n=$((n+1))
+      br="$(git -C "$wt" branch --show-current 2>/dev/null)"
+      ahead="$(git -C "$wt" rev-list --count "$(git -C "$main" branch --show-current)..HEAD" 2>/dev/null || echo '?')"
+      dirty="$(git -C "$wt" status --porcelain -uno 2>/dev/null | wc -l | tr -d ' ')"
+      state="$(grep -F "$wt	" "$done" 2>/dev/null | tail -1 | cut -f2)"
+      if [ -n "$state" ]; then echo "- ${br:-$wt}: done ($state), $ahead ahead, $dirty uncommitted"
+      else
+        open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
+        tf="$(hook_task_of "$common" "$wt")" && echo "  $(hook_agent_line "$common" "$(native_path "$tf")")"
+      fi
+    done < "$batch"
+    echo "$open of $n open. When the last one stops, warmd merges the finished branches by itself."
+  fi
+  if [ -s "$log" ]; then
+    echo "warmd: last automatic merge:"; tail -n 12 "$log"; mv -f "$log" "$log.seen"
+  fi
   return 0
+}
+
+# Reads the hook JSON on stdin and the agent's transcript. Prints: task name, task path, tokens, tool calls, outcome.
+# Tokens are counted like the Task tool reports them: input, cache and output tokens of the agent's last turn.
+# Outcome from the agent's last text: ESCALATE: line -> escalated, AGENT line -> handoff, else ok.
+HOOK_PY_TRANSCRIPT='
+import json, re, sys
+h = json.load(sys.stdin)
+p = h.get("agent_transcript_path") or h.get("transcript_path") or ""
+pat = re.compile(r"((?:[A-Za-z]:)?[^\s\"<>|]*[\/]\.warmd[\/]tasks[\/]([A-Za-z0-9_.-]+)\.md)")
+task = None; usage = None; calls = set(); text = ""; seen_assistant = False
+for line in open(p, encoding="utf-8", errors="replace"):
+    try:
+        e = json.loads(line)
+    except ValueError:
+        continue
+    m = e.get("message") or {}
+    c = m.get("content")
+    if e.get("type") == "user" and not seen_assistant and task is None:
+        s = c if isinstance(c, str) else " ".join(b.get("text", "") for b in (c or []) if isinstance(b, dict) and b.get("type") == "text")
+        r = pat.search(s)
+        if r:
+            task = (r.group(2), r.group(1).replace("\\", "/"))
+    if e.get("type") == "assistant":
+        seen_assistant = True
+        if m.get("usage"):
+            usage = m["usage"]
+        for b in c if isinstance(c, list) else []:
+            if b.get("type") == "tool_use":
+                calls.add(b.get("id"))
+            elif b.get("type") == "text" and b.get("text", "").strip():
+                text = b["text"]
+if not task:
+    sys.exit(1)
+tok = "-"
+if usage:
+    tok = str(sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
+print("\t".join([task[0], task[1], tok, str(len(calls)), out]))
+'
+
+# SubagentStop: parse, then hand everything slow (ledger, push, merge) to a detached job and return at once.
+hook_subagent() {
+  local in py r name tf tokens calls outcome wt common
+  in="$(cat)"
+  py="$(hook_py)" || return 0
+  r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
+  IFS='	' read -r name tf tokens calls outcome <<< "$r"
+  [ -n "$name" ] || return 0
+  if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
+    common="$(hook_common)" && tf="$(sed -n 1p "$common/warmd-handoff/$name.task" 2>/dev/null)"
+    [ -f "$tf" ] || return 0
+  fi
+  wt="$(hook_task_wt "$tf")"; [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  common="$(hook_common "$wt")" || return 0
+  ( cd "$wt" && WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome" >> "$common/warmd-hook.log" 2>&1 < /dev/null & )
+  return 0
+}
+
+# hook-job <name> <worktree> <tokens> <calls> <outcome>: detached. Ledger and push through warmd finish, then the batch check.
+hook_job() {
+  local name="$1" wt="$2" tokens="${3:--}" calls="${4:--}" outcome="${5:-ok}" common here
+  cd "$wt" || return 1
+  here="$(pwd)"; common="$(hook_common)" || return 1
+  export WARMD_DETACHED=1
+  echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls"
+  if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
+    git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null
+    return 0
+  fi
+  bash "$WARMD_HOME/bin/warmd" finish --tokens "$tokens" --calls "$calls" --outcome "$outcome"
+  printf '%s\t%s\n' "$here" "$outcome" >> "$common/warmd-batch-done"
+  hook_merge "$common"
+}
+
+# The last stopped agent of a batch merges: every ok branch one by one through warmd merge, red or conflict rolls back.
+# Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.
+hook_merge() { # common dir
+  local common="$1" batch="$1/warmd-batch" done="$1/warmd-batch-done" lock="$1/warmd-automerge.lock" log="$1/warmd-automerge.log"
+  local main wt br oc out rc keep="" first=1
+  [ -s "$batch" ] || return 0
+  while read -r wt; do [ -z "$wt" ] || grep -qF "$wt	" "$done" 2>/dev/null || return 0; done < "$batch"
+  [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
+  mkdir "$lock" 2>/dev/null || return 0
+  main="$(hook_mainwt "$common")"
+  {
+    echo "$(date '+%F %T') batch finished, merging into $(git -C "$main" branch --show-current) in $main"
+    while read -r wt; do
+      [ -n "$wt" ] || continue
+      oc="$(grep -F "$wt	" "$done" | tail -1 | cut -f2)"; br="$(git -C "$wt" branch --show-current 2>/dev/null)"
+      if [ "$oc" = escalated ]; then echo "WAIT $br escalated, stays in the batch"; keep="$keep$wt"$'\n'; continue; fi
+      [ "$oc" = ok ] || { echo "SKIP $br: $oc"; continue; }
+      [ "$(git -C "$main" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
+      out="$(cd "$main" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
+      git -C "$main" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$main" merge --abort 2>/dev/null
+      echo "$out" | grep -E '^(OK|FAIL)' | head -3
+      if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
+        echo "STOP the shared checkout is not ready, batch stays open. Fix it, then run: warmd hook-merge"
+        rmdir "$lock"; return 0
+      fi
+      first=0
+    done < "$batch"
+    if [ -n "$keep" ]; then
+      printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
+    else
+      rm -f "$batch" "$done"; echo "OK batch ended"
+    fi
+  } >> "$log" 2>&1
+  rmdir "$lock" 2>/dev/null; return 0
 }
 
 hook_settings() { echo "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/settings.local.json"; }
@@ -105,7 +276,7 @@ hook_edit() {
   "$(hook_py)" -c '
 import json, os, re, sys
 mode, path, self = sys.argv[1:4]
-ours = re.compile(r"warmd.* hook-(pre|session)$")
+ours = re.compile(r"warmd.* hook-(pre|session|subagent)$")
 try:
     data = json.load(open(path))
 except FileNotFoundError:
@@ -124,7 +295,8 @@ for ev in list(hooks):
         del hooks[ev]
 if mode == "add":
     hooks.setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
-    hooks.setdefault("SessionStart", []).append({"matcher": "compact", "hooks": [{"type": "command", "command": self + " hook-session"}]})
+    hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": self + " hook-session"}]})
+    hooks.setdefault("SubagentStop", []).append({"hooks": [{"type": "command", "command": self + " hook-subagent"}]})
 if not hooks:
     del data["hooks"]
 if not data:
@@ -140,9 +312,9 @@ else:
 
 hook_install() {
   local f; f="$(hook_settings)"
-  hook_py >/dev/null || { echo "FAIL warmd init --hooks needs python3 or python to edit $f"; return 1; }
+  hook_py >/dev/null || { echo "FAIL warmd hooks need python3 or python to edit $f"; return 1; }
   hook_edit add "$f" "$(hook_self)" || return 1
-  echo "OK hooks installed in $f (noisy Bash commands via warmd run, task restored after compact). Remove: warmd init --no-hooks"
+  echo "OK hooks installed in $f (noisy commands via warmd run, state back after restart or compact, agents recorded and merged on stop). Remove: warmd init --no-hooks"
 }
 
 hook_remove() {

@@ -44,8 +44,8 @@ Agents
   warmd batch-done             end the batch, the shared checkout opens again
 
 Setup
-  warmd init                   install the engine side, agent definitions and instructions
-  warmd init --hooks           route noisy commands through warmd by hook (--no-hooks removes)
+  warmd init                   install the engine side, agent definitions, instructions and hooks
+  warmd init --no-hooks        remove the hooks (--hooks installs only them)
   warmd doctor                 check what is missing
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
@@ -93,7 +93,7 @@ case "$CMD" in
   merge)   team_merge "$@";;
   perf)    perf_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
-  init)    common_init; a_init;;
+  init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them";;
   doctor)  common_doctor; a_doctor;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac
