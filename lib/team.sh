@@ -160,7 +160,8 @@ prewarm() { # worktree
 # A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
 # it ends, and so wakes the session, as soon as an agent has been idle for <minutes> (default 5) or the batch is over.
 # An agent counts as active when a file or a commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it.
-# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3.
+# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued automatic lines (lib/auto.sh) end it the same way.
+# A paused task (its agent stopped, or warmd watch --pause <name>) never alarms until its worktree moves again.
 
 # Does a warmd run or any other process work inside this worktree right now?
 wt_busy() { # worktree
@@ -196,24 +197,34 @@ wt_idle() { # worktree limit batchfile
 team_watch() {
   need_git
   local once=0 limit=5 batch wt age name stalled
+  local common live paused
+  common="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)"
+  case "${1:-}" in   # a task whose agent was stopped by hand: watch leaves it alone until its worktree moves again
+    --pause) [ -n "${2:-}" ] || { echo "warmd watch --pause <name>"; return 2; }; auto_pause "$common" "$2"; echo "OK $2 paused, watch skips it until its worktree moves"; return 0;;
+  esac
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-5}"
-  batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+  batch="$common/warmd-batch"
+  auto_drain "$common" && return 3
   [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
   while :; do
+    auto_drain "$common" && return 3   # an automatic escalation waits for the session to start the next agent
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
-    stalled=0
+    stalled=0; live=0; paused=""
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
+      name="$(wt_task "$wt")"
+      if auto_paused "$common" "$name" "$wt"; then paused="$paused $name"; continue; fi   # no agent runs there, nothing to wake
+      live=1
       age="$(wt_idle "$wt" "$limit" "$batch")"
       if [ "$age" -gt 0 ]; then
-        name="$(wt_task "$wt")"
         echo "WAKE $name: idle $age min in $(native_path "$wt"). Send to the $name agent: \"Idle for $age minutes. Reply in one line with your state and next step, or run: warmd handoff $name \\\"what is done\\\" \\\"what is next\\\" and end with its AGENT line.\""
         stalled=1
       fi
     done < "$batch"
     [ $stalled = 1 ] && return 3
-    [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes"; return 0; }
+    [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
+    [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
     sleep 30
   done
 }
@@ -266,8 +277,13 @@ team_escalate() {
   area="$(area_of "$(sed -n 's/^Files you own: //p' "$f")")"
   printf 'escalated\t%s\n' "$area" >> "$STATE/history.tsv"
   grep -q '^Earlier attempt' "$f" || echo "Earlier attempt failed. Read its commits on this branch first, then take a different approach." >> "$f"
+  # The earlier commits as context: the next tier starts from what was tried, not from zero
+  local log; log="$(git -C "$GIT_ROOT" log --format='%h %s' "$(base_branch)..warmd/$name" 2>/dev/null | head -8 | cut -c1-72 | awk 'NR>1{printf "; "}{printf "%s",$0}')"
+  sed -i.bak '/^Earlier commits: /d' "$f"; rm -f "$f.bak"
+  [ -n "$log" ] && echo "Earlier commits: $log" >> "$f"
   echo "$next" > "$STATE/tasks/$name.tier"
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
+  handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
   echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.\""
 }
 
@@ -334,3 +350,5 @@ team_merge() {
   if [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return 1; }; fi
   git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} && echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD), not pushed"
 }
+
+. "$WARMD_HOME/lib/auto.sh"
