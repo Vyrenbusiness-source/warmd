@@ -123,9 +123,11 @@ expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd
 expect "split makes a worktree" 'warmd/footer' "$(git worktree list)"
 expect "watch sees moving worktrees" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 wtw="$(dirname "$PWD")/.warmd-worktrees/app/footer"
+# Two hours ago: stalled for watch, still under the 240 minutes after which the batch guard drops the marker.
 # touch -t is the form GNU and BSD touch share; the batch start counts as movement, so it ages too
-find "$wtw" -type f -not -path '*/.git/*' -exec touch -t 202001010000 {} +
-touch -t 202001010000 "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+t2h=$(( $(date +%s) - 7200 )); t2h="$(date -d "@$t2h" +%Y%m%d%H%M 2>/dev/null || date -r "$t2h" +%Y%m%d%H%M)"
+find "$wtw" -type f -not -path '*/.git/*' -exec touch -t "$t2h" {} +
+touch -t "$t2h" "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
 expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 touch -d '2 hours ago' "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
