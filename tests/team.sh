@@ -19,7 +19,7 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
-  "run watch"|"pr checks") sleep 30;;
+  "run watch"|"pr checks") for _ in $(seq 60); do sleep 1; done;;   # short sleeps: a kill ends it within a second
   "pr list") echo 7;;
   "run list") echo 4242;;
 esac
