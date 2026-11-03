@@ -6,10 +6,7 @@
 
 **Install once. After that warmd runs the slow parts for your coding agent, and you do nothing.**
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
-cd your-project && warmd init
-```
+For Windows, in Git Bash. [Install in one line](#install).
 
 [![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
 [![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
@@ -25,10 +22,12 @@ cd your-project && warmd init
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>95% faster</h3>one Unity test class<br><sub>56 s → 3 s, large HDRP project</sub></td>
-<td align="center" width="25%"><h3>99% fewer tokens</h3>per green Unity test run<br><sub>33 KB log → 41 bytes</sub></td>
-<td align="center" width="25%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub>green results are cached</sub></td>
-<td align="center" width="25%"><h3>19% cheaper</h3>same task with and without warmd<br><sub>real A/B, 2 runs, <a href="docs/ab.md">docs/ab.md</a></sub></td>
+<td align="center" width="50%"><h3>95% faster</h3>one Unity test class<br><sub>56 s → 3 s, large HDRP project</sub></td>
+<td align="center" width="50%"><h3>99% fewer tokens</h3>per green Unity test run<br><sub>33 KB log → 41 bytes</sub></td>
+</tr>
+<tr>
+<td align="center" width="50%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub>green results are cached</sub></td>
+<td align="center" width="50%"><h3>19% cheaper</h3>same task with and without warmd<br><sub>real A/B, 2 runs, <a href="docs/ab.md">docs/ab.md</a></sub></td>
 </tr>
 </table>
 
@@ -96,7 +95,7 @@ The aliases `haiku`, `sonnet` and `opus` follow new releases, so nothing needs c
 
 A task list becomes worktrees, model tiers and one-line prompts. All agents of a batch read one short shared brief and add findings to it, so the next agent skips that search. When context fills up, the state is saved and a fresh agent continues.
 
-![Flow: task list, split, Haiku, Sonnet and Opus each in a worktree, merge with rollback, escalate](docs/assets/flow.png)
+![Flow: a task list is split into worktrees for Haiku, Sonnet and Opus, merged with rollback; shared brief and escalation below](docs/assets/flow.png)
 
 ## Stalled agents wake up
 
