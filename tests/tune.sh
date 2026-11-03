@@ -51,6 +51,21 @@ printf 'ram_free_min=50
 expect "warmd.conf ram_free_min wins" 'queued: only 40% RAM free, waiting for 50%' "$(WARMD_FREE_PCT=40 WARMD_RAM_WAIT=1 "$WARMD" test)"
 rm warmd.conf
 
+# ---- a green-cache hit never waits for RAM or a slot; ram_wait=0 and WARMD_NO_RAM_WAIT=1 switch the wait off ----
+export WARMD_NOCACHE=1; "$WARMD" test > /dev/null; unset WARMD_NOCACHE   # fills the green cache
+t0=$(date +%s)
+out="$(WARMD_FREE_PCT=1 WARMD_RAM_WAIT=60 WARMD_RAM_POLL=1 "$WARMD" test)"
+expect "cache hit returns at once, no RAM wait" 'OK cached' "$out"
+expect "cache hit has no queue line" '^[^(]*$' "$(echo "$out" | grep -c queued)x"
+[ $(( $(date +%s) - t0 )) -lt 5 ] && echo "ok   cache hit took under 5s" || { echo "FAIL cache hit waited"; fails=$((fails+1)); }
+export WARMD_NOCACHE=1
+expect "WARMD_NO_RAM_WAIT=1 skips the wait" '^OK' "$(WARMD_NO_RAM_WAIT=1 WARMD_FREE_PCT=1 "$WARMD" test)"
+printf 'ram_wait=0
+' > warmd.conf
+expect "ram_wait=0 skips the wait" '^OK' "$(WARMD_FREE_PCT=1 "$WARMD" test)"
+rm warmd.conf; unset WARMD_NOCACHE
+expect "no missing-file noise" '^0$' "$(WARMD_GPU= WARMD_CORES=8 WARMD_RAM_MB=31744 "$WARMD" doctor 2>&1 | grep -c 'No such file')"
+
 # ---- low priority and the 2 free cores ----
 expect "child runs with nice" 'nice -n 10' "$(bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT=$TMP/c; common_doctor() { :; }; slot_take() { :; }; . '$HERE/lib/tune.sh'; tune_prefix")"
 expect "2 cores free on 2 cores" 'threads per run: 1 ' "$(WARMD_CORES=2 WARMD_RAM_MB=65536 "$WARMD" doctor)"
