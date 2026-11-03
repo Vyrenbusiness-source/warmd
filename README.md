@@ -100,7 +100,8 @@ The 56 s baseline comes from a private project. Method and raw output: [PROOF.md
 - **`warmd escalate`.** After a failure the same task goes to the next tier, with the earlier commits as context. Areas that needed it twice start higher next time.
 - **Routing you control.** `floor=mid` or `floor=top` sets the lowest tier. The aliases `haiku`, `sonnet` and `opus` follow new releases, so nothing needs changing when a model ships.
 - **`warmd finish`.** Pushes and prints a one-line report from git and the last run.
-- **`warmd merge`.** Runs the checks on the merged result and rolls back on red.
+- **`warmd watch`.** Runs in the background during a batch and catches an idle agent within 5 minutes. Changed files or commits, a running warmd test, check, build or merge, or a process inside the worktree count as active, so long test runs and a fresh batch do not alarm. On a stall it prints one `WAKE <task>: ...` line per idle agent with the message to send (state, next step, or `warmd handoff`) and exits 3, which wakes the session. The session sends the message and starts `warmd watch` again.
+- **`warmd merge`.** Runs the checks on the merged result and rolls back on red. The FAIL line names the failing tests, not only their count.
 
 ### Safe by design
 
