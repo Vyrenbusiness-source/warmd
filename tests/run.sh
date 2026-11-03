@@ -215,9 +215,9 @@ head_sha="$(git log -1 --format=%s)"
 if echo "$out" | grep -qE 'FAIL'; then ok "red merge is refused"; else no "red merge passed: $out"; fi
 [ "$head_sha" = gate ] && ok "red merge left the base untouched" || no "base moved to $head_sha"
 
-for t in ledger digest affected perf tune; do
+for t in ledger digest affected perf tune layout; do
   # The perf test needs a headless Chrome run that does not work on the hosted Windows runner yet
-  if [ "$t" = perf ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
+  if { [ "$t" = perf ] || [ "$t" = layout ]; } && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))
 done
 bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"

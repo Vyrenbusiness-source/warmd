@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>layout fixture</title>
+<style>
+body{margin:0;font:16px/20px sans-serif}
+#clip{width:120px;height:24px;overflow:hidden;white-space:nowrap}
+#stage{position:relative;height:80px}
+#a,#b{position:absolute;margin:0}
+#a{left:10px;top:10px}
+#b{left:10px;top:18px}
+</style></head><body>
+<p id="ok">This paragraph wraps normally and fits at every width.</p>
+<div id="clip">This sentence is far too long for its one hundred and twenty pixel box</div>
+<div id="stage"><p id="a">First line of text</p><p id="b">Second line of text</p></div>
+</body></html>
