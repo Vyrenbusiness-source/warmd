@@ -51,13 +51,10 @@ lines="$(echo "$lines" | sed -E 's/model=[a-z0-9.-]+/model=haiku/; s/subagent_ty
 
 # ---- one live claude session starts the agents one after another ----
 COMMON="$(git rev-parse --path-format=absolute --git-common-dir)"
-# The session must outlive the detached automerge: claude -p ending kills the hook's children on Windows (gap, see shared brief).
-# So the main session waits with a plain shell loop, no warmd command, until the batch file is gone.
-keep="n=0; while [ -f '$COMMON/warmd-batch' ] && [ \$n -lt 570 ]; do sleep 5; n=\$((n+5)); done"
+# The session does not wait for the merge: claude -p ends right after the second agent, the detached job must outlive it.
 prompt="Start these two subagents with the Task/Agent tool ONE AFTER ANOTHER, never in parallel: start the first, wait until it has finished, then start the second. Use exactly the subagent_type, model and prompt of each line.
 $lines
-When both have finished, run this Bash command once with timeout 600000 and wait for it: $keep
-Then reply with the word DONE and nothing else."
+When both have finished, reply with the word DONE and nothing else."
 # Never start a live run on a starved machine: wait until tune_wait_ram sees ram_free_min (default 15) percent free, no 'run anyway'.
 ramwait() { ( WARMD_HOME="$HERE"; . "$HERE/lib/platform.sh"; . "$HERE/lib/core.sh"; . "$HERE/lib/tune.sh"
   t=0; until [ "$(tune_free_pct)" -ge "${CFG_ram_free_min:-15}" ]; do [ $t -ge "${E2E_RAM_WAIT:-3600}" ] && return 1; WARMD_RAM_WAIT=60 tune_wait_ram >/dev/null; t=$((t+60)); done ) }
@@ -68,10 +65,12 @@ echo "live: claude -p haiku, agents one after another, this takes several minute
 t0=$SECONDS
 echo "$prompt" | timeout 1200 claude -p --model haiku --permission-mode bypassPermissions > "$TMP/claude.out" 2>&1
 echo "claude exit $?, $((SECONDS - t0))s: $(tail -n 2 "$TMP/claude.out" | tr '\n' ' ' | cut -c1-160)"
-# ---- from here on no warmd command typed by hand: only watch the hooks work ----
+# ---- from here on no warmd command typed by hand and no claude session: only watch the detached jobs work ----
 n=0; while [ -f "$COMMON/warmd-batch" ] && [ $n -lt "$WAIT" ]; do sleep 2; n=$((n+2)); done
 [ -f "$COMMON/warmd-batch" ] && no "batch still open after ${WAIT}s: $(tail -3 "$COMMON/warmd-hook.log" 2>/dev/null)" || ok "batch ended by itself"
 
+[ "$(grep -c 'stopped: .*(detached via cim)' "$COMMON/warmd-hook.log" 2>/dev/null)" -ge 2 ] && ok "both jobs detached through Win32_Process.Create" || no "jobs not via cim: $(grep stopped "$COMMON/warmd-hook.log" 2>/dev/null)"
+[ ! -d "$COMMON/warmd-automerge.lock" ] && [ -z "$(git rev-parse -q --verify MERGE_HEAD)" ] && ok "merge outlived claude -p: no lock, no MERGE_HEAD left" || no "merge died: lock or MERGE_HEAD left"
 led="$COMMON/warmd-ledger.tsv"
 for t in mulfn brksub; do
   row="$(awk -F'\t' -v t="$t" '$2==t' "$led" 2>/dev/null | tail -1)"

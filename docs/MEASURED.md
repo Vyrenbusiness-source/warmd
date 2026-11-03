@@ -58,3 +58,17 @@ Measured 2026-11-03, 10-call average per row, commit `9c68401` (`17d6f02` before
 | 1 | about 100 ms | about 100 ms |
 
 Method: before, one `sha1sum` fork per changed file. After, 2 `git` and 2 `sha1sum` calls with files hashed in chunks of 100. A green-cache hit also no longer waits for a slot in the queue. `tests/run.sh` is green.
+
+## A batch that runs itself (`tests/e2e.sh`)
+
+Measured 2026-11-03, one live run, Windows 10, Claude Code `claude -p` with haiku, 2 agents one after another, RAM wait on (15% free required). After `warmd split` no warmd command was typed and the session did not wait for the merge.
+
+| Step | Result |
+|---|---|
+| Whole session, both agents | 48 s, `claude exit 0` |
+| Agent `mulfn` (green task) | 62,931 tokens, 7 tool calls, pushed |
+| Agent `brksub` (breaks a test on purpose) | 116,715 tokens, 15 tool calls, pushed |
+| Automatic merge after the last stop | `mulfn` merged in 2 s, `brksub` rolled back in 2 s (`FAIL sub 9 4 gave 13`), batch ended |
+| After the session | main green and clean, no lock, no `MERGE_HEAD` |
+
+Tokens are input, cache write, cache read and output summed over every turn of the agent's transcript. The merge job starts through `Win32_Process.Create`, outside the session's process tree, so it kept running after `claude -p` exited: the session ended at 19:38:18, the merge of both branches (about 4 s) started the same second and finished on its own. 15 of 15 checks green.
