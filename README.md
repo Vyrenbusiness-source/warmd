@@ -147,12 +147,14 @@ warmd runs on Windows. Run the install in Git Bash, which also provides git. Pin
 
 warmd detects the project from its files. There is nothing to configure.
 
-| Stack | Kept warm | Tests | Screenshot |
-|---|---|---|---|
-| **Unity** | Headless editor | EditMode and PlayMode through the Test Runner API | Your own capture method |
-| **Godot** | Nothing by default | Built-in runner, GUT or gdUnit4 | One frame of a scene |
-| **Web** | Dev server | Vitest, Jest or your script | Desktop and phone width |
-| **Rust, Go, Python, .NET** | Nothing to keep warm | Native test runner | |
+| Stack | Kept warm | Tests |
+|---|---|---|
+| **Unity** | Headless editor | EditMode and PlayMode, Test Runner API |
+| **Godot** | Nothing, starts in 0.2 s | Built-in runner, GUT or gdUnit4 |
+| **Web** | Dev server | Vitest, Jest or your script |
+| **Rust, Go, Python, .NET** | Nothing | Native test runner |
+
+Screenshots: a web page at desktop and phone width, one frame of a Godot scene, and your own capture method in Unity.
 
 ## Measured
 
