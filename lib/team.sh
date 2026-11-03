@@ -52,7 +52,12 @@ wt_free() { # path
   [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
 }
 wt_reuse() { # name
-  local name="$1" p base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
+  local name="$1" p br base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
+  # A worktree that already holds this task's branch keeps it and its commits: earlier work is never reset.
+  while IFS='|' read -r p br; do
+    [ "$br" = "warmd/$name" ] && [ "$p" != "$main" ] || continue
+    echo "$p"; return 0
+  done < <(git -C "$GIT_ROOT" worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch /{b=$2; sub("refs/heads/","",b); print p"|"b}')
   while IFS='|' read -r p br; do
     [ "$br" = "$base" ] && continue
     [ "$p" = "$main" ] && continue
@@ -60,7 +65,11 @@ wt_reuse() { # name
     case " ${USED_WT:-} " in *" $(cd "$p" && pwd) "*) continue;; esac
     wt_free "$p" || continue
     git -C "$p" checkout -q -- . 2>/dev/null
-    git -C "$p" checkout -q -B "warmd/$name" "$base" || continue
+    if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/warmd/$name" >/dev/null; then
+      git -C "$p" checkout -q "warmd/$name" || continue   # existing branch: keep its commits
+    else
+      git -C "$p" checkout -q -B "warmd/$name" "$base" || continue
+    fi
     echo "$p"; return 0
   done < <(git -C "$GIT_ROOT" worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^locked/{p=""} /^branch /{b=$2; sub("refs/heads/","",b); if(p!="")print p"|"b}')
   return 1
@@ -172,13 +181,16 @@ team_watch() {
   done
 }
 
+# Leading and trailing blanks off. Not xargs: it stops at the first apostrophe and cuts the goal.
+trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
 team_split() {
   need_git
   local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   while IFS='|' read -r name goal check files <&3; do
-    name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
+    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     if [ -n "$files" ] && [ "$files" != none ]; then
       for f in ${files//,/ }; do
@@ -194,7 +206,7 @@ team_split() {
   local batch; batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   : > "$batch"
   while IFS='|' read -r name goal check files <&3; do
-    name="$(echo "$name" | xargs)"; goal="$(echo "$goal" | xargs)"; check="$(echo "$check" | xargs)"; files="$(echo "$files" | tr -d ' ')"
+    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
     case "$name" in \#*|"") continue;; esac
     tier="$(route_tier "$goal" "$files")"
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
