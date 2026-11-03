@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md). warmd decides and acts on its own, you rarely type these. This page is the reference for when you want to.
 
-Examples show real output from a throwaway Node project (`tests/ab/sample`, one failing test) and from `tests/fixtures`. Long paths are shortened to `<project>`. Exit code 0 means success, 1 a failed run, 2 a usage error, 3 a stalled agent.
+Examples show real output from a small throwaway Node project with one failing test (not part of the repo) and from `tests/fixtures`. Long paths are shortened to `<project>`. Exit code 0 means success, 1 a failed run, 2 a usage error, 3 a stalled agent.
 
 ## Everyday
 
@@ -59,7 +59,7 @@ FOUND 2 layout problems
 ```
 
 ### warmd map
-Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`.
+Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`. With no file it prints a repo map: files ranked by how many files import them, each with the symbols its importers use, trimmed to `--budget N` tokens (default 1500).
 ```text
 warmd map src/cart.js
 == cart.js
@@ -69,6 +69,7 @@ warmd map src/cart.js
 
 ### warmd audit
 Shows what your agents pay for on every turn, biggest cost first.
+It also lists every MCP server from `~/.claude.json` and `.mcp.json`, says which ones load their tool lists upfront (`"alwaysLoad": true`, `ENABLE_TOOL_SEARCH=false` or `auto`, a denied `ToolSearch`) and names the setting that defers them.
 
 ### warmd run
 Runs any command and keeps its output short: up to 20 lines pass through unchanged, longer output becomes one OK or FAIL line with the error lines, and the full log stays on disk. After `warmd init` the hooks send noisy known commands (test runners, builds, linters) through it on their own.

@@ -12,7 +12,11 @@ const probe=`(()=>{
 const vw=document.documentElement.clientWidth,rows=[];
 const sel=e=>{let s=e.tagName.toLowerCase();if(e.id)return s+'#'+e.id;const c=[...e.classList].slice(0,2);if(c.length)s+='.'+c.join('.');
   const p=e.parentElement;if(p&&p!==document.body){const same=[...p.children].filter(x=>x.tagName===e.tagName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(e)+1)+')';}return s;};
-const vis=e=>{const r=e.getBoundingClientRect(),cs=getComputedStyle(e);return r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none';};
+// Screen-reader text, tracking pixels and faded-out parts (GitHub renders plenty) are no layout problem: 1x1 or smaller,
+// clipped to nothing, or inside such a box or an opacity 0 box counts as invisible
+const gone=p=>{const cs=getComputedStyle(p),r=p.getBoundingClientRect();return cs.opacity==='0'||(cs.clip.startsWith('rect')&&!/[1-9]/.test(cs.clip))||cs.clipPath.includes('inset(50%')||(r.width<=1&&r.height<=1&&/(hidden|clip)/.test(cs.overflowX+cs.overflowY));};
+const vis=e=>{const r=e.getBoundingClientRect(),cs=getComputedStyle(e);if(!(r.width>1&&r.height>1&&cs.visibility!=='hidden'&&cs.display!=='none'))return false;
+  for(let p=e;p&&p!==document.body;p=p.parentElement)if(gone(p))return false;return true;};
 const clips=(e)=>{for(let p=e.parentElement;p&&p!==document.documentElement;p=p.parentElement){const o=getComputedStyle(p);if(/(hidden|clip|auto|scroll)/.test(o.overflowX)&&p!==document.body)return true;}return false;};
 const sz=e=>{const r=e.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)];};
 const all=[...document.body.querySelectorAll('*')].filter(e=>!/^(SCRIPT|STYLE|LINK|META|TITLE)$/.test(e.tagName)&&vis(e));

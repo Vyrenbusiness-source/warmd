@@ -125,7 +125,7 @@ perf_compare() {
 }
 
 perf_run() { # [--save]
-  local save=0 cur="$RUN/perf-current.txt" basef="$PROJECT/warmd.perf" bad
+  local save=0 cur="$RUN/perf-current.txt" basef="$PROJECT/warmd.perf" bad bad2
   [ "${1:-}" = --save ] && save=1
   [ $save = 1 ] || [ -f "$basef" ] || { echo "FAIL perf: no baseline, run warmd perf --save first"; return 2; }
   perf_collect > "$cur" || return 1
@@ -136,6 +136,14 @@ perf_run() { # [--save]
   fi
   if bad="$(perf_compare "$basef" "$cur")"; then
     echo "OK $(secs)s perf within ${CFG_perf_tolerance}%: $(tr '\n' ' ' < "$cur" | cut -c1-160)"; return 0
+  fi
+  # A busy machine can double one measurement: a regression only counts when a second measurement confirms it
+  if perf_collect > "$cur.2" && [ -s "$cur.2" ]; then
+    if bad2="$(perf_compare "$basef" "$cur.2")"; then
+      mv -f "$cur.2" "$cur"
+      echo "OK $(secs)s perf within ${CFG_perf_tolerance}% on the second measurement: $(tr '\n' ' ' < "$cur" | cut -c1-160)"; return 0
+    fi
+    bad="$bad2"
   fi
   echo "FAIL perf regression: $(echo "$bad" | tr '\n' ';' | cut -c1-240)"; return 1
 }

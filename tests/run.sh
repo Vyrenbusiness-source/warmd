@@ -4,7 +4,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_CACHE_HOME="$TMP/cache" WARMD_TRANSCRIPTS="$TMP/transcripts"
 # The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
 bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
 fails=0
@@ -86,6 +86,16 @@ expect "the merge's own checks still run" 'OK' "$(WARMD_IN_MERGE=1 "$WARMD" test
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 expect "a dead merge owner expires" 'OK' "$("$WARMD" test 2>&1)"
 [ ! -f .warmd/merge.owner ] && ok "stale merge marker removed" || no "stale merge marker stayed"
+# A merge launched through Win32_Process.Create: its msys pid is unknown here, the Windows pid lives
+if sleep 60 & holder=$! && [ -r "/proc/$holder/winpid" ]; then
+  echo 999999 > .warmd/merge.owner; cat "/proc/$holder/winpid" > .warmd/merge.owner.win
+  expect "tests are refused while the merge lives by its Windows pid" 'merge is running' "$("$WARMD" test 2>&1)"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  expect "a merge dead by its Windows pid expires" 'OK' "$("$WARMD" test 2>&1)"
+  [ ! -f .warmd/merge.owner.win ] && ok "stale Windows merge marker removed" || no "stale Windows merge marker stayed"
+else
+  kill "${holder:-0}" 2>/dev/null; wait "${holder:-0}" 2>/dev/null; rm -f .warmd/merge.owner*
+fi
 
 mkdir -p "$XDG_CACHE_HOME/warmd/slots/1" "$XDG_CACHE_HOME/warmd/slots/2"
 sleep 30 & h1=$!; sleep 30 & h2=$!
@@ -245,7 +255,7 @@ out="$("$WARMD" merge side 2>&1)"
 expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
 git reset -q --hard HEAD~1; git branch -qD side
 
-for t in ledger digest affected perf tune layout docs; do
+for t in ledger digest affected perf tune layout docs hook auto team generic install map ship brakes; do
   # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
   if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))

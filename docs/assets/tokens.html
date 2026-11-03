@@ -1,7 +1,7 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0}
-html,body{width:1280px;height:520px;overflow:hidden}
+html,body{width:1280px;height:660px;overflow:hidden}
 body{background:#0b0f14;color:#e6edf3;font-family:"Segoe UI",system-ui,sans-serif;padding:44px 56px;position:relative}
 body:before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% 0%,rgba(255,122,48,.18),transparent 62%)}
 body>*{position:relative}
@@ -26,9 +26,13 @@ h1{font-size:40px;line-height:1.15;letter-spacing:-.8px;font-weight:700;margin-t
   <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="33323" style="width:82.0%"></div><span class="num">33,323 bytes</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="41" style="width:0.1009%"></div><span class="num">41 bytes</span></div></div>
 </div>
-<div class="card row"><div class="t">Vitest, green run<small>per test run</small></div>
-  <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="270" style="width:82.0%"></div><span class="num">270 bytes</span></div></div>
-  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="11" style="width:3.3407%"></div><span class="num">11 bytes</span></div></div>
+<div class="card row"><div class="t">Web, red run<small>Vitest, real tokens</small></div>
+  <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="714" style="width:82.0%"></div><span class="num">714 tokens</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="136" style="width:15.6190%"></div><span class="num">136 tokens</span></div></div>
+</div>
+<div class="card row"><div class="t">Python, red run<small>pytest, real tokens</small></div>
+  <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="479" style="width:82.0%"></div><span class="num">479 tokens</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="153" style="width:26.1921%"></div><span class="num">153 tokens</span></div></div>
 </div>
 </div>
 <div class="foot">Only build and test output is shortened, never your code. Bar lengths are proportional within each card.</div>

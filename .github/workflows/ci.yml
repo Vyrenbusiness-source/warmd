@@ -30,7 +30,7 @@ jobs:
         run: |
           curl -fsSL -o sc.zip https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.zip
           unzip -q sc.zip -d "$HOME/sc"
-      - run: '"$HOME/sc/shellcheck.exe" --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh'
+      - run: '"$HOME/sc/shellcheck.exe" --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh tests/install.sh'
 
   proof:
     runs-on: windows-latest

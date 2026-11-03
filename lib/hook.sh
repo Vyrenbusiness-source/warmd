@@ -20,6 +20,7 @@ hook_main() { # command args...
     hook-pre)     hook_pre;;
     hook-session) hook_session;;
     hook-subagent) hook_subagent;;
+    hook-compact) auto_compact;;
     hook-job)     hook_job "$@";;
     hook-merge)   hook_merge "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)";;
     init)         case " $* " in *" --no-hooks "*) hook_remove;; *) hook_install;; esac;;
@@ -45,6 +46,7 @@ hook_wrappable() { # command -> 0 when it is one simple known command
 hook_pre() {
   local in cmd self
   in="$(cat)"
+  auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
   cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
   hook_wrappable "$cmd" || return 0
   self="$(hook_self)"
@@ -87,7 +89,15 @@ hook_run() {
 # ---- shared lookups: builtins where they can, every fork costs 10 to 30 ms on Windows and a hook gets 2 s ----
 hook_common() { git ${1:+-C "$1"} rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
 hook_mainwt() { local l; l="$(git --git-dir="$1" worktree list --porcelain 2>/dev/null)"; l="${l%%$'\n'*}"; echo "${l#worktree }"; }   # common dir -> shared checkout
-hook_abs() { REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"; }   # C:/x and /c/x become one form
+# C:/x and /c/x become one form. A short 8.3 name (RUNNER~1) or a mount (/tmp on a short TEMP) is not the long form git reports:
+# cygpath -l makes it long, the fork only happens for those paths.
+hook_abs() {
+  REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"
+  if [ "${OS:-}" = win ] && { [[ $REPLY == *'~'* ]] || [[ $REPLY != /?/* ]]; }; then
+    local w; w="$(cygpath -l -m "$REPLY" 2>/dev/null)" || return 0; [[ $w == ?:/* ]] || return 0
+    local d="${w:0:1}"; REPLY="/${d,,}${w:2}"
+  fi
+}
 hook_task_wt() { # task file -> REPLY = its worktree as written in the task
   REPLY=""; local line re='First run: cd "([^"]*)"'
   while IFS= read -r line || [ -n "$line" ]; do [[ $line =~ $re ]] && { REPLY="${BASH_REMATCH[1]}"; return 0; }; done < "$1"
@@ -175,14 +185,15 @@ hook_session() {
 }
 
 # Reads the hook JSON on stdin and the agent's transcript. Prints: task name, task path, tokens, tool calls, outcome.
-# Tokens are counted like the Task tool reports them: input, cache and output tokens of the agent's last turn.
+# Tokens: input, cache write, cache read and output summed over every turn of the agent. A turn is written as one line per
+# content block, all with the same message id and usage: each id counts once.
 # Outcome from the agent's last text: ESCALATE: line -> escalated, AGENT line -> handoff, else ok.
 HOOK_PY_TRANSCRIPT='
 import json, re, sys
 h = json.load(sys.stdin)
 p = h.get("agent_transcript_path") or h.get("transcript_path") or ""
 pat = re.compile(r"((?:[A-Za-z]:)?[^\s\"<>|]*[\/]\.warmd[\/]tasks[\/]([A-Za-z0-9_.-]+)\.md)")
-task = None; usage = None; calls = set(); text = ""; seen_assistant = False
+task = None; usage = {}; calls = set(); text = ""; seen_assistant = False
 for line in open(p, encoding="utf-8", errors="replace"):
     try:
         e = json.loads(line)
@@ -198,7 +209,7 @@ for line in open(p, encoding="utf-8", errors="replace"):
     if e.get("type") == "assistant":
         seen_assistant = True
         if m.get("usage"):
-            usage = m["usage"]
+            usage[m.get("id") or len(usage)] = m["usage"]
         for b in c if isinstance(c, list) else []:
             if b.get("type") == "tool_use":
                 calls.add(b.get("id"))
@@ -208,9 +219,14 @@ if not task:
     sys.exit(1)
 tok = "-"
 if usage:
-    tok = str(sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+    tok = str(sum(int(u.get(k) or 0) for u in usage.values() for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+# ctx: how full the context is now, the last turn only. tok above is the cost over all turns.
+ctx = "-"
+if usage:
+    last = list(usage.values())[-1]
+    ctx = str(sum(int(last.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
-print("\t".join([task[0], task[1], tok, str(len(calls)), out]))
+print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
 
 # SubagentStop: parse, then hand everything slow (ledger, push, merge) to a detached job and return at once.
@@ -219,7 +235,7 @@ hook_subagent() {
   in="$(cat)"
   py="$(hook_py)" || return 0
   r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
-  IFS='	' read -r name tf tokens calls outcome <<< "$r"
+  IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
     common="$(hook_common)" && tf="$(sed -n 1p "$common/warmd-handoff/$name.task" 2>/dev/null)"
@@ -227,8 +243,31 @@ hook_subagent() {
   fi
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
   common="$(hook_common "$wt")" || return 0
-  ( cd "$wt" && WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome" >> "$common/warmd-hook.log" 2>&1 < /dev/null & )
+  hook_detach "$common/warmd-hook.log" "$wt" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome"
   return 0
+}
+
+# hook_detach <log> <dir> <warmd args...>: run warmd so it outlives the session that ran the hook.
+# Windows: a nohup child stays in the session's process tree, job object and console, so claude -p ending can take it along.
+# Win32_Process.Create starts it from the WMI service instead: no parent, no job, own hidden console. The environment does
+# not come along, so a small script carries it. The launcher itself runs in the background: the hook returns at once.
+hook_detach() {
+  local log="$1" dir="$2" sh a v bash; shift 2
+  if [ "${OS:-}" = win ] && [ -z "${WARMD_NO_CIM:-}" ] && bash="$(cygpath -w /usr/bin/bash.exe 2>/dev/null)" && [ -f "$bash" ]; then
+    sh="${log%/*}/warmd-job-$$-$RANDOM.sh"
+    {
+      echo 'trap '"'"'rm -f "$0"'"'"' EXIT'
+      for v in PATH HOME XDG_CACHE_HOME WARMD_HOME TMPDIR TEMP TMP CLAUDE_PROJECT_DIR; do [ -n "${!v+x}" ] && printf 'export %s=%q\n' "$v" "${!v}"; done
+      printf 'export WARMD_DETACHED=1 WARMD_VIA=cim\ncd %q || exit 1\nbash %q' "$dir" "$WARMD_HOME/bin/warmd"
+      for a in "$@"; do printf ' %q' "$a"; done
+      printf ' >> %q 2>&1 < /dev/null\n' "$log"
+    } > "$sh"
+    # CIM refused (policy, no WMI): the old nohup path, better than nothing
+    ( powershell.exe -NoProfile -NonInteractive -Command "\$s = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; \$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='\"$bash\" \"$(native_path "$sh")\"'; CurrentDirectory='$(native_path "$dir")'; ProcessStartupInformation=\$s}; exit \$r.ReturnValue" > /dev/null 2>&1 < /dev/null \
+        || { rm -f "$sh"; cd "$dir" && WARMD_DETACHED=1 WARMD_VIA=nohup exec nohup bash "$WARMD_HOME/bin/warmd" "$@" >> "$log" 2>&1 < /dev/null; } & )
+    return 0
+  fi
+  ( cd "$dir" && WARMD_DETACHED=1 WARMD_VIA=nohup nohup bash "$WARMD_HOME/bin/warmd" "$@" >> "$log" 2>&1 < /dev/null & )
 }
 
 # hook-job <name> <worktree> <tokens> <calls> <outcome>: detached. Ledger and push through warmd finish, then the batch check.
@@ -237,7 +276,8 @@ hook_job() {
   cd "$wt" || return 1
   here="$(pwd)"; common="$(hook_common)" || return 1
   export WARMD_DETACHED=1
-  echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls"
+  echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls (detached via ${WARMD_VIA:-direct})"
+  outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null
     return 0
@@ -251,11 +291,19 @@ hook_job() {
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.
 hook_merge() { # common dir
   local common="$1" batch="$1/warmd-batch" done="$1/warmd-batch-done" lock="$1/warmd-automerge.lock" log="$1/warmd-automerge.log"
-  local main wt br oc out rc keep="" first=1
+  local main wt br oc out rc pid keep="" first=1
   [ -s "$batch" ] || return 0
   while read -r wt; do [ -z "$wt" ] || grep -qF "$wt	" "$done" 2>/dev/null || return 0; done < "$batch"
-  [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
+  # One merge at a time: the lock holds the system pid of its merge (a job started through CIM lives in another session,
+  # its shell pid means nothing here). A dead pid or a lock older than 60 minutes is stale.
+  if [ -d "$lock" ]; then
+    pid=""; read -r pid 2>/dev/null < "$lock/pid"
+    { [ -n "$pid" ] && ! pid_alive "$pid"; } || [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] && rm -rf "$lock"
+  fi
   mkdir "$lock" 2>/dev/null || return 0
+  pid=$$; [ -r "/proc/$$/winpid" ] && read -r pid < "/proc/$$/winpid"
+  echo "$pid" > "$lock/pid"; local me="$pid"
+  hook_unlock() { local p=""; read -r p 2>/dev/null < "$lock/pid"; [ "$p" = "$me" ] && rm -rf "$lock"; }   # never someone else's lock
   main="$(hook_mainwt "$common")"
   {
     echo "$(date '+%F %T') batch finished, merging into $(git -C "$main" branch --show-current) in $main"
@@ -270,7 +318,7 @@ hook_merge() { # common dir
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
         echo "STOP the shared checkout is not ready, batch stays open. Fix it, then run: warmd hook-merge"
-        rmdir "$lock"; return 0
+        hook_unlock; return 0
       fi
       first=0
     done < "$batch"
@@ -280,7 +328,7 @@ hook_merge() { # common dir
       rm -f "$batch" "$done"; echo "OK batch ended"
     fi
   } >> "$log" 2>&1
-  rmdir "$lock" 2>/dev/null; return 0
+  hook_unlock; return 0
 }
 
 hook_settings() { echo "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/settings.local.json"; }
@@ -292,7 +340,7 @@ hook_edit() {
   "$(hook_py)" -c '
 import json, os, re, sys
 mode, path, self = sys.argv[1:4]
-ours = re.compile(r"warmd.* hook-(pre|session|subagent)$")
+ours = re.compile(r"warmd.* hook-(pre|session|subagent|compact)$")
 try:
     data = json.load(open(path))
 except FileNotFoundError:
@@ -313,6 +361,7 @@ if mode == "add":
     hooks.setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": self + " hook-session"}]})
     hooks.setdefault("SubagentStop", []).append({"hooks": [{"type": "command", "command": self + " hook-subagent"}]})
+    hooks.setdefault("PreCompact", []).append({"hooks": [{"type": "command", "command": self + " hook-compact"}]})
 if not hooks:
     del data["hooks"]
 if not data:

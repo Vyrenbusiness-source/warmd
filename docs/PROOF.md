@@ -9,7 +9,7 @@ warmd bench            # cold, warm and cached on your project
 warmd bench MyTests    # same, for one filter
 ```
 
-The [CI workflow](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) runs the self-tests on Windows, Linux and macOS, a real Godot, and a public benchmark. Open a run and look at the job summary of `proof`.
+The [CI workflow](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) runs the self-tests on Windows, a real Godot, and a public benchmark. Open a run and look at the job summary of `proof`.
 
 ## Unity
 
@@ -74,10 +74,12 @@ Output an agent has to read for one test run:
 | Run | Raw output | warmd | Saved |
 |---|---|---|---|
 | Unity, green | 33,323 bytes of log | 41 bytes | 99.9% |
-| Vitest, green | 270 bytes | 11 bytes | 96% |
-| Vitest, one failure | 877 bytes | 490 bytes | 44% |
+| Web (Vitest), green | 289 tokens | 6 tokens | 98% |
+| Web (Vitest), one failure | 714 tokens | 136 tokens | 81% |
+| Python (pytest), green | 309 tokens | 6 tokens | 98% |
+| Python (pytest), one failure | 479 tokens | 153 tokens | 68% |
 
-These numbers are per test run.
+These numbers are per test run. Web and Python are real token counts from `claude -p`, with the raw outputs, the agent A/B and how to repeat it in [ab.md](ab.md).
 
 ## Godot
 
