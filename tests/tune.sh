@@ -5,7 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache"
-unset WARMD_CORES WARMD_RAM_MB
+unset WARMD_CORES WARMD_RAM_MB WARMD_NO_RAM_WAIT
+export WARMD_FREE_PCT=100   # fake free RAM: no test waits on the real machine, RAM tests set their own value
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: wanted /$2/, got: $(echo "$3" | head -3)"; fails=$((fails+1)); fi; }
 mkdir -p "$TMP/app"; cd "$TMP/app" || exit 1

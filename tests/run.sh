@@ -5,6 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache"
+export WARMD_NO_RAM_WAIT=1   # the suite never waits on this machine's RAM, tests/tune.sh tests the wait with a fake free value
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
