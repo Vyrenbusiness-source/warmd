@@ -115,5 +115,21 @@ echo more > "$W/d/d.txt"
 out="$("$WARMD" watch --once)"; rc=$?
 [ "$rc" = 0 ] && echo "$out" | grep -q '^OK all worktrees moved.*paused: a b c$' && [ ! -f "$C/warmd-auto/paused/d" ] && ok "a worktree that moves is live again" || no "resume rc=$rc: $out"
 
+# ---- red run for every adapter: the exit code of the last warmd test or check, not only the daemon's result.txt ----
+G="$TMP/gen"; mkdir -p "$G" && cd "$G" && git init -q -b main . && git config core.autocrlf false && git config user.name t && git config user.email t@example.com
+printf 'test=exit 1\n' > warmd.conf; printf '.warmd\n' > .gitignore; git add -A && git commit -qm init
+WARMD_NOCACHE=1 "$WARMD" test >/dev/null 2>&1
+red() { (WARMD_HOME="$HERE"; . "$HERE/lib/auto.sh"; auto_red "$1"); }
+[ "$(cut -d' ' -f1 "$G/.warmd/run/last.rc" 2>/dev/null)" != 0 ] && red "$G" && ok "a red warmd test in a generic project counts as red" || no "generic red run not seen: $(cat "$G/.warmd/run/last.rc" 2>&1)"
+printf 'test=true\n' > warmd.conf
+WARMD_NOCACHE=1 "$WARMD" test >/dev/null 2>&1
+! red "$G" && ok "a green rerun clears the red" || no "green rerun still red: $(cat "$G/.warmd/run/last.rc" 2>&1)"
+printf '7 FAIL\n' > "$G/.warmd/run/result.txt"; touch -t 202001010000 "$G/.warmd/run/result.txt"
+! red "$G" && ok "an older daemon FAIL does not beat the newer green run" || no "old result.txt overrode last.rc"
+echo "4 test" > "$G/.warmd/run/last.rc"; touch -t 201901010000 "$G/.warmd/run/last.rc"
+red "$G" && ok "a newer daemon FAIL still counts" || no "newer result.txt FAIL not seen"
+rm -f "$G/.warmd/run/result.txt"
+! red "$G" && ok "a refused run (merge running) is not red" || no "refusal counted as red"
+
 cd /; rm -rf "$TMP" "$(dirname "$R")/.warmd-worktrees" 2>/dev/null
 [ $fails = 0 ] && echo "auto: all ok" || { echo "auto: $fails failed"; exit 1; }

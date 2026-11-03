@@ -181,15 +181,7 @@ tune_godot_gpu_flag() { # <godot exe>: --gpu-index only when this build lists it
 }
 
 # Graphics runs have their own queue: gfx_take waits for a free place, the place is freed when warmd ends.
-GFXSLOT=""
-on_exit() {
-  [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
-  [ -n "$SLOT" ] && rm -rf "$SLOT"
-  [ -n "$GFXSLOT" ] && rm -rf "$GFXSLOT"
-  [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
-  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK"
-  return 0
-}
+GFXSLOT=""   # freed by on_exit in lib/core.sh
 gfx_take() {
   [ -n "$GFXSLOT" ] && return 0
   claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT && return 0

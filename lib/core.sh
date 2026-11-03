@@ -6,10 +6,14 @@ CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
 LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
 PARENT_PID="$PPID"
 on_exit() {
+  local rc=$?
+  # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
+  case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
   [ -n "$SLOT" ] && rm -rf "$SLOT"
+  [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
-  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK"
+  [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
   return 0
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.

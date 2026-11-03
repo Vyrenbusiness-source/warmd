@@ -38,10 +38,21 @@ auto_drain() { # common -> prints and empties the queue, 1 when it was empty
 # ---- stop: called from hook-job with the outcome the transcript gave ----
 # A red last run turns ok into failed. failed and escalated go one tier up; at the top tier a human gets the task.
 # Prints the outcome for the ledger and the batch: escalated while a next attempt is queued, failed at the top.
+# Was the last run in this worktree red? The newer of two records decides: last.rc (exit code of the last warmd test or check,
+# every adapter) and result.txt (the daemon's last job). Refusals (2 usage, 3 caller gone, 4 merge, 5 batch, 130 cut off) are not red.
+auto_red() { # worktree
+  local r="$1/.warmd/run" rc
+  if [ -f "$r/last.rc" ] && ! [ "$r/result.txt" -nt "$r/last.rc" ]; then
+    read -r rc _ < "$r/last.rc" 2>/dev/null; rc="${rc%$'\r'}"
+    case "$rc" in ''|0|2|3|4|5|130) return 1;; *) return 0;; esac
+  fi
+  [ "$(head -1 "$r/result.txt" 2>/dev/null | cut -d' ' -f2 | tr -d '\r')" = FAIL ]
+}
+
 auto_stop() { # common name worktree outcome
   local common="$1" name="$2" wt="$3" outcome="$4" m tf proj out
   m="$(auto_dir "$common")/paused/$name"
-  if [ "$outcome" = ok ] && [ "$(head -1 "$wt/.warmd/run/result.txt" 2>/dev/null | cut -d' ' -f2 | tr -d '\r')" = FAIL ]; then outcome=failed; fi
+  [ "$outcome" = ok ] && auto_red "$wt" && outcome=failed
   case "$outcome" in failed|escalated) ;; *) auto_pause "$common" "$name"; echo "$outcome"; return 0;; esac
   # The same stop twice (hook fired twice): no second escalation
   if [ -n "$(find "$m" -maxdepth 0 -mmin "-$AUTO_DUP" 2>/dev/null)" ]; then echo escalated; return 0; fi
