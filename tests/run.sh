@@ -5,6 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache"
+# The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
+bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
 fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
@@ -51,6 +53,7 @@ echo 'console.error("Error: boom at line 7"); process.exit(1)' >> test.js
 out="$("$WARMD" test)"; rc=$?
 [ "$rc" != 0 ] && ok "red exits non-zero" || no "red exited zero"
 expect "red shows the error line" 'Error: boom at line 7' "$out"
+out="$(echo "$out" | grep -vE '^\((queued|RAM|slot free)')"   # a queue wait adds its own lines, they do not count
 [ "$(echo "$out" | wc -l | tr -d ' ')" -le 15 ] && ok "red output stays under 15 lines" || no "red output has $(echo "$out" | wc -l) lines"
 expect "red is not cached" '^FAIL' "$("$WARMD" test)"
 git checkout -q test.js
