@@ -116,6 +116,7 @@ out="$("$WARMD" watch --once)"; rc=$?
 "$WARMD" watch --pause c >/dev/null; "$WARMD" watch --pause d >/dev/null
 out="$("$WARMD" watch 5)"; rc=$?
 [ "$rc" = 0 ] && [ "$out" = "OK no agent runs, paused: a b c d" ] && ok "all paused: watch ends instead of waiting" || no "all paused rc=$rc: $out"
+old d   # find -newer may compare whole seconds: a marker from this very second would hide the move
 echo more > "$W/d/d.txt"
 out="$("$WARMD" watch --once)"; rc=$?
 [ "$rc" = 0 ] && echo "$out" | grep -q '^OK all worktrees moved.*paused: a b c$' && [ ! -f "$C/warmd-auto/paused/d" ] && ok "a worktree that moves is live again" || no "resume rc=$rc: $out"
