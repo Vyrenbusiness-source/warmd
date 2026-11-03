@@ -265,7 +265,7 @@ wt_task() { # worktree
 # Minutes since the last movement in a worktree, 0 while a run or process is active.
 wt_idle() { # worktree limit batchfile
   local wt="$1" limit="$2" batch="$3" last started
-  if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path '*/.git/*' -not -path '*/Library/*' -not -path '*/.warmd/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)" ]; then echo 0; return; fi
+  if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path "$wt/.git/*" -not -path "$wt/*/.git/*" -not -path "$wt/Library/*" -not -path "$wt/*/Library/*" -not -path "$wt/.warmd/*" -not -path "$wt/*/.warmd/*" -not -path "$wt/Temp/*" -not -path "$wt/*/Temp/*" -not -path "$wt/Logs/*" -not -path "$wt/*/Logs/*" -not -path "$wt/obj/*" -not -path "$wt/*/obj/*" -not -path "$wt/node_modules/*" -not -path "$wt/*/node_modules/*" 2>/dev/null | head -1)" ]; then echo 0; return; fi
   # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
   last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; started="$(date -r "$batch" +%s 2>/dev/null || echo 0)"
   [ "$started" -gt "$last" ] && last="$started"

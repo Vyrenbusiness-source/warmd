@@ -21,7 +21,7 @@ auto_paused() { # common name worktree
   local m; m="$(auto_dir "$1")/paused/$2"
   [ -f "$m" ] || return 1
   local mt ct; mt="$(date -r "$m" +%s 2>/dev/null || echo 0)"; ct="$(git -C "$3" log -1 --format=%ct 2>/dev/null || echo 0)"
-  if [ "$ct" -gt "$mt" ] || [ -n "$(find "$3" -type f -newer "$m" -not -path '*/.git/*' -not -path '*/.warmd/*' -not -path '*/Library/*' -not -path '*/Temp/*' -not -path '*/Logs/*' -not -path '*/obj/*' -not -path '*/node_modules/*' 2>/dev/null | head -1)" ]; then
+  if [ "$ct" -gt "$mt" ] || [ -n "$(find "$3" -type f -newer "$m" -not -path "$3/.git/*" -not -path "$3/*/.git/*" -not -path "$3/.warmd/*" -not -path "$3/*/.warmd/*" -not -path "$3/Library/*" -not -path "$3/*/Library/*" -not -path "$3/Temp/*" -not -path "$3/*/Temp/*" -not -path "$3/Logs/*" -not -path "$3/*/Logs/*" -not -path "$3/obj/*" -not -path "$3/*/obj/*" -not -path "$3/node_modules/*" -not -path "$3/*/node_modules/*" 2>/dev/null | head -1)" ]; then
     rm -f "$m"; return 1
   fi
   return 0

@@ -4,7 +4,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_CACHE_HOME="$TMP/cache" WARMD_TRANSCRIPTS="$TMP/transcripts"
 # The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
 bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
 fails=0
