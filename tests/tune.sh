@@ -6,6 +6,8 @@ WARMD="$HERE/bin/warmd"
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache"
 unset WARMD_CORES WARMD_RAM_MB
+# The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
+bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: wanted /$2/, got: $(echo "$3" | head -3)"; fails=$((fails+1)); fi; }
 mkdir -p "$TMP/app"; cd "$TMP/app" || exit 1
@@ -52,8 +54,8 @@ expect "warmd.conf ram_free_min wins" 'queued: only 40% RAM free, waiting for 50
 rm warmd.conf
 
 # ---- a green-cache hit never waits for RAM or a slot; ram_wait=0 and WARMD_NO_RAM_WAIT=1 switch the wait off ----
+printf 'slots=1\n' > warmd.conf   # before the fill: warmd.conf is part of the code key
 export WARMD_NOCACHE=1; "$WARMD" test > /dev/null; unset WARMD_NOCACHE   # fills the green cache
-printf 'slots=1\n' > warmd.conf
 mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; echo $$ > "$XDG_CACHE_HOME/warmd/slots/1/pid"   # the only slot is held by a live process
 t0=$(date +%s)
 out="$(WARMD_FREE_PCT=1 WARMD_RAM_WAIT=60 "$WARMD" test)"
