@@ -129,6 +129,8 @@ tune_free_pct() {
 # 0 in warmd.conf switches it off. It waits at most WARMD_RAM_WAIT seconds (default 1800), then runs anyway.
 tune_wait_ram() {
   local min="${CFG_ram_free_min:-15}" pct said="" t0 limit="${WARMD_RAM_WAIT:-1800}"
+  [ "${WARMD_NO_RAM_WAIT:-0}" = 1 ] && return 0
+  [ "${CFG_ram_wait:-1}" = 0 ] && return 0
   [ "$min" -gt 0 ] 2>/dev/null || return 0
   t0=$(date +%s)
   while :; do
@@ -146,9 +148,12 @@ tune_wait_ram() {
 hw_gpu() {
   if [ -n "${WARMD_GPU:-}" ]; then echo "$WARMD_GPU"; return; fi
   hw >/dev/null
-  local f="$CACHE_ROOT/hw" g
-  g="$(sed -n 2p "$f" 2>/dev/null)"
-  if [ -z "$g" ]; then g="$(hw_gpu_read)"; echo "$g" >> "$f" 2>/dev/null; fi
+  local f="$CACHE_ROOT/hw" g=""
+  [ -f "$f" ] && g="$(sed -n 2p "$f" 2>/dev/null)"
+  if [ -z "$g" ]; then
+    g="$(hw_gpu_read)"
+    if mkdir -p "$CACHE_ROOT" 2>/dev/null && [ -f "$f" ]; then echo "$g" >> "$f" 2>/dev/null; fi
+  fi
   echo "$g"
 }
 
@@ -227,7 +232,27 @@ claim_slot() {
 slot_try() { [ -n "$SLOT" ] && return 0; claim_slot "$CACHE_ROOT/slots" "$(slots_max)" SLOT; }
 # RAM check comes after the slot, so only slot holders wait for memory
 eval "$(declare -f slot_take | sed '1s/slot_take/slot_take_base/')"
-slot_take() { slot_take_base; tune_wait_ram; }
+slot_take_now() { slot_take_base; tune_wait_ram; }
+# A green-cache hit never waits: when the caller goes straight on to "cached", the slot and the RAM wait move behind the cache check.
+SLOT_DEFER=0
+slot_take() {
+  if [ -z "$SLOT" ] && [ -n "${FUNCNAME[1]:-}" ] && declare -f "${FUNCNAME[1]}" | tr '\n' ' ' | grep -qE 'slot_take; +cached '; then SLOT_DEFER=1; return 0; fi
+  slot_take_now
+}
+# Only a miss takes the slot. The key is read again after the wait, the code may change while queued.
+eval "$(declare -f cached | sed '1s/cached/cached_base/')"
+cached() {
+  local key f
+  if [ "$SLOT_DEFER" = 1 ]; then
+    SLOT_DEFER=0
+    if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)"; then
+      f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")"
+      [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; return 0; }
+    fi
+    slot_take_now
+  fi
+  cached_base "$@"
+}
 
 # Unity import workers cost about 1 GB each and stay after the work is done. After a job on an idle daemon they are ended, Unity starts new ones on demand.
 if declare -F job >/dev/null; then
