@@ -165,6 +165,23 @@ warmd perf
 FAIL perf: no baseline, run warmd perf --save first
 ```
 
+### warmd ship
+Builds the integration branch `warmd-ship` from `origin/<base>`, merges the finished task branches one by one, pushes, opens or updates one PR, waits for CI and merges on green. A conflict is resolved only when every conflicting line in `bin/warmd` is a usage or dispatch line, both sides are kept. Any other conflict stops with the file names. On red it names the failing tests and does not merge. `--release vX.Y.Z` then creates a release with notes from `git log` since the last tag. Syntax: `warmd ship [--base B] [--release vX.Y.Z] <branch>...`. Needs `gh`.
+```text
+warmd ship alpha beta
+ok   merged alpha
+ok   merged beta, usage/dispatch conflict resolved
+ok   opened PR #7
+ok   self-test (windows-latest)
+ok   shellcheck
+GREEN run 41
+ok   merged PR #7 into main
+SHIPPED PR #7
+```
+
+### warmd ci
+Waits for the newest CI run of the current branch, prints one line per job and the failing test names on red. Syntax: `warmd ci [branch]`. Exit 1 on red.
+
 ## Setup
 
 ### warmd init

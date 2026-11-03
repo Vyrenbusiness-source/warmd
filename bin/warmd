@@ -15,8 +15,18 @@ WARMD_VERSION=0.3.0
 . "$WARMD_HOME/lib/perf.sh"
 . "$WARMD_HOME/lib/layout.sh"
 
+# Commands register themselves: a lib calls reg with its name, usage line and function.
+# New commands need no edit here, so parallel branches never conflict in this file.
+REG_NAMES=" "; REG_USAGE=""
+reg() { # name "usage line" function
+  REG_NAMES="$REG_NAMES$1 "; REG_USAGE="$REG_USAGE  $2
+"; eval "reg_fn_${1//-/_}=\$3"
+}
+# One grep for all libs, a process start per lib is slow on Windows.
+while IFS= read -r f; do . "$f"; done < <(grep -l '^reg ' "$WARMD_HOME"/lib/*.sh)
+
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 warmd - keep the slow thing warm (Unity, Godot, web dev server, any test suite)
 
 Everyday
@@ -47,6 +57,8 @@ Agents
   warmd merge --continue       finish a merge after you resolved its conflicts
   warmd batch-done             end the batch, the shared checkout opens again
 
+Registered
+${REG_USAGE}
 Setup
   warmd init                   install the engine side, agent definitions, instructions and hooks
   warmd init --slim            also give project agents without a tools line the cheapest useful set
@@ -69,6 +81,7 @@ esac
 
 CMD="${1:-status}"; [ $# -gt 0 ] && shift
 case "$CMD $*" in run\ *|hook-*|init\ *--hooks*|init\ *--no-hooks*) . "$WARMD_HOME/lib/hook.sh"; hook_main "$CMD" "$@"; exit $?;; esac
+case "$REG_NAMES" in *" $CMD "*) fn="reg_fn_${CMD//-/_}"; "${!fn}" "$@"; exit $?;; esac
 detect_project
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
 
