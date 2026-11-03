@@ -20,6 +20,7 @@ hook_main() { # command args...
     hook-pre)     hook_pre;;
     hook-session) hook_session;;
     hook-subagent) hook_subagent;;
+    hook-compact) auto_compact;;
     hook-job)     hook_job "$@";;
     hook-merge)   hook_merge "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)";;
     init)         case " $* " in *" --no-hooks "*) hook_remove;; *) hook_install;; esac;;
@@ -45,6 +46,7 @@ hook_wrappable() { # command -> 0 when it is one simple known command
 hook_pre() {
   local in cmd self
   in="$(cat)"
+  auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
   cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
   hook_wrappable "$cmd" || return 0
   self="$(hook_self)"
@@ -238,6 +240,7 @@ hook_job() {
   here="$(pwd)"; common="$(hook_common)" || return 1
   export WARMD_DETACHED=1
   echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls"
+  outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null
     return 0
@@ -292,7 +295,7 @@ hook_edit() {
   "$(hook_py)" -c '
 import json, os, re, sys
 mode, path, self = sys.argv[1:4]
-ours = re.compile(r"warmd.* hook-(pre|session|subagent)$")
+ours = re.compile(r"warmd.* hook-(pre|session|subagent|compact)$")
 try:
     data = json.load(open(path))
 except FileNotFoundError:
@@ -313,6 +316,7 @@ if mode == "add":
     hooks.setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": self + " hook-session"}]})
     hooks.setdefault("SubagentStop", []).append({"hooks": [{"type": "command", "command": self + " hook-subagent"}]})
+    hooks.setdefault("PreCompact", []).append({"hooks": [{"type": "command", "command": self + " hook-compact"}]})
 if not hooks:
     del data["hooks"]
 if not data:
