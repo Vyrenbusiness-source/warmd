@@ -4,10 +4,12 @@
 
 # warmd
 
-**Fewer tokens, faster agents. Unity tests in 3 seconds instead of 56.**
+**Your coding agent waits less and reads less. Unity tests in 3 seconds instead of 56, and 41 bytes of output instead of 33,323.**
 
-A headless daemon and one-command CLI for games, websites and ordinary programs.<br>
-It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
+```bash
+curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
+cd your-project && warmd init && warmd check
+```
 
 [![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
 [![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
@@ -16,48 +18,49 @@ It finds your stack on its own and works with Claude Code, Codex, Cursor and any
 ![Godot](https://img.shields.io/badge/Godot-4-478cbf?logo=godotengine&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-ff7a30)
 
+<img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
+
+<sub>Illustrative session. Timings come from [the measurements](docs/MEASURED.md).</sub>
+
 <table>
 <tr>
 <td align="center" width="25%"><h3>95% faster</h3>one Unity test class<br><sub>56 s → 3 s, large HDRP project</sub></td>
 <td align="center" width="25%"><h3>99% fewer tokens</h3>per green Unity test run<br><sub>33 KB log → 41 bytes</sub></td>
 <td align="center" width="25%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub>green results are cached</sub></td>
-<td align="center" width="25%"><h3>26 s → 8 s</h3>full PlayMode run<br><sub>with <code>--speed 8</code></sub></td>
+<td align="center" width="25%"><h3>19% cheaper</h3>same task with and without warmd<br><sub>real A/B, 2 runs, <a href="docs/ab.md">docs/ab.md</a></sub></td>
 </tr>
 </table>
 
+**Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers).** One click, and others find it.
 
-**⭐ Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers), it takes one click and helps others find it.**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
-cd your-project && warmd init && warmd check
-```
-
-| You build | What warmd does |
-|---|---|
-| **Games** (Unity, Godot) | Keeps the editor warm: one Unity test class in 3 s instead of 56 s |
-| **Websites** | Warm dev server, desktop and phone screenshots in 1.3 s |
-| **Ordinary programs** (Node, Rust, Go, Python, .NET) | Runs only the affected tests and caches green runs: Vitest 1.9 s instead of 4 s |
-
-**Everything stays readable.** Only the output of builds and tests is shortened, never your code. On red you get the error lines with file and line, and the full log stays in `.warmd/run/last.log`.
-
-<img src="docs/assets/demo.gif" alt="warmd check finds a failing Unity test, then passes" width="720">
-
-<sub>Illustrative session. Timings come from [the measurements](docs/MEASURED.md).</sub>
-
-**[Install](#install) · [Why](#why) · [Advantages](#every-advantage-one-sentence) · [What you get](#what-you-get) · [When it helps](#when-it-helps-and-when-it-does-not) · [Measured](#measured) · [Docs](#docs) · [Safety](#safety)**
+**[Features](#features) · [Why](#why) · [Install](#install) · [What you get](#what-you-get) · [Measured](#measured) · [Docs](#docs) · [Safety](#safety)**
 
 </div>
 
-## Highlights
+A headless daemon and one-command CLI for games, websites and ordinary programs. It finds your stack on its own and works with Claude Code, Codex, Cursor and anything that can run a shell command.
 
-- **Warm.** The slow engine stays open between runs. No restart per test.
-- **Short.** One line on success, only the error lines on failure.
-- **Cached.** A green run stays green until the code changes. Red is never cached.
-- **Affected only.** `warmd check` runs the tests that mention what you changed.
-- **Zero config.** It detects Unity, Godot, web, Rust, Go, Python and .NET from the files.
-- **Agent-ready.** Works with Claude Code, Codex, Cursor and anything that runs a shell command. People can use it too.
-- **Small.** About 1135 lines of bash plus one C# and one GDScript file.
+**Everything stays readable.** Only the output of builds and tests is shortened, never your code. On red you get the error lines with file and line, and the full log stays in `.warmd/run/last.log`.
+
+## Features
+
+Every number below is measured. Sources: [docs/MEASURED.md](docs/MEASURED.md), [docs/PROOF.md](docs/PROOF.md), [docs/ab.md](docs/ab.md), `tests/`. Your numbers will differ, `warmd bench` measures your own project.
+
+| Command | What it does | Measured |
+|---|---|---|
+| `warmd check` | Builds, then runs only the tests that mention what you changed. Green runs are cached | Unity test class 56 s → 3 s, repeat 0.4 s |
+| `warmd gain` | Reads your Claude Code transcripts and prints tokens and dollars per session. Offline | A/B on one task: 100,805 → 92,791 tokens, 0.0294 → 0.0238 usd per run ([ab.md](docs/ab.md)) |
+| `warmd init --slim` | Gives agents without a `tools` line the cheapest useful tool set | Start tokens 15,334 → 3,762, Bash adds back 1,867 (commit `b04fe81`) |
+| `warmd layout` | Layout problems as text lines at desktop and phone width, no screenshot | Test: `tests/layout.sh` |
+| `warmd shot` | Desktop and 390 px phone screenshot, sized to cost few tokens | 2 screenshots in 1.3 s |
+| `warmd map <file>` | Outline with line numbers instead of the whole file | Test: `tests/run.sh` |
+| `warmd watch` | Runs in the background and ends when an agent stalls or the batch is over | Test: `tests/run.sh` |
+| `warmd handoff` | Context filling up: saves state and prints the line for a fresh agent | Test: `tests/run.sh` |
+| `warmd perf` | Compares load time and bundle size to a stored baseline, refuses a regression over 5% | Test: `tests/perf.sh` |
+| `warmd audit` | Shows what your agents really pay for, biggest cost first | Test: `tests/run.sh` |
+| `warmd report` | Cost per model tier and what escalation wasted | Test: `tests/ledger.sh` |
+| `warmd update` | Fetches the newest version, only when you run it | Only runs on request, nothing is fetched otherwise |
+
+**Faster inner loop (branch `warmd/speed2`, commit `17d6f02`).** The code hash behind the cache needs fewer process forks. With 40 changed files it takes 115 ms instead of 662 ms per call (10-call average). With 1 changed file it stays at about 100 ms. A green-cache hit no longer waits for a slot in the queue.
 
 ## Why
 
@@ -177,7 +180,7 @@ Numbers are per run. Do not trust them, run them: `warmd bench` measures your ow
 
 ## Safety
 
-warmd is about 1135 lines of bash plus one C# and one GDScript file. You can read it in one sitting.
+warmd is about 2,263 lines of bash plus one C# and one GDScript file. You can read it in one sitting.
 
 - **No network.** It sends nothing anywhere, there is no telemetry. Only `warmd finish` talks to the outside, and only with `git push` to your own remote.
 - **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. `warmd init` adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
