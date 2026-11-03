@@ -119,6 +119,6 @@ mcp_audit() {
     elif [ $up = 1 ]; then echo "  upfront   $name  ($scope)"
     else echo "  deferred  $name  ($scope)"; fi
   done < <(grep '^S' "$tmp/srv")
-  echo "  $n servers. Deferred servers cost only their tool names at start; an upfront server costs its full tool schemas on every turn."
+  echo "  $n servers. A deferred server costs its tool names only (measured: one server with 25 tools, +244 start tokens); an upfront one costs its full tool schemas on every turn."
   rm -rf "$tmp"
 }

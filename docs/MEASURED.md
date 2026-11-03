@@ -72,3 +72,14 @@ Measured 2026-11-03, one live run, Windows 10, Claude Code `claude -p` with haik
 | After the session | main green and clean, no lock, no `MERGE_HEAD` |
 
 Tokens are input, cache write, cache read and output summed over every turn of the agent's transcript. The merge job starts through `Win32_Process.Create`, outside the session's process tree, so it kept running after `claude -p` exited: the session ended at 19:38:18, the merge of both branches (about 4 s) started the same second and finished on its own. 15 of 15 checks green.
+
+## Repo map (`warmd map` with no file)
+
+Measured 2026-11-03 on the A/B fixtures `tests/ab/web` and `tests/ab/py` (branch `warmd/ab`, commit `fa48ad0`), default budget 1,500 tokens. Unit: bytes / 4 of the full output (header and footer included) against bytes / 4 of every source file the map lists, which is what an agent reads to get the same overview.
+
+| Project | Files in the map | Map | Reading those files | Saved |
+|---|---|---|---|---|
+| `tests/ab/web` (JS, 7 files) | 7 | 248 | 567 | 56 % |
+| `tests/ab/py` (Python, 5 files) | 5 | 177 | 445 | 60 % |
+
+The map grows with the number of symbols, reading grows with the code under them, so the gap widens on real files. Tests are counted as importers (`+N in tests`) but are not map entries. `tests/map.sh` checks the ranking on a fixture.

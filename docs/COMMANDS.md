@@ -59,7 +59,7 @@ FOUND 2 layout problems
 ```
 
 ### warmd map
-Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`.
+Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`. With no file it prints a repo map: files ranked by how many files import them, each with the symbols its importers use, trimmed to `--budget N` tokens (default 1500).
 ```text
 warmd map src/cart.js
 == cart.js
@@ -69,6 +69,7 @@ warmd map src/cart.js
 
 ### warmd audit
 Shows what your agents pay for on every turn, biggest cost first.
+It also lists every MCP server from `~/.claude.json` and `.mcp.json`, says which ones load their tool lists upfront (`"alwaysLoad": true`, `ENABLE_TOOL_SEARCH=false` or `auto`, a denied `ToolSearch`) and names the setting that defers them.
 
 ### warmd run
 Runs any command and keeps its output short: up to 20 lines pass through unchanged, longer output becomes one OK or FAIL line with the error lines, and the full log stays on disk. After `warmd init` the hooks send noisy known commands (test runners, builds, linters) through it on their own.
