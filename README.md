@@ -49,7 +49,7 @@ Every number below is measured. Sources: [docs/MEASURED.md](docs/MEASURED.md), [
 |---|---|---|
 | `warmd check` | Builds, then runs only the tests that mention what you changed. Green runs are cached | Unity test class 56 s → 3 s, repeat 0.4 s |
 | `warmd gain` | Reads your Claude Code transcripts and prints tokens and dollars per session. Offline | A/B on one task: 100,805 → 92,791 tokens, 0.0294 → 0.0238 usd per run ([ab.md](docs/ab.md)) |
-| `warmd init --slim` | Gives agents without a `tools` line the cheapest useful tool set | Start tokens 15,334 → 3,762, Bash adds back 1,867 (commit `b04fe81`) |
+| `warmd init --slim` | Gives agents without a `tools` line the cheapest useful tool set | Start tokens 15,334 → 3,762, Bash adds back 1,867 ([MEASURED.md](docs/MEASURED.md#agent-start-cost-warmd-init---slim)) |
 | `warmd layout` | Layout problems as text lines at desktop and phone width, no screenshot | Test: `tests/layout.sh` |
 | `warmd shot` | Desktop and 390 px phone screenshot, sized to cost few tokens | 2 screenshots in 1.3 s |
 | `warmd map <file>` | Outline with line numbers instead of the whole file | Test: `tests/run.sh` |
@@ -60,7 +60,7 @@ Every number below is measured. Sources: [docs/MEASURED.md](docs/MEASURED.md), [
 | `warmd report` | Cost per model tier and what escalation wasted | Test: `tests/ledger.sh` |
 | `warmd update` | Fetches the newest version, only when you run it | Only runs on request, nothing is fetched otherwise |
 
-**Faster inner loop (branch `warmd/speed2`, commit `17d6f02`).** The code hash behind the cache needs fewer process forks. With 40 changed files it takes 115 ms instead of 662 ms per call (10-call average). With 1 changed file it stays at about 100 ms. A green-cache hit no longer waits for a slot in the queue.
+**Faster inner loop ([MEASURED.md](docs/MEASURED.md#code-hash-speed-code_key)).** The code hash behind the cache needs fewer process forks. With 40 changed files it takes 115 ms instead of 662 ms per call (10-call average). With 1 changed file it stays at about 100 ms. A green-cache hit no longer waits for a slot in the queue.
 
 ## Why
 
