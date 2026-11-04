@@ -28,6 +28,17 @@ expect "the brief keeps the first owner" '^- a: src/a.ts' "$(cat "$common/warmd-
 expect "the brief adds the second owner" '^- b: src/b.ts' "$(cat "$common/warmd-shared.md")"
 expect "the brief keeps its findings" 'a fact from the first agent' "$(cat "$common/warmd-shared.md")"
 "$WARMD" split two.txt > /dev/null 2>&1
+# A finished task with merged work leaves the batch at the next split; a finished task with work left stays for the merge.
+printf 'z | old | y | src/z.ts\n' > old.txt; "$WARMD" split old.txt > /dev/null
+printf '%s\tok\n' "$(cd "$wts/z" && pwd)" >> "$common/warmd-batch-done"
+printf 'y | kept | y | src/y.ts\n' > kept.txt; "$WARMD" split kept.txt > /dev/null
+(cd "$wts/y" && mkdir -p src && echo y > src/y.ts && git add -A && git commit -qm y)
+printf '%s\tok\n' "$(cd "$wts/y" && pwd)" >> "$common/warmd-batch-done"
+printf 'x | next | y | src/x.ts\n' > next.txt; "$WARMD" split next.txt > /dev/null
+if grep -q '/z$' "$common/warmd-batch"; then echo "FAIL a finished, merged task stays in the batch"; fails=$((fails+1)); else echo "ok   a finished, merged task leaves the batch"; fi
+expect "a finished task with unmerged work stays" '/y$' "$(cat "$common/warmd-batch")"
+expect "a running task stays" '/a$' "$(cat "$common/warmd-batch")"
+"$WARMD" batch-done > /dev/null; "$WARMD" split one.txt > /dev/null; "$WARMD" split two.txt > /dev/null
 printf 'c | clash | y | src/a.ts\n' > clash.txt
 expect "a file owned by the running batch is refused" 'GAP c: src/a.ts already owned' "$("$WARMD" split clash.txt)"
 

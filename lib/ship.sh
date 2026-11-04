@@ -170,7 +170,17 @@ ci_main() {
   ci_wait "$br"
 }
 
+# The checkout goes back to the branch it was on, base pulled up to date: ship never leaves it on warmd-ship.
 ship_main() {
+  local orig rc; orig="$(git branch --show-current)"
+  ship_run "$@"; rc=$?
+  if [ -n "$orig" ] && [ "$(git branch --show-current)" != "$orig" ] && [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+    git checkout -q "$orig" 2>/dev/null && git merge -q --ff-only "@{u}" >/dev/null 2>&1
+  fi
+  return $rc
+}
+
+ship_run() {
   local base=main release="" into="warmd-ship" branches=() b
   while [ $# -gt 0 ]; do
     case "$1" in

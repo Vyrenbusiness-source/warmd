@@ -307,6 +307,10 @@ hook_merge() { # common dir
   echo "$pid" > "$lock/pid"; local me="$pid"
   hook_unlock() { local p=""; read -r p 2>/dev/null < "$lock/pid"; [ "$p" = "$me" ] && rm -rf "$lock"; }   # never someone else's lock
   main="$(hook_mainwt "$common")"
+  # full=ci: this machine never runs the full suite, so no local merge gate either; warmd ship merges through CI.
+  # Compared with origin too: a stale local base would count work already shipped as new and merge it again.
+  local full=0 ship="" ob; grep -qE '^[[:space:]]*full[[:space:]]*=[[:space:]]*ci[[:space:]]*$' "$main/warmd.conf" 2>/dev/null && full=1
+  git -C "$main" fetch -q origin 2>/dev/null; ob="origin/$(git -C "$main" branch --show-current)"
   {
     echo "$(date '+%F %T') batch finished, merging into $(git -C "$main" branch --show-current) in $main"
     while read -r wt; do
@@ -315,6 +319,8 @@ hook_merge() { # common dir
       if [ "$oc" = escalated ]; then echo "WAIT $br escalated, stays in the batch"; keep="$keep$wt"$'\n'; continue; fi
       [ "$oc" = ok ] || { echo "SKIP $br: $oc"; continue; }
       [ "$(git -C "$main" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
+      git -C "$main" rev-parse -q --verify "$ob" >/dev/null && git -C "$main" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { echo "SKIP $br: already on $ob"; continue; }
+      [ $full = 1 ] && { ship="$ship $br"; continue; }
       out="$(cd "$main" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
       git -C "$main" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$main" merge --abort 2>/dev/null
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
@@ -324,6 +330,10 @@ hook_merge() { # common dir
       fi
       first=0
     done < "$batch"
+    if [ -n "$ship" ]; then
+      echo "SHIP full=ci, no local merge:$ship"
+      auto_queue "$common" "SHIP batch done, full=ci merges through CI: warmd ship$ship"
+    fi
     if [ -n "$keep" ]; then
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else

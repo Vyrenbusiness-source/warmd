@@ -237,5 +237,20 @@ if command -v cygpath >/dev/null 2>&1; then
   else ok "8.3 names off on this drive, path form check skipped"; fi
 fi
 
+# ---- automatic merge with full=ci: no local gate, warmd ship is queued; work already on origin is skipped ----
+M="$TMP/fullci"; mkdir -p "$M"; git init -q --bare -b main "$M/o.git"; git clone -q "$M/o.git" "$M/r" 2>/dev/null
+( cd "$M/r" && git config user.name t && git config user.email t@example.com && printf 'test=exit 1\nfull=ci\n' > warmd.conf && printf '.warmd\n' > .gitignore \
+  && git add -A && git commit -qm init && git push -q origin main \
+  && for n in new old; do git worktree add -q -b "warmd/$n" "$M/$n" main; (cd "$M/$n" && echo "$n" > "$n.txt" && git add -A && git commit -qm "$n"); done \
+  && git push -q origin warmd/old && git push -q origin warmd/old:main && git reset -q --hard )   # old is on origin/main, the local main is stale
+MC="$(git -C "$M/r" rev-parse --path-format=absolute --git-common-dir)"
+printf '%s\n%s\n' "$M/new" "$M/old" > "$MC/warmd-batch"; printf '%s\tok\n%s\tok\n' "$M/new" "$M/old" > "$MC/warmd-batch-done"
+(cd "$M/r" && "$WARMD" hook-merge)
+mlog="$(cat "$MC/warmd-automerge.log" 2>/dev/null)"
+echo "$mlog" | grep -q '^SHIP full=ci, no local merge: warmd/new$' && ok "full=ci: no local merge, the branch goes to ship" || no "full=ci automerge: $mlog"
+[ ! -f "$M/r/new.txt" ] && [ "$(git -C "$M/r" log -1 --format=%s)" = init ] && ok "full=ci: the shared checkout stays untouched" || no "full=ci merged locally: $(git -C "$M/r" log -1 --format=%s)"
+echo "$mlog" | grep -q '^SKIP warmd/old: already on origin/main$' && ok "a branch already on origin is skipped although the local base is stale" || no "stale base: $mlog"
+grep -q 'SHIP batch done, full=ci merges through CI: warmd ship warmd/new' "$MC/warmd-auto/queue" 2>/dev/null && ok "watch gets the ship line" || no "queue: $(cat "$MC/warmd-auto/queue" 2>/dev/null)"
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails FAILED"; exit 1; }
