@@ -5,19 +5,26 @@ on:
   pull_request:
 
 jobs:
+  # The self-test runs as parallel jobs, one per group. Groups are balanced by the "time <suite>" lines of tests/run.sh,
+  # bash tests/run.sh --guard (shellcheck job) fails when a suite is in no group or in two.
   self-test:
+    name: self-test (${{ matrix.group }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
-    runs-on: ${{ matrix.os }}
+        group:
+          - generic
+          - perf ship docs digest
+          - team tune map install ledger
+          - core hook bars gain
+          - auto affected brakes audit unity slim layout
+    runs-on: windows-latest
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - run: bash tests/run.sh
-      - run: bash tests/tune.sh
+      - run: bash tests/run.sh ${{ matrix.group }}
 
   shellcheck:
     runs-on: windows-latest
@@ -31,6 +38,8 @@ jobs:
           curl -fsSL -o sc.zip https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.zip
           unzip -q sc.zip -d "$HOME/sc"
       - run: '"$HOME/sc/shellcheck.exe" --severity=error --shell=bash bin/warmd lib/*.sh adapters/*.sh install.sh tests/run.sh tests/tune.sh tests/install.sh'
+      - name: Every self-test suite is in exactly one group
+        run: bash tests/run.sh --guard
 
   proof:
     runs-on: windows-latest

@@ -1,15 +1,50 @@
 #!/usr/bin/env bash
 # Self-test on throwaway projects. No engine needed. Runs on Linux, macOS and Git Bash.
+# bash tests/run.sh runs every suite, bash tests/run.sh core team runs only those, --guard only checks the CI groups.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
+fails=0
+ok() { echo "ok   $1"; }
+no() { echo "FAIL $1"; fails=$((fails+1)); }
+
+# Suites: core is the inline part of this file, unity is tests/fixtures/unity/check.sh, every other name is tests/<name>.sh.
+# CI runs them as parallel jobs, one per group of the self-test matrix in .github/workflows/ci.yml, balanced by the
+# "time <suite>" lines this file prints. Every suite sits in exactly one group, the guard below fails otherwise.
+SUITES="core ledger digest affected perf tune layout docs hook auto team generic install map ship brakes audit gain slim unity bars"
+OWN_JOB="proof godot"   # tests/<name>.sh with a CI job of its own
+MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
+guard() {
+  local ci="$HERE/.github/workflows/ci.yml" groups f n s c
+  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '')"
+  [ -n "$groups" ] || { no "guard: ci.yml has no self-test matrix group list"; return; }
+  for f in "$HERE"/tests/*.sh; do
+    n="${f##*/}"; n="${n%.sh}"
+    case " run $SUITES $MANUAL " in *" $n "*) continue;; esac
+    case " $OWN_JOB " in *" $n "*) grep -q "tests/$n.sh" "$ci" && continue; no "guard: tests/$n.sh has no CI job"; continue;; esac
+    no "guard: tests/$n.sh is no suite, add it to SUITES in tests/run.sh and to a group in ci.yml"
+  done
+  for s in $SUITES; do
+    c="$(echo "$groups" | tr ' ' '
+' | grep -cx "$s")"
+    [ "$c" = 1 ] || no "guard: suite $s is in $c CI groups, wanted 1"
+  done
+  for s in $(echo "$groups" | tr ' ' '
+'); do
+    case " $SUITES " in *" $s "*) ;; *) no "guard: CI group names unknown suite $s";; esac
+  done
+  [ $fails = 0 ] && ok "every suite is in exactly one CI group"
+}
+if [ "${1:-}" = --guard ]; then guard; exit $fails; fi
+WANT="${*:-$SUITES}"
+for s in $WANT; do case " $SUITES " in *" $s "*) ;; *) echo "FAIL no suite $s, known: $SUITES"; exit 2;; esac; done
+want() { case " $WANT " in *" $1 "*) return 0;; esac; return 1; }
+[ $# = 0 ] && guard
+
 TMP="$(mktemp -d)"
 export XDG_CACHE_HOME="$TMP/cache" WARMD_TRANSCRIPTS="$TMP/transcripts"
 # The suite waits once at its start until RAM is free, like any heavy run (lib/tune.sh tune_wait_ram). The wait itself stays on.
 bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT='$TMP/ramwait'; common_doctor() { :; }; slot_take() { :; }; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram"
-fails=0
-ok() { echo "ok   $1"; }
-no() { echo "FAIL $1"; fails=$((fails+1)); }
 expect() { # name expected-regex actual
   if echo "$3" | grep -qE "$2"; then ok "$1"; else no "$1: wanted /$2/, got: $(echo "$3" | head -3)"; fi
 }
@@ -19,6 +54,8 @@ new_repo() {
   git init -q -b main .; git config user.name t; git config user.email t@example.com
 }
 
+t0="$(date +%s)"
+if want core; then
 # ---- detection ----
 for pair in "unity:ProjectSettings/ProjectVersion.txt" "godot:project.godot" "web:index.html" "web:package.json" "rust:Cargo.toml" "go:go.mod" "python:pyproject.toml"; do
   kind="${pair%%:*}"; marker="${pair#*:}"
@@ -255,14 +292,25 @@ out="$("$WARMD" merge side 2>&1)"
 expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
 git reset -q --hard HEAD~1; git branch -qD side
 
-for t in ledger digest affected perf tune layout docs hook auto team generic install map ship brakes audit; do
-  # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
-  if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
-  bash "$HERE/tests/$t.sh" || fails=$((fails+1))
+echo "time core $(( $(date +%s) - t0 ))s"
+fi
+
+# Every suite starts in the same empty folder, with or without core before it
+cd "$TMP" || exit 1
+for t in $WANT; do
+  t0="$(date +%s)"
+  case "$t" in
+    core) continue;;
+    # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
+    layout) if [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then echo "skip layout on the hosted Windows runner"; continue; fi
+      bash "$HERE/tests/layout.sh" || fails=$((fails+1));;
+    # Unity dotnet stage suite from the unity-build branch: skipped cleanly until that branch is merged
+    unity) if [ -f "$HERE/tests/fixtures/unity/check.sh" ]; then bash "$HERE/tests/fixtures/unity/check.sh" || fails=$((fails+1)); fi;;
+    bars) bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional";;
+    *) bash "$HERE/tests/$t.sh" || fails=$((fails+1));;
+  esac
+  echo "time $t $(( $(date +%s) - t0 ))s"
 done
-# Unity dotnet stage suite from the unity-build branch: skipped cleanly until that branch is merged
-if [ -f "$HERE/tests/fixtures/unity/check.sh" ]; then bash "$HERE/tests/fixtures/unity/check.sh" || fails=$((fails+1)); fi
-bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
