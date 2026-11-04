@@ -231,7 +231,8 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `slots` | Heavy runs per machine | one per 4 cores and per 8 GB RAM, the smaller, at least 1 |
 | `threads` | Build threads per heavy run | cores minus 2, shared by the slots |
 | `agents` | Parallel agents of a batch | one per core and per 2 GB RAM, the smaller, at least 1 |
-| `ram_free_min` | A heavy start waits while less than this percent of RAM is free, 0 turns it off | 15 |
+| `ram_free_min` | A Unity or Godot start waits while less than this percent of RAM is free, 0 turns it off | 15 |
+| `ram_free_min_light` | Any other suite (web, Python, shell) waits only below this percent of free RAM, 0 turns it off | 3 |
 | `ram_wait` | 0 turns the RAM wait off | 1 |
 | `nice` | Priority of heavy runs, 0 turns it off | 10 |
 | `full` | `ci`: a bash project's full self-test runs on CI only | none |

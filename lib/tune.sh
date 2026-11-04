@@ -125,10 +125,15 @@ tune_free_pct() {
   echo $(( avail * 100 / total ))
 }
 
-# tune_wait_ram: a heavy start waits in the queue while less than ram_free_min percent (default 15) of RAM is free.
-# 0 in warmd.conf switches it off. It waits at most WARMD_RAM_WAIT seconds (default 1800), then runs anyway.
+# tune_wait_ram: a start waits in the queue while too little RAM is free. An engine (Unity, Godot) needs ram_free_min percent
+# (default 15); everything else is light (a web, Python or shell suite) and waits only below ram_free_min_light (default 3):
+# a two second suite must not stand half an hour behind a limit made for an editor. 0 in warmd.conf switches a limit off.
+# It waits at most WARMD_RAM_WAIT seconds (default 1800), then runs anyway.
 tune_wait_ram() {
-  local min="${CFG_ram_free_min:-15}" pct said="" t0 limit="${WARMD_RAM_WAIT:-1800}"
+  local min pct said="" t0 limit="${WARMD_RAM_WAIT:-1800}" anyway=0
+  [ "${TUNE_RAM_WAITED:-0}" = 1 ] && return 0   # once per run: build and test of one warmd call never wait twice
+  TUNE_RAM_WAITED=1
+  case "${KIND:-}" in unity|godot|'') min="${CFG_ram_free_min:-15}";; *) min="${CFG_ram_free_min_light:-3}";; esac
   [ "${WARMD_NO_RAM_WAIT:-0}" = 1 ] && return 0
   [ "${CFG_ram_wait:-1}" = 0 ] && return 0
   [ "$min" -gt 0 ] 2>/dev/null || return 0
@@ -137,10 +142,10 @@ tune_wait_ram() {
     pct="$(tune_free_pct)"
     [ "$pct" -ge "$min" ] && break
     [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; }
-    [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; break; }
+    [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
     sleep "${WARMD_RAM_POLL:-3}"; orphan_check
   done
-  [ -z "$said" ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
+  [ -z "$said" ] || [ $anyway = 1 ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
   return 0
 }
 

@@ -4,11 +4,31 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-04
+
+### Fixed
+- A light suite (web, Python, shell) no longer waits half an hour behind the 15 percent RAM limit made for engines; it waits only below `ram_free_min_light` (default 3 percent).
+
 ## [0.4.4] - 2026-11-04
+
+### Fixed
+- `warmd watch` never wakes a task whose agent has stopped, until an Agent call starts the task again; `warmd split` drops finished, merged tasks from a running batch.
+- The automatic merge after the last agent runs no local gate under `full=ci` and queues the `warmd ship` line instead; work already on origin is skipped even when the local base branch is stale.
+- `warmd ship` returns the checkout to the branch it started on and fast-forwards it.
+
+### Changed
+- README and images: what runs by itself, measured numbers stated as scope, every image rebuilt by `docs/assets/render.py`.
 
 ## [0.4.3] - 2026-11-04
 
+### Fixed
+- The CI wait takes only the run of the pushed commit. Right after a push GitHub can still list the previous run of the branch, and that run must never count for the new head.
+
+## [0.4.2] - 2026-11-04
+
 ### Added
+- The CI self-test runs as parallel jobs over balanced suite groups, about 4.5 minutes instead of 15 to 17; a guard fails when a suite is in no group or in two.
+- `full=ci` in `warmd.conf`: `warmd check` never runs the full suite locally and names the CI as the place.
 - `warmd ci` and `warmd ship` print an ETA from the median of recent green runs and a SLOW line naming job and step once a run passes 1.5 times that median. The first red job ends the wait at once. The wait ends at twice the median run time (at least 5 min, 20 min without history); `WARMD_CI_MAX` sets the cap in minutes.
 - `warmd watch` prints the CI ETA of an agent that waits on CI and counts that agent as working.
 - `warmd ship --release vX.Y.Z` sets the version in `bin/warmd`, moves the Unreleased section of `CHANGELOG.md` to that version and fast-forwards the installed copy when it is a clean clone of the same repo. After a green merge it deletes the merged task branches on origin.
@@ -17,6 +37,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ### Fixed
 - The CI wait polls instead of blocking on `gh run watch`; a job whose steps are all completed counts by its steps, GitHub kept one `in_progress` for 20 minutes after its last step.
 - `warmd --version` printed 0.4.0 after release v0.4.1.
+- `warmd ship` refuses a checkout with uncommitted changes up front and names the files; a merge git refuses without a conflict names git's reason.
 
 ## [0.4.1] - 2026-11-04
 
@@ -80,9 +101,11 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.3...v0.4.4
-[0.4.3]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.1...v0.4.3
+[0.4.3]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.2.0...v0.3.0
