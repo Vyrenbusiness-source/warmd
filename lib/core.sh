@@ -295,7 +295,7 @@ common_update() {
 }
 
 common_status() {
-  echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"
+  if [ "$KIND" = none ]; then echo "warmd $WARMD_VERSION: no known project type at $(native_path "$PROJECT")"; else echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"; fi
   local held=("$CACHE_ROOT"/slots/*); [ -e "${held[0]}" ] || held=()
   echo "heavy runs: ${#held[@]} of $(slots_max)"
   [ -n "$(type -t team_agents)" ] || . "$WARMD_HOME/lib/team.sh" 2>/dev/null
@@ -303,7 +303,7 @@ common_status() {
 }
 
 common_doctor() {
-  echo "detected: $KIND at $(native_path "$PROJECT")"
+  echo "detected: $([ "$KIND" = none ] && echo "no known project type" || echo "$KIND") at $(native_path "$PROJECT")"
   local fix_git="install git with your package manager" fix_py="install python 3 with your package manager" bin="${WARMD_BIN:-$HOME/.local/bin}"
   [ "$OS" = win ] && { fix_git="winget install --id Git.Git -e"; fix_py="winget install --id Python.Python.3.12 -e"; }
   # printf %()T needs bash 4.2, macOS ships 3.2

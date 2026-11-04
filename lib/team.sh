@@ -35,7 +35,8 @@ tier_agent() { case "$1" in cheap) echo warmd-scout;; *) echo warmd-worker;; esa
 # Editing never runs on the cheap tier, whatever the config says: that tier only reads
 
 route_print() {
-  local t; t="$(route_tier "${1:-}" "${2:-}")"
+  [ -n "${1:-}" ] || { echo "warmd route <goal> [files], e.g. warmd route 'fix the footer' src/footer.css"; return 2; }
+  local t; t="$(route_tier "$1" "${2:-}")"
   echo "$t model=$(tier_model "$t") budget=$(tier_budget "$t")k agent=$(tier_agent "$t")"
 }
 
@@ -408,7 +409,7 @@ team_finish() {
   local br sha ahead dirty up last
   br="$(git -C "$GIT_ROOT" branch --show-current)"; sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
-  dirty="$(git -C "$GIT_ROOT" status --porcelain -uno | wc -l | tr -d ' ')"
+  dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
@@ -416,12 +417,22 @@ team_finish() {
 
 team_board() {
   need_git
-  local base path br age dirty ahead
+  local base path br age dirty ahead ct
   base="$(base_branch)"
   printf '%-26s %-22s %6s %6s %6s\n' worktree branch age dirty ahead
-  git -C "$GIT_ROOT" worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch /{b=$2; sub("refs/heads/","",b); print p"|"b}' | while IFS='|' read -r path br; do
-    age=$(( ($(date +%s) - $(git -C "$path" log -1 --format=%ct)) / 60 ))
-    dirty="$(git -C "$path" status --porcelain -uno | wc -l | tr -d ' ')"
+  # Every worktree gets a row: a detached one shows (detached), one whose folder is gone says how to drop it.
+  # dirty counts new files too, an agent that never ran git add still has work to lose.
+  git -C "$GIT_ROOT" worktree list --porcelain | tr -d '\r' | awk '
+    function row() { if (p != "") print p "|" b; p = "" }
+    /^worktree / { row(); p = substr($0, 10); b = "(detached)" }
+    /^branch / { b = $2; sub("refs/heads/", "", b) }
+    /^bare$/ { p = "" }
+    END { row() }' | while IFS='|' read -r path br; do
+    if ! ct="$(git -C "$path" log -1 --format=%ct 2>/dev/null)" || [ -z "$ct" ]; then
+      printf '%-26s %-22s %s\n' "$(basename "$path" | cut -c1-26)" "$(echo "$br" | cut -c1-22)" "folder missing, drop it: git worktree prune"; continue
+    fi
+    age=$(( ($(date +%s) - ct) / 60 ))
+    dirty="$(git -C "$path" status --porcelain | wc -l | tr -d ' ')"
     ahead="$(git -C "$path" rev-list --count "$base..HEAD" 2>/dev/null || echo '?')"
     printf '%-26s %-22s %5sm %6s %6s\n' "$(basename "$path" | cut -c1-26)" "$(echo "$br" | cut -c1-22)" "$age" "$dirty" "$ahead"
   done

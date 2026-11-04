@@ -39,9 +39,9 @@ context_audit() {
   rest=$((total - sum)); [ $rest -lt 0 ] && rest=0
   local i
   for i in "${!names[@]}"; do
-    awk -v s="${sizes[$i]}" -v t="$total" -v n="${names[$i]}" 'BEGIN{printf "  ~%d tokens  %2d%%  %s\n", s, 100*s/t, n}'
+    awk -v s="${sizes[$i]}" -v t="$total" -v n="${names[$i]}" 'BEGIN{printf "  ~%d tokens  %2d%%  %s\n", s, int(100*s/t+0.5), n}'
   done
-  awk -v s="$rest" -v t="$total" 'BEGIN{printf "  ~%d tokens  %2d%%  rest: system prompt, tool schemas, skill and MCP lists (not in files)\n", s, 100*s/t}'
+  awk -v s="$rest" -v t="$total" 'BEGIN{printf "  ~%d tokens  %2d%%  rest: system prompt, tool schemas, skill and MCP lists (not in files)\n", s, int(100*s/t+0.5)}'
   echo "tool schemas are the biggest fixed part. Measured by warmd on one machine, cost of one extra tool: Bash ~2800, Grep ~800, Read ~500, Edit ~300, Write ~200, Glob ~100. warmd init writes agents with the fewest tools that still work."
 }
 
