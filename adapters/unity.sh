@@ -57,12 +57,12 @@ csproj_fresh() {
 }
 # Assemblies the project csprojs reference but the Library lacks: dotnet would report every use as an error, so Unity has to compile once
 refs_missing() {
-  local p h
+  local p h pkgs; pkgs="$(pkg_projects)"
   {
     for p in $(csproj_list); do
       grep -o '<HintPath>[^<]*' "$p" | sed 's/<HintPath>//; s#[\]#/#g'
       for h in $(grep -o 'ProjectReference Include="[^"]*"' "$p" | sed 's/.*Include="//; s/"$//; s/\.csproj$//'); do
-        pkg_projects | grep -qxF "$h" && echo "Library/ScriptAssemblies/$h.dll"
+        grep -qxF "$h" <<< "$pkgs" && echo "Library/ScriptAssemblies/$h.dll"
       done
     done
   } | sort -u | while IFS= read -r h; do (cd "$PROJECT" && [ -f "$h" ]) || echo "$h"; done
@@ -81,7 +81,7 @@ pkg_targets() {
 </Project>
 X
 }
-# One parallel msbuild over all projects with warm nodes, Runtime builds once. Unity empties Temp on exit, so restore only when it is gone.
+# One parallel msbuild over all projects with warm nodes, Runtime builds once. Unity empties Temp on exit, so restore only when it is gone, one project after another: parallel restores of a shared graph collide on its files.
 dotnet_errors() {
   local p proj="$RUN/all.proj" restore="" pkgs
   pkgs="|$(pkg_projects | paste -sd'|' -)|"
@@ -90,7 +90,7 @@ dotnet_errors() {
     echo '<Project DefaultTargets="Build"><ItemGroup>'
     for p in $(csproj_list); do echo "<P Include=\"$(native_path "$p")\" />"; done
     echo '</ItemGroup><Target Name="Build">'
-    echo '<MSBuild Condition="'"'"'$(R)'"'"'==1" Projects="@(P)" BuildInParallel="true" Targets="Restore" Properties="Configuration=Debug;WarmdRestore=1" />'
+    echo '<MSBuild Condition="'"'"'$(R)'"'"'==1" Projects="@(P)" BuildInParallel="false" Targets="Restore" Properties="Configuration=Debug;WarmdRestore=1" />'
     echo '<MSBuild Projects="@(P)" BuildInParallel="true" Targets="Build" Properties="Configuration=Debug" />'
     echo '</Target></Project>'
   } > "$proj"
