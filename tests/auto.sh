@@ -117,11 +117,11 @@ out="$("$WARMD" watch --once)"; rc=$?
 [ "$rc" = 3 ] && echo "$out" | grep -q '^WAKE c:' && echo "$out" | grep -q '^WAKE d:' && ! echo "$out" | grep -qE '^WAKE (a|b):' && ok "a stopped and a paused task raise no WAKE" || no "paused watch rc=$rc: $out"
 "$WARMD" watch --pause c >/dev/null; "$WARMD" watch --pause d >/dev/null
 out="$("$WARMD" watch 5)"; rc=$?
-[ "$rc" = 0 ] && [ "$out" = "OK no agent runs, paused: a b c d" ] && ok "all paused: watch ends instead of waiting" || no "all paused rc=$rc: $out"
+[ "$rc" = 0 ] && [ "$out" = "OK no agent runs, paused: b c d" ] && ok "all paused or finished: watch ends instead of waiting" || no "all paused rc=$rc: $out"
 old d   # find -newer may compare whole seconds: a marker from this very second would hide the move
 echo more > "$W/d/d.txt"
 out="$("$WARMD" watch --once)"; rc=$?
-[ "$rc" = 0 ] && echo "$out" | grep -q '^OK all worktrees moved.*paused: a b c$' && [ ! -f "$C/warmd-auto/paused/d" ] && ok "a worktree that moves is live again" || no "resume rc=$rc: $out"
+[ "$rc" = 0 ] && echo "$out" | grep -q '^OK all worktrees moved.*paused: b c$' && [ ! -f "$C/warmd-auto/paused/d" ] && ok "a worktree that moves is live again" || no "resume rc=$rc: $out"
 
 # ---- a new agent on a paused task: the Agent call clears the marker, watch does not end while it still reads ----
 agent() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"t","prompt":%s}}' "$(native_path "$TMP/main.jsonl")" "$(jstr "Read $1 and do it.")" | "$WARMD" hook-pre; }
@@ -129,6 +129,15 @@ out="$(agent "$(taskpath a)")"; rc=$?
 [ "$rc" = 0 ] && [ -z "$out" ] && [ ! -f "$C/warmd-auto/paused/a" ] && [ -f "$C/warmd-auto/paused/b" ] && ok "an Agent call on a task clears only its pause marker" || no "agent start rc=$rc, out $out, paused: $(ls "$C/warmd-auto/paused")"
 out="$("$WARMD" watch --once)"
 echo "$out" | grep -q '^WAKE a:' && ok "watch counts the new agent as running" || no "watch after agent start: $out"
+
+# ---- a finished task (stop hook wrote warmd-batch-done) is never woken, even when someone touches its worktree ----
+printf '%s\tok\n' "$(cd "$W/a" && pwd)" >> "$C/warmd-batch-done"
+out="$("$WARMD" watch --once)"
+! echo "$out" | grep -q '^WAKE a:' && ok "a finished task raises no WAKE" || no "finished task woken: $out"
+agent "$(taskpath a)" >/dev/null
+! grep -qF "$(cd "$W/a" && pwd)	" "$C/warmd-batch-done" && ok "an Agent call on a finished task makes it live again" || no "batch-done kept: $(cat "$C/warmd-batch-done")"
+out="$("$WARMD" watch --once)"
+echo "$out" | grep -q '^WAKE a:' && ok "the restarted task is watched again" || no "restarted task not watched: $out"
 case "$(taskpath b)" in ?:/*)
   agent "$(taskpath b | tr '/' '\\')" >/dev/null
   [ ! -f "$C/warmd-auto/paused/b" ] && ok "a Windows path with backslashes clears the marker too" || no "backslash path kept the marker";;

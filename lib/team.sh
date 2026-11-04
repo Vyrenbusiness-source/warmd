@@ -330,6 +330,7 @@ team_watch() {
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
       name="$(wt_task "$wt")"
+      wt_finished "$common" "$wt" && continue   # its agent stopped and none started since: nothing to wake
       if auto_paused "$common" "$name" "$wt"; then paused="$paused $name"; continue; fi   # no agent runs there, nothing to wake
       grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
       if reason="$(agent_dead "$wt" "$name")"; then
@@ -359,13 +360,33 @@ trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
 # Files may also be split by spaces: "lib bin" is two entries, not the one path "libbin".
 files_norm() { printf '%s' "$1" | tr '[:blank:]' ',' | tr -s ',' | sed 's/^,//; s/,$//'; }
+# A finished task: its agent stopped (the stop hook wrote warmd-batch-done) and no new agent started on it since
+# (an Agent call on the task removes that line again). warmd watch never wakes such a worktree.
+wt_finished() { # common worktree
+  local w; w="$(wt_norm "$2")"
+  [ -f "$1/warmd-batch-done" ] || return 1
+  cut -f1 "$1/warmd-batch-done" | while IFS= read -r d; do [ "$(wt_norm "$d")" = "$w" ] && echo y; done | grep -q y
+}
+
+# When the next split appends to the batch, finished tasks whose work is merged (clean, nothing ahead of the base) leave it.
+# A finished task with unmerged work stays: the automatic merge after the last agent still needs it.
+batch_prune() { # common
+  local wt keep="" base batch="$1/warmd-batch"; base="$(base_branch)"
+  while IFS= read -r wt; do
+    [ -d "$wt" ] || continue
+    if wt_finished "$1" "$wt" && [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then continue; fi
+    keep="$keep$wt"$'\n'
+  done < "$batch"
+  printf '%s' "$keep" > "$batch"
+}
+
 team_split() {
   need_git
   local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
-  if [ -f "$batch" ]; then append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
+  if [ -f "$batch" ]; then batch_prune "${batch%/warmd-batch}"; append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
   cap="$(team_agents)"
   while IFS='|' read -r name goal check files <&3; do
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
