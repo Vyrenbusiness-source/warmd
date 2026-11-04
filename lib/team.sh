@@ -288,7 +288,7 @@ wt_task() { # worktree
 }
 
 # Minutes since the last movement in a worktree, 0 while a run or process is active.
-wt_idle() { # worktree limit batchfile
+wt_idle() { # worktree limit batchfile [task name]
   local wt="$1" limit="$2" batch="$3" last started
   if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path "$wt/.git/*" -not -path "$wt/*/.git/*" -not -path "$wt/Library/*" -not -path "$wt/*/Library/*" -not -path "$wt/.warmd/*" -not -path "$wt/*/.warmd/*" -not -path "$wt/Temp/*" -not -path "$wt/*/Temp/*" -not -path "$wt/Logs/*" -not -path "$wt/*/Logs/*" -not -path "$wt/obj/*" -not -path "$wt/*/obj/*" -not -path "$wt/node_modules/*" -not -path "$wt/*/node_modules/*" 2>/dev/null | head -1)" ]; then echo 0; return; fi
   # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
@@ -297,7 +297,15 @@ wt_idle() { # worktree limit batchfile
   local age=$(( ($(date +%s) - last) / 60 ))
   [ "$age" -lt "$limit" ] && { echo 0; return; }
   wt_busy "$wt" && { echo 0; return; }
+  # An agent that reads or thinks writes no file, but its transcript grows: that is movement too.
+  [ -n "${4:-}" ] && wt_talking "$4" "$limit" && { echo 0; return; }
   echo "$age"
+}
+
+wt_talking() { # name limit -> 0 when a transcript of this task changed in the last <limit> minutes
+  local root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}"
+  [ -d "$root" ] || return 1
+  find "$root" -name '*.jsonl' -mmin "-$2" -exec grep -lF "tasks/$1.md" {} + 2>/dev/null | grep -q .
 }
 
 # An agent that died at start (API or billing error) never commits. Its transcript names the reason. Transcripts: WARMD_TRANSCRIPTS, default ~/.claude/projects.
@@ -341,7 +349,7 @@ team_watch() {
       if ci="$(wt_ci_eta "$wt")"; then   # once per run, the line changes only with the run
         case "$ci_seen" in *" $name:${ci%%,*} "*) ;; *) echo "CI $name: $ci"; ci_seen="$ci_seen$name:${ci%%,*} ";; esac
       fi
-      age="$(wt_idle "$wt" "$limit" "$batch")"
+      age="$(wt_idle "$wt" "$limit" "$batch" "$name")"
       if [ "$age" -gt 0 ]; then
         echo "WAKE $name: idle $age min in $(native_path "$wt"). Send to the $name agent: \"Idle for $age minutes. Reply in one line with your state and next step, or run: warmd handoff $name \\\"what is done\\\" \\\"what is next\\\" and end with its AGENT line.\""
         stalled=1

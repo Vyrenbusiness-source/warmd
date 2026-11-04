@@ -283,12 +283,17 @@ hook_job() {
   outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null
-    return 0
+    hook_cool; return 0
   fi
   bash "$WARMD_HOME/bin/warmd" finish --tokens "$tokens" --calls "$calls" --outcome "$outcome"
+  hook_cool
   printf '%s\t%s\n' "$here" "$outcome" >> "$common/warmd-batch-done"
   hook_merge "$common"
 }
+
+# The agent is gone, its warm engine is not: an idle editor holds gigabytes for 30 minutes while the next agents wait for RAM.
+# A fresh agent on the same task starts it again in a minute; a stuck machine costs far more.
+hook_cool() { echo "$(date '+%F %T') $(bash "$WARMD_HOME/bin/warmd" stop 2>&1 | tail -1)"; }
 
 # The last stopped agent of a batch merges: every ok branch one by one through warmd merge, red or conflict rolls back.
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.

@@ -54,6 +54,12 @@ change lib/alpha.sh
 "$WARMD" check >/dev/null 2>&1
 expect "full=ci still runs the own test of a lib file" '^alpha$' "$(ran)"
 git checkout -q main; printf 'test=bash tests/run.sh\n' > warmd.conf; git commit -qam "full local again"
+# A scene Unity leaves behind after a dead PlayMode run is generated, not a change.
+git checkout -qB "w$RANDOM"; mkdir -p Assets; : > Assets/InitTestScene2c6c14d8-bf74-4640-a858-d42fdaa3300d.unity; : > Assets/InitTestScene2c6c14d8-bf74-4640-a858-d42fdaa3300d.unity.meta; rm -f ran.txt
+out="$("$WARMD" check 2>&1)"
+expect "InitTestScene leftovers are no change" 'OK no code changed' "$out"
+expect "InitTestScene leftovers start no test" '^none$' "$(ran)"
+rm -rf Assets
 change lib/notest.sh
 out="$("$WARMD" check 2>&1)"
 expect "a lib file without its own test falls back to the full suite" '^run$' "$(ran)"

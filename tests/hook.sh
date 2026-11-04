@@ -191,6 +191,7 @@ AGENT d: subagent_type=warmd-worker model=sonnet prompt=\"Read x and continue\""
 waitfor 'pushed d' && ok "handoff: branch pushed" || no "handoff not pushed"
 waitfor 'grep -q " d stopped: handoff" "$C/warmd-hook.log"'
 [ -z "$(row d)" ] && ! grep -qF "$W/d	" "$C/warmd-batch-done" && ok "handoff is not done and not in the ledger" || no "handoff counted as done"
+waitfor 'grep -q "OK nothing warm" "$C/warmd-hook.log"' && ok "a stopped agent's engine is stopped" || no "engine left warm: $(tail -3 "$C/warmd-hook.log")"
 
 stop zz "ok" "Find where foo is defined" > "$TMP/stop.out"; [ "$STOP_RC" = 0 ] && [ ! -s "$TMP/stop.out" ] && ok "agent without a warmd task: nothing" || no "foreign agent: $(cat "$TMP/stop.out")"
 out="$(printf 'garbage' | "$WARMD" hook-subagent)"; [ $? = 0 ] && [ -z "$out" ] && ok "SubagentStop garbage: exit 0" || no "garbage: $out"

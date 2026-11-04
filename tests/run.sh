@@ -194,6 +194,15 @@ expect "a running warmd run does not alarm" 'OK all worktrees moved in the last 
 rm -rf "$wtw/.warmd/job.lock"
 out="$("$WARMD" watch --once)"
 expect "alarm returns when the run is over" 'WAKE footer' "$out"
+mkdir -p "$WARMD_TRANSCRIPTS/p"; tr="$WARMD_TRANSCRIPTS/p/footer.jsonl"
+printf '{"type":"user","message":"Read C:/x/.warmd/tasks/footer.md and do it."}
+' > "$tr"
+out="$("$WARMD" watch --once)"
+expect "an agent whose transcript grows is not stalled" 'OK all worktrees moved in the last 5' "$out"
+touch -t "$t2h" "$tr"
+out="$("$WARMD" watch --once)"
+expect "an old transcript alarms again" 'WAKE footer' "$out"
+rm -f "$tr"
 touch "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 GIT_COMMITTER_DATE="$(date -u +%FT%T)" git -C "$wtw" commit -q --allow-empty -m new
 expect "a fresh commit does not alarm" 'OK all worktrees moved' "$("$WARMD" watch --once)"
