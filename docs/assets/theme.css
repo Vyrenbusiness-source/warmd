@@ -1,0 +1,20 @@
+/* warmd visual identity: warm paper and ink, one heat colour, square corners, hairline rules, datasheet labels.
+   Light is the default, html.dark is the dark variant; render.py renders both. */
+:root{--bg:#f6f1e8;--panel:#fffcf6;--ink:#1d1915;--mute:#6f665b;--rule:#dcd2c2;--heat:#d4442a;--amber:#e8962a;--ok:#2d7a4c;--bad:#c0362c;
+  --term:#1d1915;--tink:#efe7da;--tmute:#9b9083;--trule:#3b342d}
+.dark{--bg:#14110e;--panel:#1c1814;--ink:#f1e9dc;--mute:#a3988a;--rule:#3a332b;--heat:#ff6a47;--amber:#f4ac48;--ok:#5fcf8c;--bad:#ff6f61;
+  --term:#0d0b09;--tink:#efe7da;--tmute:#968b7e;--trule:#332d27}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;position:relative}
+.disp{font-family:Bahnschrift,"DIN Alternate","Segoe UI",sans-serif;font-stretch:condensed}
+.mono,pre{font-family:"Cascadia Mono",Consolas,monospace}
+.label{font:600 11px/1 "Cascadia Mono",Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.label b{color:var(--heat);font-weight:700}
+.mark{display:inline-flex;align-items:baseline;gap:.08em;font-family:Bahnschrift,"Segoe UI",sans-serif;font-weight:700;letter-spacing:-.02em}
+.mark i{display:inline-block;width:.34em;height:.34em;background:var(--heat);transform:translateY(-.02em)}
+.stripe{height:4px;background:linear-gradient(90deg,var(--heat) 0 62%,var(--amber) 62% 100%)}
+.rule{border-top:1px solid var(--rule)}
+.tick{position:absolute;width:10px;height:10px;border-color:var(--mute);border-style:solid;border-width:0}
+.tick.tl{left:12px;top:12px;border-left-width:1px;border-top-width:1px}.tick.tr{right:12px;top:12px;border-right-width:1px;border-top-width:1px}
+.tick.bl{left:12px;bottom:12px;border-left-width:1px;border-bottom-width:1px}.tick.br{right:12px;bottom:12px;border-right-width:1px;border-bottom-width:1px}
