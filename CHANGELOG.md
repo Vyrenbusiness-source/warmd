@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-04
+
 ### Added
 - `warmd ci` and `warmd ship` print an ETA from the median of recent green runs and a SLOW line naming job and step once a run passes 1.5 times that median. The first red job ends the wait at once. The wait ends at twice the median run time (at least 5 min, 20 min without history); `WARMD_CI_MAX` sets the cap in minutes.
 - `warmd watch` prints the CI ETA of an agent that waits on CI and counts that agent as working.
@@ -76,7 +78,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.1...v0.4.3
 [0.4.1]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.2.0...v0.3.0
