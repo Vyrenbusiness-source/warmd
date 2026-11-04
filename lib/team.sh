@@ -338,6 +338,8 @@ team_watch() {
 trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
 
 # Tasks file, one per line: name | goal | done check | files (comma separated, or none)
+# Files may also be split by spaces: "lib bin" is two entries, not the one path "libbin".
+files_norm() { printf '%s' "$1" | tr '[:blank:]' ',' | tr -s ',' | sed 's/^,//; s/,$//'; }
 team_split() {
   need_git
   local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0
@@ -347,7 +349,7 @@ team_split() {
   if [ -f "$batch" ]; then append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
   cap="$(team_agents)"
   while IFS='|' read -r name goal check files <&3; do
-    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
+    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
     case "$name" in \#*|"") continue;; esac
     if [ -n "$files" ] && [ "$files" != none ]; then
       for f in ${files//,/ }; do
@@ -362,7 +364,7 @@ team_split() {
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
   [ $append = 1 ] || { : > "$batch"; rm -f "$batch-dead" "$batch-done"; }
   while IFS='|' read -r name goal check files <&3; do
-    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(echo "$files" | tr -d ' ')"
+    name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
     case "$name" in \#*|"") continue;; esac
     if [ $append = 1 ] && batch_has "$batch" "$name"; then :
     elif [ "$running" -ge "$cap" ]; then

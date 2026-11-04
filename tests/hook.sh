@@ -71,7 +71,7 @@ d = json.load(open(sys.argv[1]))
 pre = d["hooks"]["PreToolUse"]; ses = d["hooks"]["SessionStart"]; sub = d["hooks"]["SubagentStop"]
 assert d["permissions"]["allow"] == ["Bash(ls)"]
 assert any(g["matcher"] == "Edit" for g in pre)
-assert any(g["matcher"] == "Bash" and g["hooks"][0]["command"].endswith(" hook-pre") for g in pre)
+assert any(g["matcher"] == "Bash|Agent|Task" and g["hooks"][0]["command"].endswith(" hook-pre") for g in pre)
 assert "matcher" not in ses[0] and ses[0]["hooks"][0]["command"].endswith(" hook-session")
 assert sub[0]["hooks"][0]["command"].endswith(" hook-subagent")
 PYEOF

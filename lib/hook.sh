@@ -1,5 +1,6 @@
 # Agent hooks: warmd runs itself, nobody types a warmd command.
 #   PreToolUse Bash  noisy known commands go through warmd run, short output, raw log kept
+#   PreToolUse Agent a new agent on a task clears its pause marker, warmd watch waits for it again
 #   SessionStart     after a restart or compaction: the task in a task worktree, the batch state in the shared checkout
 #   SubagentStop     real tokens from the agent's transcript into the ledger, branch pushed; the last agent of a batch
 #                    starts a detached merge of the finished branches (warmd merge, rollback on red) that ends the batch
@@ -46,6 +47,7 @@ hook_wrappable() { # command -> 0 when it is one simple known command
 hook_pre() {
   local in cmd self
   in="$(cat)"
+  auto_agent_start "$in" && return 0   # a new agent on a task: its pause marker goes
   auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
   cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
   hook_wrappable "$cmd" || return 0
@@ -358,7 +360,7 @@ for ev in list(hooks):
     if not hooks[ev]:
         del hooks[ev]
 if mode == "add":
-    hooks.setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
+    hooks.setdefault("PreToolUse", []).append({"matcher": "Bash|Agent|Task", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": self + " hook-session"}]})
     hooks.setdefault("SubagentStop", []).append({"hooks": [{"type": "command", "command": self + " hook-subagent"}]})
     hooks.setdefault("PreCompact", []).append({"hooks": [{"type": "command", "command": self + " hook-compact"}]})
