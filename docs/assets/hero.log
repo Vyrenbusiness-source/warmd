@@ -1,0 +1,21 @@
+# captured 2026-11-04T20:40:32Z, warmd 0.4.5, node v24.2.0, Windows, Git Bash, C:/dev/cart-demo
+$ npm test 2>&1 | wc -c
+880
+$ warmd test
+FAIL 2s test (full log: C:/dev/cart-demo/.warmd/run/last.log)
+ℹ fail 1
+✖ failing tests:
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+    code: 'ERR_ASSERTION',
+    expected: 5,
+$ git diff --stat
+ src/cart.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ warmd test
+OK 1s test
+$ time warmd test
+OK cached, code unchanged: OK 1s test
+
+real	0m0.478s
+user	0m0.075s
+sys	0m0.318s

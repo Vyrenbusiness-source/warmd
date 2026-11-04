@@ -10,7 +10,9 @@ social.png is 1280x640 for the GitHub social preview, light only.
 Bars: every element with data-v gets a width proportional to the largest data-v of its card (class "card"),
 the largest bar is 82%. tests/bars.sh checks the result.
 With Pillow installed the PNG is reduced to a 256 colour palette, which keeps the flat art sharp and the file small.
-Needs Chrome, Edge or Chromium (WARMD_BROWSER wins). hero.log holds the raw warmd session shown in hero.html.
+Needs Chrome, Edge or Chromium (WARMD_BROWSER wins). hero.log holds the raw warmd session (bash docs/assets/capture.sh);
+render fills the TERMINAL mark of hero.html from it on every run: lines unchanged, only the size check before the first
+run, the user/sys lines of time and empty lines are left out, one comment line marks the fix.
 """
 import os
 import re
@@ -55,6 +57,29 @@ def scale_bars(html):
     return "".join(out)
 
 
+def esc(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def terminal():
+    with open(os.path.join(HERE, "hero.log"), encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    out, skip = [], False
+    for ln in lines[1:]:
+        if ln.startswith("$ "):
+            skip = "wc -c" in ln
+            if ln == "$ git diff --stat":
+                out.append('<span class="c"># fix the one wrong line, then run again</span>')
+            if not skip:
+                out.append('<span class="p">$</span> ' + esc(ln[2:]))
+            continue
+        if skip or not ln.strip() or ln.startswith(("user\t", "sys\t")):
+            continue
+        cls = "no" if ln.startswith("FAIL") else "ok" if ln.startswith("OK") else "dim" if ln.startswith("real") else ""
+        out.append('<span class="%s">%s</span>' % (cls, esc(ln)) if cls else esc(ln))
+    return "\n".join(out)
+
+
 def size(html):
     m = re.search(r"html,body\{width:(\d+)px;height:(\d+)px", html)
     if not m:
@@ -81,6 +106,8 @@ def render(name, exe):
         with open(src, "w", encoding="utf-8", newline="\n") as f:
             f.write(new)
     base, themes, width = PAGES[name]
+    if "<pre>TERMINAL</pre>" in new:
+        new = new.replace("<pre>TERMINAL</pre>", "<pre>%s</pre>" % terminal())
     w, h = size(new)
     scale = width / w
     for theme in themes:

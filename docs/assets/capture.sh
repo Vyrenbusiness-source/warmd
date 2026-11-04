@@ -14,7 +14,8 @@ printf '%s\n' 'import { test } from "node:test";' 'import assert from "node:asse
   'test("count adds quantities", () => assert.equal(count(items), 5));' \
   'test("total sums prices", () => assert.equal(total(items), 9));' \
   'test("empty cart", () => assert.equal(count([]), 0));' > test/cart.test.js
-git init -q && git add -A && git -c user.name=demo -c user.email=demo@example.invalid commit -qm init
+date -u +%s > .capture-id  # fresh code key, so an older recording's green cache never answers this one
+git init -q && git config core.autocrlf false && git add -A && git -c user.name=demo -c user.email=demo@example.invalid commit -qm init
 run() { echo "\$ $*" >> "$LOG"; bash -c "$*" >> "$LOG" 2>&1; }
 date -u +"# captured %Y-%m-%dT%H:%M:%SZ, $(warmd --version), node $(node --version), Windows, Git Bash, $P" > "$LOG"
 run "npm test 2>&1 | wc -c"
