@@ -8,8 +8,9 @@
 
 For Windows, in Git Bash or PowerShell. [Install in one line](#install).
 
-[![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers)
+[![Star on GitHub](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social&label=Star)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents)
 [![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Windows](https://img.shields.io/badge/platform-Windows-0078d4)
 ![Unity](https://img.shields.io/badge/Unity-6-black?logo=unity)
@@ -32,7 +33,7 @@ For Windows, in Git Bash or PowerShell. [Install in one line](#install).
 </tr>
 </table>
 
-**Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/stargazers).** One click, and others find it.
+**Saves you tokens or time? [Star it](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents).** One click, and others find it.
 
 </div>
 
@@ -123,7 +124,7 @@ warmd detects the project from its files. There is nothing to configure.
 | Stack | Kept warm | Tests |
 |---|---|---|
 | **Unity** | Headless editor | EditMode and PlayMode, Test Runner API |
-| **Godot** | Nothing, starts in 0.2 s | Built-in runner, GUT or gdUnit4 |
+| **Godot** | Nothing, one test in 0.9 s | Built-in runner, GUT or gdUnit4 |
 | **Web** | Dev server | Vitest, Jest or your script |
 | **Rust, Go, Python, .NET** | Nothing | Native test runner |
 
@@ -131,7 +132,7 @@ Screenshots: a web page at desktop and phone width with layout problems as text 
 
 ## Limits that protect your machine
 
-- **Queue.** At most two heavy Unity runs per machine, so six agents do not take the PC down.
+- **Queue.** Heavy runs share a few slots per machine, one per 4 cores and 8 GB of RAM, at least one. Six agents do not take the PC down.
 - **One job per daemon.** A second caller waits instead of overwriting the first result.
 - **Merge lock.** While a merge runs in a checkout, other runs there are refused with a clear message.
 - **Caller gone.** A run whose agent or shell has died ends itself and frees the queue.
@@ -139,9 +140,9 @@ Screenshots: a web page at desktop and phone width with layout problems as text 
 
 ## Safety
 
-About 3,400 lines of bash, one C# file, three small GDScript files and a PowerShell installer. You can read it in one sitting.
+About 4,000 lines of bash, one C# file, three small GDScript files and a PowerShell installer. You can read it in one sitting.
 
-- **No network.** It sends nothing anywhere, there is no telemetry. Only the final report talks to the outside, and only with `git push` to your own remote.
+- **No telemetry.** It sends nothing to anyone. It only talks to your own git remote: it pushes finished branches, and with a GitHub CI it uses `gh` to open the pull request, wait for the checks and merge. Updates are fetched only when you ask for one.
 - **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. The setup adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
 - **What it can undo.** A merge only starts from a clean checkout. On red it runs `git reset --hard HEAD`, which is safe there because the tree was clean before.
 - **What it kills.** Only processes it started. An editor you opened by hand is never touched, warmd refuses to run instead.
@@ -151,4 +152,4 @@ Do not trust the numbers, run them. The [public CI run](https://github.com/Vyren
 
 ## More
 
-[Reference for every command and setting](docs/COMMANDS.md) · [Cheap models and parallel agents](docs/AGENTS.md) · [A/B per area](docs/ab.md) · [Measured](docs/MEASURED.md) · [Proof](docs/PROOF.md) · [FAQ](docs/FAQ.md) · [Contributing](CONTRIBUTING.md) · MIT license
+[Reference for every command and setting](docs/COMMANDS.md) · [Cheap models and parallel agents](docs/AGENTS.md) · [A/B per area](docs/ab.md) · [Measured](docs/MEASURED.md) · [Proof](docs/PROOF.md) · [FAQ](docs/FAQ.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [MIT license](LICENSE)
