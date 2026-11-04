@@ -36,21 +36,27 @@ echo "32 262144" > "$XDG_CACHE_HOME/warmd/hw"
 expect "cache is used, large" 'of 8$' "$("$WARMD" status | grep -oE 'of [0-9]+$')"
 rm -f "$XDG_CACHE_HOME/warmd/hw"
 
-# ---- free RAM: below 15 percent a heavy start waits, warmd.conf limits win ----
+# ---- free RAM: a light suite (this web project) waits only below 3 percent, an engine below 15; warmd.conf limits win ----
 cat > package.json <<'J'
 { "name": "t", "scripts": { "test": "echo ran" } }
 J
 export WARMD_CORES=8 WARMD_RAM_MB=31744 WARMD_RAM_POLL=1 WARMD_NOCACHE=1
-out="$(WARMD_FREE_PCT=5 WARMD_RAM_WAIT=2 "$WARMD" test)"
-expect "low RAM queues with one line" 'queued: only 5% RAM free, waiting for 15%' "$out"
+out="$(WARMD_FREE_PCT=2 WARMD_RAM_WAIT=2 "$WARMD" test)"
+expect "low RAM queues with one line" 'queued: only 2% RAM free, waiting for 3%' "$out"
 expect "wait is bounded, run goes on" 'running anyway' "$out"
+expect "after running anyway no false free-again line" '^$' "$(echo "$out" | grep 'RAM free again')"
+expect "one warmd call waits once, not per build and test" '^1$' "$(echo "$out" | grep -c 'queued: only')"
 expect "enough RAM runs without a wait" '^OK' "$(WARMD_FREE_PCT=40 "$WARMD" test)"
-printf 'ram_free_min=0
+out="$(WARMD_FREE_PCT=7 WARMD_RAM_WAIT=2 "$WARMD" test)"
+expect "a light suite at 7 percent free runs at once, the 15 percent limit is for engines" '^OK' "$out"
+expect "and says no queue line" '^$' "$(echo "$out" | grep queued)"
+expect "an engine still waits below 15 percent" 'waiting for 15%' "$(bash -c ". '$HERE/lib/platform.sh'; KIND=unity; WARMD_FREE_PCT=7 WARMD_RAM_WAIT=1 WARMD_RAM_POLL=1; orphan_check() { :; }; . '$HERE/lib/tune.sh'; tune_wait_ram")"
+printf 'ram_free_min_light=0
 ' > warmd.conf
-expect "ram_free_min=0 switches the wait off" '^OK' "$(WARMD_FREE_PCT=1 "$WARMD" test)"
-printf 'ram_free_min=50
+expect "ram_free_min_light=0 switches the wait off" '^OK' "$(WARMD_FREE_PCT=1 "$WARMD" test)"
+printf 'ram_free_min_light=50
 ' > warmd.conf
-expect "warmd.conf ram_free_min wins" 'queued: only 40% RAM free, waiting for 50%' "$(WARMD_FREE_PCT=40 WARMD_RAM_WAIT=1 "$WARMD" test)"
+expect "warmd.conf ram_free_min_light wins" 'queued: only 40% RAM free, waiting for 50%' "$(WARMD_FREE_PCT=40 WARMD_RAM_WAIT=1 "$WARMD" test)"
 rm warmd.conf
 
 # ---- a green-cache hit never waits for RAM or a slot; ram_wait=0 and WARMD_NO_RAM_WAIT=1 switch the wait off ----

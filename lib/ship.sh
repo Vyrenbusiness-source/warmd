@@ -124,8 +124,15 @@ ship_bump() { # vX.Y.Z
   fi
   if [ -f CHANGELOG.md ] && grep -q '^## \[Unreleased\]' CHANGELOG.md && ! grep -qF "## [$v]" CHANGELOG.md; then
     prev="$(sed -nE 's/^\[Unreleased\]: .*compare\/(v[0-9][0-9.]*)\.\.\.HEAD.*/\1/p' CHANGELOG.md)"
-    awk -v v="$v" -v d="$(date +%Y-%m-%d)" -v prev="$prev" '
-      /^## \[Unreleased\]/ { print; print ""; print "## [" v "] - " d; next }
+    # Nothing written under Unreleased: the release still says what it brings, from the commit subjects since the last tag.
+    # An empty version heading on the public page reads like a release without content.
+    local notes="" last
+    if [ -z "$(awk '/^## \[Unreleased\]/ {on=1; next} /^## \[/ {on=0} on && NF' CHANGELOG.md)" ]; then
+      last="$(git describe --tags --abbrev=0 HEAD 2>/dev/null)"
+      notes="$(git log --no-merges --format='- %s' ${last:+"$last..HEAD"} | grep -vE '^- (release v|WIP)' | head -20)"
+    fi
+    NOTES="$notes" awk -v v="$v" -v d="$(date +%Y-%m-%d)" -v prev="$prev" '
+      /^## \[Unreleased\]/ { print; print ""; print "## [" v "] - " d; if (ENVIRON["NOTES"] != "") { print ""; print "### Changed"; print ENVIRON["NOTES"] }; next }
       /^\[Unreleased\]: / && prev != "" { u=$0; sub(/^\[Unreleased\]: /, "", u); sub(/compare\/.*/, "", u)
         print "[Unreleased]: " u "compare/v" v "...HEAD"; print "[" v "]: " u "compare/" prev "...v" v; next }
       { print }' CHANGELOG.md > CHANGELOG.md.warmd && mv CHANGELOG.md.warmd CHANGELOG.md
