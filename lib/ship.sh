@@ -128,7 +128,7 @@ ship_bump() { # vX.Y.Z
 }
 
 # Origin URLs in one form: https, ssh and a trailing .git name the same repo
-ship_url() { printf '%s' "$1" | sed -E 's#^[a-z+]+://##; s#^[^@/]*@##; s#^([^/:]+):([^/])#\1/\2#; s#/+$##; s#\.git$##' | tr 'A-Z' 'a-z'; }
+ship_url() { printf '%s' "$1" | sed -E 's#^[a-z+]+://##; s#^[^@/]*@##; s#^([^/:]+):([^/])#\1/\2#; s#/+$##; s#\.git$##' | tr '[:upper:]' '[:lower:]'; }
 
 # After a green release the installed copy pulls, when it is a clean clone of this repo on the base branch
 ship_install() { # base

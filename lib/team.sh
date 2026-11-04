@@ -231,8 +231,8 @@ wt_ci_mark() { # worktree -> the marker line of a live CI wait
 
 # One line for warmd watch: run, minutes in, ETA from the median of recent runs
 wt_ci_eta() { # worktree
-  local m pid id start med el; m="$(wt_ci_mark "$1")" || return 1
-  read -r pid id start med <<< "$m"; el=$(( $(date +%s) - ${start:-0} ))
+  local m id start med el; m="$(wt_ci_mark "$1")" || return 1
+  read -r _ id start med <<< "$m"; el=$(( $(date +%s) - ${start:-0} ))
   if [ "${med:-0}" -gt 0 ]; then
     if [ "$med" -gt "$el" ]; then echo "run $id, $((el / 60)) min in, about $(( (med - el + 59) / 60 )) min left"
     else echo "run $id, $((el / 60)) min in, past the median of $(( (med + 30) / 60 )) min"; fi
