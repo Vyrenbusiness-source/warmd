@@ -16,7 +16,8 @@ jobs:
           - generic
           - perf ship docs digest install
           - team tune map ledger
-          - core hook bars gain
+          - core
+          - hook bars gain
           - auto affected brakes audit unity slim layout
     runs-on: windows-latest
     defaults:
