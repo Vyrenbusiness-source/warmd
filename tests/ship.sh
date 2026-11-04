@@ -142,6 +142,17 @@ out="$(WARMD_CI_MAX=0 "$WARMD" ci 2>&1)"; rc=$?
 expect "cap ends the wait" 'FAIL CI run 41 not done after 0 min, self-test \(windows-latest\) at step Run tests' "$out"
 [ $rc -ne 0 ] && ok "cap exit code" || no "cap exit code"
 
+# Fail fast: one red job ends the wait while another job still runs, without any cap.
+polls; printf 'run|in_progress||%s\nshellcheck|completed|failure|0|1||3\nself-test (windows-latest)|in_progress||2|0|Run tests|5\n' "$(iso 60)" > "$FAKE/jobs"
+: > "$FAKE/log"; out="$("$WARMD" ci 2>&1)"; rc=$?
+expect "first red job ends the wait" 'RED run 41' "$out"
+expect "red job named" 'FAIL shellcheck' "$out"
+expect "fail fast needs one poll" '^1$' "$(grep -c 'run view 41 --json' "$FAKE/log")"
+[ $rc -ne 0 ] && ok "fail fast exit code" || no "fail fast exit code"
+polls; printf 'run|in_progress||%s\nself-test (windows-latest)|in_progress||1|1|Post tests|5\n' "$(iso 60)" > "$FAKE/jobs"
+out="$("$WARMD" ci 2>&1)"
+expect "failed step in a running job ends the wait" 'RED run 41' "$out"
+
 # ETA from the median of recent green runs, SLOW past 1.5 times it, naming job and step.
 printf '1\t1\tmain\t600\tsuccess\n2\t2\tmain\t540\tsuccess\n3\t3\tmain\t60\tfailure\n4\t4\tmain\t660\tsuccess\n' > "$ci_hist"
 polls; run_done success > "$FAKE/jobs"; running 120 "$FAKE/jobs.1"
@@ -153,6 +164,15 @@ out="$("$WARMD" ci 2>&1)"
 expect "SLOW names job and step" '^SLOW run 41: 16 min, median 10 min, self-test \(windows-latest\) at step Run tests$' "$out"
 expect "slow run still ends green" 'GREEN run 41' "$out"
 [ ! -e .warmd/ci.wait ] && ok "wait marker removed after the run" || no "wait marker left behind"
+# Cap from history: twice the median, at least 5 min. Median 10 min: a 25 min old run stops at 20.
+printf '1\t1\tmain\t600\tsuccess\n2\t2\tmain\t600\tsuccess\n3\t3\tmain\t600\tsuccess\n' > "$ci_hist"
+polls; running 1500 "$FAKE/jobs"
+out="$("$WARMD" ci 2>&1)"
+expect "cap is twice the median" 'FAIL CI run 41 not done after 20 min' "$out"
+printf '1\t1\tmain\t60\tsuccess\n2\t2\tmain\t90\tsuccess\n' > "$ci_hist"
+polls; running 400 "$FAKE/jobs"
+out="$("$WARMD" ci 2>&1)"
+expect "cap at least 5 min" 'FAIL CI run 41 not done after 5 min' "$out"
 rm -f "$FAKE/run_id"
 out="$("$WARMD" ci 2>&1)"
 expect "ci without a run" 'no CI run for' "$out"

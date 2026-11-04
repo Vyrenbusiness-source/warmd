@@ -43,13 +43,14 @@ ci_state() { # poll output on stdin
       st=$2; c=$3
       if (st!="completed" && $7>0 && $4==0) { st="completed"; c=($5>0 ? "failure" : "success") }
       n++
+      if (st!="completed" && $5>0) red=1   # a failed step already decides, even while the job still runs
       if (st!="completed") { open++; if (job=="") { job=$1; step=($6!="" ? $6 : st) }; next }
       if (c!="success" && c!="skipped" && c!="neutral") red=1
       line[++l]=c " " $1
     }
     END {
       for (i=1;i<=l;i++) print line[i]
-      done=((n>0 && open==0) || rs=="completed")
+      done=((n>0 && open==0) || rs=="completed" || red)   # fail fast: the first red job ends the wait
       if (n==0 && rs=="completed" && rc!="success") red=1
       print "STATE|" (done?1:0) "|" (red?1:0) "|" created "|" job "|" step
     }'
@@ -74,8 +75,13 @@ ci_wait_run() { # branch
   id="$(ship_run_id "$br")"
   while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-30}" ]; do sleep "${WARMD_CI_POLL:-5}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
   [ -n "$id" ] || { echo "FAIL no CI run for $br"; return 1; }
-  t0="$(date +%s)"; cap=$(( ${WARMD_CI_MAX:-60} * 60 ))
   read -r med runs <<< "$(ci_median)"
+  # Cap: WARMD_CI_MAX minutes when set, else twice the measured median (at least 5 min), else 20 min without history.
+  local capmin
+  if [ -n "${WARMD_CI_MAX:-}" ]; then capmin="$WARMD_CI_MAX"
+  elif [ -n "$med" ] && [ "$med" -gt 0 ]; then capmin=$(( (med * 2 + 59) / 60 )); [ "$capmin" -lt 5 ] && capmin=5
+  else capmin=20; fi
+  t0="$(date +%s)"; cap=$(( capmin * 60 ))
   mark="$(ci_mark_file)"
   while :; do
     snap="$(ci_poll "$id" | ci_state)"
@@ -93,8 +99,8 @@ ci_wait_run() { # branch
     if [ -n "$med" ] && [ "$med" -gt 0 ] && [ $slow = 0 ] && [ $((el * 2)) -gt $((med * 3)) ]; then
       slow=1; echo "SLOW run $id: $((el / 60)) min, median $(( (med + 30) / 60 )) min, ${job:-a job} at step ${step:-unknown}"
     fi
-    if [ $((now - t0)) -ge $cap ]; then
-      echo "FAIL CI run $id not done after ${WARMD_CI_MAX:-60} min, ${job:-a job} at step ${step:-unknown}"; return 1
+    if [ $el -ge $cap ]; then   # by run age: a run that was already slow before this wait counts too
+      echo "FAIL CI run $id not done after $capmin min, ${job:-a job} at step ${step:-unknown}"; return 1
     fi
     sleep "${WARMD_CI_POLL:-10}"
   done
