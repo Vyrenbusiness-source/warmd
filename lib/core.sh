@@ -203,7 +203,9 @@ changed_files() {
   [ -n "$GIT_ROOT" ] || return 0
   local base mb; base="$(base_branch)"
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
-  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u
+  # Unity leaves Assets/InitTestScene<guid>.unity behind when a PlayMode run dies: generated, never a change.
+  { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' \
+    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$' | sort -u
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
