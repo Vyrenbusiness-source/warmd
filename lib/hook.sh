@@ -146,6 +146,7 @@ hook_session() {
   local -A state=()
   in="$(cat)"; [[ $in =~ $re ]] && src="${BASH_REMATCH[1]}"
   here="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  hook_refresh
   common="$(hook_common)" || return 0
   [ -n "$(type -t native_path)" ] || . "$WARMD_HOME/lib/platform.sh"
   main="$(hook_mainwt "$common")"
@@ -392,6 +393,20 @@ hook_install() {
   hook_py >/dev/null || { echo "FAIL warmd hooks need python3 or python to edit $f"; return 1; }
   hook_edit add "$f" "$(hook_self)" || return 1
   echo "OK hooks installed in $f (noisy commands via warmd run, state back after restart or compact, agents recorded and merged on stop). Remove: warmd init --no-hooks"
+}
+
+# Hooks written by an older warmd (PreToolUse only on Bash: Agent calls never cleared pause markers) get the current
+# form at the next session start. Settings without warmd hooks (init --no-hooks) stay untouched.
+hook_refresh() {
+  local f self; f="$(hook_settings)"
+  [ -f "$f" ] && grep -q ' hook-pre"' "$f" || return 0
+  self="$(hook_self)"
+  [ -n "$(type -t native_path)" ] || . "$WARMD_HOME/lib/platform.sh"
+  # MSYS hands python C:/... for /c/...: either spelling is the current warmd
+  grep -q '"matcher": *"Bash|Agent|Task"' "$f" && grep -qF -e "\"$self hook-pre\"" -e "\"$(native_path "$self") hook-pre\"" "$f" \
+    && [ "$(grep -cE ' hook-(pre|session|subagent|compact)"' "$f")" = 4 ] && return 0
+  hook_py >/dev/null && hook_edit add "$f" "$self" >/dev/null 2>&1 && echo "warmd: hooks in $f renewed to the current form."
+  return 0
 }
 
 hook_remove() {

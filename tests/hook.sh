@@ -77,7 +77,21 @@ assert sub[0]["hooks"][0]["command"].endswith(" hook-subagent")
 PYEOF
 "$WARMD" init --hooks >/dev/null
 [ "$(grep -c 'hook-pre' "$S")" = 1 ] && ok "second init --hooks adds no duplicate" || no "duplicate hook entries"
+# hooks of an older warmd (PreToolUse only on Bash) are renewed at session start, once
+"$PY" - "$S" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for g in d["hooks"]["PreToolUse"]:
+    if g["hooks"][0]["command"].endswith(" hook-pre"): g["matcher"] = "Bash"
+json.dump(d, open(sys.argv[1], "w"), indent=2)
+PYEOF
+out="$(cd "$TMP/proj" && printf '{"source":"startup"}' | "$WARMD" hook-session)"
+grep -q '"matcher": "Bash|Agent|Task"' "$S" && [ "$(grep -c 'hook-pre' "$S")" = 1 ] && echo "$out" | grep -q renewed   && ok "old Bash-only hooks renewed at session start" || no "old hooks not renewed: $out"
+out="$(cd "$TMP/proj" && printf '{"source":"startup"}' | "$WARMD" hook-session)"
+echo "$out" | grep -q renewed && no "current hooks renewed again" || ok "current hooks left alone"
 "$WARMD" init --no-hooks >/dev/null
+out="$(cd "$TMP/proj" && printf '{"source":"startup"}' | "$WARMD" hook-session)"
+grep -q 'hook-pre' "$S" 2>/dev/null && no "session start added removed hooks back" || ok "removed hooks stay removed"
 "$PY" -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.loads(sys.argv[2])' "$S" "$before" && ok "init --no-hooks restores the file" || no "remove changed more than ours"
 rm "$S"; "$WARMD" init --hooks >/dev/null; "$WARMD" init --no-hooks >/dev/null
 [ ! -e "$S" ] && ok "remove deletes a file that held only our hooks" || no "empty settings file left"
