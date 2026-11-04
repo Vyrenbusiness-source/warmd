@@ -1,5 +1,6 @@
 # Agent hooks: warmd runs itself, nobody types a warmd command.
 #   PreToolUse Bash  noisy known commands go through warmd run, short output, raw log kept
+#   PreToolUse Agent a new agent on a task clears its pause marker, warmd watch waits for it again
 #   SessionStart     after a restart or compaction: the task in a task worktree, the batch state in the shared checkout
 #   SubagentStop     real tokens from the agent's transcript into the ledger, branch pushed; the last agent of a batch
 #                    starts a detached merge of the finished branches (warmd merge, rollback on red) that ends the batch
@@ -46,6 +47,7 @@ hook_wrappable() { # command -> 0 when it is one simple known command
 hook_pre() {
   local in cmd self
   in="$(cat)"
+  auto_agent_start "$in" && return 0   # a new agent on a task: its pause marker goes
   auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
   cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
   hook_wrappable "$cmd" || return 0
@@ -92,7 +94,7 @@ hook_mainwt() { local l; l="$(git --git-dir="$1" worktree list --porcelain 2>/de
 # C:/x and /c/x become one form. A short 8.3 name (RUNNER~1) or a mount (/tmp on a short TEMP) is not the long form git reports:
 # cygpath -l makes it long, the fork only happens for those paths.
 hook_abs() {
-  REPLY=""; local o="$PWD"; CDPATH= cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o"
+  REPLY=""; local o="$PWD"; CDPATH='' cd "$1" 2>/dev/null || return 1; REPLY="$PWD"; cd "$o" || return 1
   if [ "${OS:-}" = win ] && { [[ $REPLY == *'~'* ]] || [[ $REPLY != /?/* ]]; }; then
     local w; w="$(cygpath -l -m "$REPLY" 2>/dev/null)" || return 0; [[ $w == ?:/* ]] || return 0
     local d="${w:0:1}"; REPLY="/${d,,}${w:2}"
@@ -140,7 +142,7 @@ hook_agent_line() { # common dir, task file -> AGENT line to start or continue t
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
 # the shared checkout gets the running batch: who is done, who is open, the AGENT line for each open one, the last merge result.
 hook_session() {
-  local in src="" common here tf brief main batch done wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
+  local in src="" common here tf brief main batch donef wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
   local -A state=()
   in="$(cat)"; [[ $in =~ $re ]] && src="${BASH_REMATCH[1]}"
   here="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
@@ -158,9 +160,9 @@ hook_session() {
     [ -f "$brief" ] && { echo; cat "$brief"; }
     return 0
   fi
-  batch="$common/warmd-batch"; done="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
+  batch="$common/warmd-batch"; donef="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
   if [ -s "$batch" ]; then
-    [ -f "$done" ] && while IFS='	' read -r wt l; do [ -n "$wt" ] && state[$wt]="$l"; done < "$done"
+    [ -f "$donef" ] && while IFS='	' read -r wt l; do [ -n "$wt" ] && state[$wt]="$l"; done < "$donef"
     base="$(git -C "$main" branch --show-current)"
     HOOK_PROJ="${HOOK_TF[0]%/.warmd/tasks/*}"
     if [ "$src" = compact ]; then echo "warmd: a batch runs (context compacted, agents may still run, start only the ones you do not see)."
@@ -168,7 +170,7 @@ hook_session() {
     while IFS= read -r wt; do
       wt="${wt%$'\r'}"; [ -n "$wt" ] || continue; n=$((n+1))
       br=""; dirty=0
-      while IFS= read -r l; do case "$l" in "# branch.head "*) br="${l#\# branch.head }";; \#*) ;; ?*) dirty=$((dirty+1));; esac; done < <(git -C "$wt" status --porcelain=v2 --branch -uno 2>/dev/null)
+      while IFS= read -r l; do case "$l" in "# branch.head "*) br="${l#\# branch.head }";; \#*) ;; ?*) dirty=$((dirty+1));; esac; done < <(git -C "$wt" status --porcelain=v2 --branch 2>/dev/null)
       ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null)" || ahead='?'
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
@@ -358,7 +360,7 @@ for ev in list(hooks):
     if not hooks[ev]:
         del hooks[ev]
 if mode == "add":
-    hooks.setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
+    hooks.setdefault("PreToolUse", []).append({"matcher": "Bash|Agent|Task", "hooks": [{"type": "command", "command": self + " hook-pre"}]})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": self + " hook-session"}]})
     hooks.setdefault("SubagentStop", []).append({"hooks": [{"type": "command", "command": self + " hook-subagent"}]})
     hooks.setdefault("PreCompact", []).append({"hooks": [{"type": "command", "command": self + " hook-compact"}]})

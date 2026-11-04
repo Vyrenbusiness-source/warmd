@@ -73,7 +73,7 @@ out="$(WARMD_FREE_PCT=1 "$WARMD" test)"
 expect "ram_wait=0 skips the wait" '^OK' "$out"
 expect "ram_wait=0 has no queue line" '^0$' "$(echo "$out" | grep -c queued)"
 rm warmd.conf; unset WARMD_NOCACHE
-expect "no missing-file noise without a cache dir" '^0$' "$(XDG_CACHE_HOME="$TMP/fresh" WARMD_GPU= "$WARMD" doctor 2>&1 | grep -c 'No such file')"
+expect "no missing-file noise without a cache dir" '^0$' "$(XDG_CACHE_HOME="$TMP/fresh" WARMD_GPU="" "$WARMD" doctor 2>&1 | grep -c 'No such file')"
 
 # ---- low priority and the 2 free cores ----
 expect "child runs with nice" 'nice -n 10' "$(bash -c ". '$HERE/lib/platform.sh'; CACHE_ROOT=$TMP/c; common_doctor() { :; }; slot_take() { :; }; . '$HERE/lib/tune.sh'; tune_prefix")"

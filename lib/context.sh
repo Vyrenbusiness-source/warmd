@@ -39,9 +39,9 @@ context_audit() {
   rest=$((total - sum)); [ $rest -lt 0 ] && rest=0
   local i
   for i in "${!names[@]}"; do
-    awk -v s="${sizes[$i]}" -v t="$total" -v n="${names[$i]}" 'BEGIN{printf "  ~%d tokens  %2d%%  %s\n", s, 100*s/t, n}'
+    awk -v s="${sizes[$i]}" -v t="$total" -v n="${names[$i]}" 'BEGIN{printf "  ~%d tokens  %2d%%  %s\n", s, int(100*s/t+0.5), n}'
   done
-  awk -v s="$rest" -v t="$total" 'BEGIN{printf "  ~%d tokens  %2d%%  rest: system prompt, tool schemas, skill and MCP lists (not in files)\n", s, 100*s/t}'
+  awk -v s="$rest" -v t="$total" 'BEGIN{printf "  ~%d tokens  %2d%%  rest: system prompt, tool schemas, skill and MCP lists (not in files)\n", s, int(100*s/t+0.5)}'
   echo "tool schemas are the biggest fixed part. Measured by warmd on one machine, cost of one extra tool: Bash ~2800, Grep ~800, Read ~500, Edit ~300, Write ~200, Glob ~100. warmd init writes agents with the fewest tools that still work."
 }
 
@@ -101,6 +101,7 @@ mcp_audit() {
     [ -f "$f" ] && awk -v L=settings -v F="${f#"$root/"}" "$MCP_AWK" "$f" >> "$tmp/set"
   done
   for f in "$HOME/.claude.json" "$root/.mcp.json"; do
+  # shellcheck disable=SC2088  # the literal ~/.claude.json is a label for the output, not a path
     [ -f "$f" ] && awk -v L=servers -v F="$( [ "$f" = "$root/.mcp.json" ] && echo .mcp.json || echo '~/.claude.json')" -v ROOT="$(native_path "$root" | sed 's#\\#/#g; s#/*$##' | tr 'A-Z' 'a-z')" "$MCP_AWK" "$f" >> "$tmp/srv"
   done
   touch "$tmp/set" "$tmp/srv"

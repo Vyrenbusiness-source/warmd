@@ -73,7 +73,7 @@ EOF
 mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; echo 999999 > "$XDG_CACHE_HOME/warmd/slots/1/pid"
 echo '// x' >> test.js
 expect "a dead slot owner expires" 'OK [0-9]+s test' "$("$WARMD" test)"
-[ -z "$(ls "$XDG_CACHE_HOME/warmd/slots" | grep -v '^$')" ] && ok "slot released on exit" || no "slot left behind"
+[ -z "$(find "$XDG_CACHE_HOME/warmd/slots" -mindepth 1 -maxdepth 1 -name '[!.]*' 2>/dev/null)" ] && ok "slot released on exit" || no "slot left behind"
 rm warmd.conf; git checkout -q test.js
 
 # ---- guards ----
@@ -255,11 +255,13 @@ out="$("$WARMD" merge side 2>&1)"
 expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
 git reset -q --hard HEAD~1; git branch -qD side
 
-for t in ledger digest affected perf tune layout docs hook auto team generic install map ship brakes; do
+for t in ledger digest affected perf tune layout docs hook auto team generic install map ship brakes audit; do
   # The layout test needs a headless Chrome run that does not work on the hosted Windows runner yet
   if [ "$t" = layout ] && [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then continue; fi
   bash "$HERE/tests/$t.sh" || fails=$((fails+1))
 done
+# Unity dotnet stage suite from the unity-build branch: skipped cleanly until that branch is merged
+if [ -f "$HERE/tests/fixtures/unity/check.sh" ]; then bash "$HERE/tests/fixtures/unity/check.sh" || fails=$((fails+1)); fi
 bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional"
 
 echo
