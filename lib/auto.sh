@@ -37,6 +37,13 @@ auto_agent_start() { # hook JSON -> 0 when it was an Agent call
     name="${p##*/}"; name="${name%.md}"; root="${p%/.warmd/tasks/*}"
     common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
     rm -f "$(auto_dir "$common")/paused/$name"
+    # the task runs again (escalation, handoff, restart): its worktree is no longer finished for warmd watch
+    local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$p" 2>/dev/null)"
+    if [ -n "$wt" ] && [ -f "$common/warmd-batch-done" ]; then
+      local w d keep=""; w="$(wt_norm "$wt")"
+      while IFS= read -r d; do [ "$(wt_norm "${d%%$'\t'*}")" = "$w" ] || keep="$keep$d"$'\n'; done < "$common/warmd-batch-done"
+      printf '%s' "$keep" > "$common/warmd-batch-done"
+    fi
   done < <(printf '%s' "$1" | grep -oE '[^" ]*\.warmd[\\/]+tasks[\\/]+[A-Za-z0-9_.-]+\.md')
   return 0
 }
