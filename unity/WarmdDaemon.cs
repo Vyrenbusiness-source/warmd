@@ -259,7 +259,22 @@ namespace Warmd
             if (name != "") filter.groupNames = new[] { name };
             string cat = Get(state, "cat");
             if (cat != "") filter.categoryNames = cat.Split(',');
+            // Only the project's own tests: embedded or linked packages (an HDRP copy in Packages/) bring their own test
+            // assemblies, whose failures say nothing about the project. packages=1 in the job runs them too.
+            if (Get(state, "packages") != "1") filter.assemblyNames = ProjectAssemblies();
             api.Execute(new ExecutionSettings(filter));
+        }
+
+        static string[] ProjectAssemblies()
+        {
+            return CompilationPipeline.GetAssemblies(AssembliesType.Editor).Concat(CompilationPipeline.GetAssemblies(AssembliesType.PlayerWithoutTestAssemblies))
+                .Select(a => a.name).Distinct()
+                .Where(n =>
+                {
+                    string asmdef = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(n);
+                    return asmdef == null ? n.StartsWith("Assembly-CSharp", StringComparison.Ordinal) : asmdef.Replace('\\', '/').StartsWith("Assets/", StringComparison.Ordinal);
+                })
+                .ToArray();
         }
 
         sealed class TestCallbacks : ICallbacks, IErrorCallbacks
