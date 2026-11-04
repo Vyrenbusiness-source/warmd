@@ -121,6 +121,15 @@ expect "real conflict refused" 'FAIL bad conflicts outside the usage/dispatch bl
 [ $rc -ne 0 ] && ok "refused exit code" || no "refused exit code"
 expect "merge aborted" '^$' "$(git status --porcelain | grep -v '^??')"
 
+# Staged leftovers in the checkout: refused before any merge, with the file names, nothing touched.
+echo staged > README; git add README; : > "$FAKE/log"
+out="$("$WARMD" ship alpha 2>&1)"; rc=$?
+expect "dirty checkout refused" 'FAIL uncommitted changes in .*: README\. Commit or discard them, then ship again' "$out"
+[ $rc -ne 0 ] && ok "dirty exit code" || no "dirty exit code"
+expect "dirty checkout calls no gh" '^$' "$(cat "$FAKE/log")"
+expect "staged change kept" '^M  README$' "$(git status --porcelain README)"
+git reset -q --hard
+
 # warmd ci on its own: polls until done.
 polls; run_done success > "$FAKE/jobs"; running 30 "$FAKE/jobs.1"
 : > "$FAKE/log"; out="$("$WARMD" ci 2>&1)"

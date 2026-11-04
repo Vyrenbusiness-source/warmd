@@ -179,13 +179,18 @@ ship_main() {
   done
   [ ${#branches[@]} -gt 0 ] || { echo "usage: warmd ship [--base B] [--release vX.Y.Z] <branch>..."; return 2; }
   [ -z "$release" ] || echo "$release" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL release must look like v1.2.3"; return 2; }
+  # Local changes make the merges below fail with no conflict to name: refuse up front and say where.
+  local dirty; dirty="$(git status --porcelain --untracked-files=no | head -5 | cut -c4- | paste -sd' ' -)"
+  [ -z "$dirty" ] || { echo "FAIL uncommitted changes in $(native_path "$(pwd)"): $dirty. Commit or discard them, then ship again"; return 1; }
   git fetch -q origin || { echo "FAIL git fetch origin"; return 1; }
   git checkout -q -B "$into" "origin/$base" || { echo "FAIL cannot branch from origin/$base"; return 1; }
   for b in "${branches[@]}"; do
     local ref="$b"; git rev-parse -q --verify "origin/$b" >/dev/null && ref="origin/$b"
-    if git merge -q --no-ff --no-edit "$ref" >/dev/null 2>&1; then echo "ok   merged $b"; continue; fi
+    local merr; if merr="$(git merge -q --no-ff --no-edit "$ref" 2>&1)"; then echo "ok   merged $b"; continue; fi
     local files f safe=1
     files="$(git diff --name-only --diff-filter=U)"
+    # No conflicted file: git refused for another reason, its own first line says which
+    [ -n "$files" ] || { git merge --abort 2>/dev/null; echo "FAIL $b not merged: $(echo "$merr" | grep -v '^ ' | head -1)"; return 1; }
     for f in $files; do
       [ "$f" = bin/warmd ] && ship_union "$f" && git add "$f" || { safe=0; break; }
     done
