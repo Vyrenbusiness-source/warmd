@@ -3,7 +3,7 @@
 Back to the [README](../README.md). Raw output is in [PROOF.md](PROOF.md).
 
 
-Windows 10, Unity 6000.4, Godot 4.7, Chrome. Your numbers will differ.
+Windows 10, Unity 6000.4, Godot 4.7, Chrome. `warmd bench` measures the same on your project.
 
 | Run | Before | With warmd |
 |---|---|---|

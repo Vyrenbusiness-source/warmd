@@ -7,7 +7,7 @@ Examples show real output from a small throwaway Node project with one failing t
 ## Everyday
 
 ### warmd status
-Shows what was detected and what is warm. Use it first in a new project. When the installed copy is behind its origin it adds one line `UPDATE installed <sha> behind origin <sha> by <n> commits, run: warmd update`; `warmd doctor` shows the same line.
+Shows what was detected and what is warm. Use it first in a new project. When the installed copy is behind its origin it adds one line `UPDATE installed <sha> behind origin <sha> by <n> commits, run: warmd update`; `warmd doctor` shows the same line. A background `git fetch` of the warmd clone refreshes this at most every 6 hours, `WARMD_UPDATE_CHECK=0` turns it off.
 ```text
 warmd status
 warmd 0.3.0: web project at <project>
@@ -36,7 +36,7 @@ FAIL 15s test (full log: <project>/.warmd/run/last.log)
 ```
 
 ### warmd check
-Builds, then runs only the tests that mention what you changed. Use it after every edit.
+Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit.
 ```text
 warmd check
 OK nothing to compile
@@ -147,7 +147,7 @@ fix-total                  warmd/fix-total            0m      0      0
 ```
 
 ### warmd watch
-Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 15. Exit 3 and a `STALLED` line when a worktree did not change.
+Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued escalations end it the same way. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again.
 ```text
 warmd watch --once
 OK no batch running
@@ -228,7 +228,15 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `build`, `test`, `lint`, `dev` | Override a command | detected |
 | `url` | Dev server URL | read from its output |
 | `base` | Base branch | from `origin/HEAD` |
-| `slots` | Heavy runs per machine | 2 for Unity, half the cores otherwise |
+| `slots` | Heavy runs per machine | one per 4 cores and per 8 GB RAM, the smaller, at least 1 |
+| `threads` | Build threads per heavy run | cores minus 2, shared by the slots |
+| `agents` | Parallel agents of a batch | one per core and per 2 GB RAM, the smaller, at least 1 |
+| `ram_free_min` | A heavy start waits while less than this percent of RAM is free, 0 turns it off | 15 |
+| `ram_wait` | 0 turns the RAM wait off | 1 |
+| `nice` | Priority of heavy runs, 0 turns it off | 10 |
+| `full` | `ci`: a bash project's full self-test runs on CI only | none |
+| `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
+| `top_words` | Goal words that route to the top tier (regex) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
 | `idle_min` | Minutes until an idle daemon ends itself | 30 |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
@@ -241,4 +249,4 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `port_env` | Env variable that gets a stable port per worktree | none |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 
-Environment: `WARMD_NOCACHE=1`, `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`. Unity also has `warmd call Namespace.Class.Method`.
+Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`. Unity also has `warmd call Namespace.Class.Method`.
