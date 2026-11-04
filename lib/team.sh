@@ -224,8 +224,24 @@ prewarm() { # worktree
 # A paused task (its agent stopped, or warmd watch --pause <name>) never alarms until its worktree moves again.
 
 # Does a warmd run or any other process work inside this worktree right now?
+# warmd ci and warmd ship write .warmd/ci.wait while they poll: pid, run id, run start, median seconds
+wt_ci_mark() { # worktree -> the marker line of a live CI wait
+  local m; m="$(cat "$1/.warmd/ci.wait" 2>/dev/null)"; [ -n "$m" ] && shell_alive "${m%% *}" && echo "$m"
+}
+
+# One line for warmd watch: run, minutes in, ETA from the median of recent runs
+wt_ci_eta() { # worktree
+  local m pid id start med el; m="$(wt_ci_mark "$1")" || return 1
+  read -r pid id start med <<< "$m"; el=$(( $(date +%s) - ${start:-0} ))
+  if [ "${med:-0}" -gt 0 ]; then
+    if [ "$med" -gt "$el" ]; then echo "run $id, $((el / 60)) min in, about $(( (med - el + 59) / 60 )) min left"
+    else echo "run $id, $((el / 60)) min in, past the median of $(( (med + 30) / 60 )) min"; fi
+  else echo "run $id, $((el / 60)) min in, no ETA yet"; fi
+}
+
 wt_busy() { # worktree
   local wt="$1" f pid
+  wt_ci_mark "$wt" >/dev/null && return 0   # polling CI is work, not idle
   for f in "$wt/.warmd/job.lock/pid" "$wt/.warmd/merge.owner"; do
     pid="$(cat "$f" 2>/dev/null)"
     [ -n "$pid" ] && shell_alive "$pid" && return 0
@@ -297,7 +313,7 @@ agent_dead() { # worktree name -> reason
 team_watch() {
   need_git
   local once=0 limit=5 batch wt age name stalled reason
-  local common live paused
+  local common live paused ci ci_seen=" "
   common="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)"
   case "${1:-}" in   # a task whose agent was stopped by hand: watch leaves it alone until its worktree moves again
     --pause) [ -n "${2:-}" ] || { echo "warmd watch --pause <name>"; return 2; }; auto_pause "$common" "$2"; echo "OK $2 paused, watch skips it until its worktree moves"; return 0;;
@@ -321,6 +337,9 @@ team_watch() {
         echo "$name" >> "$batch-dead"; stalled=1; continue
       fi
       live=1
+      if ci="$(wt_ci_eta "$wt")"; then   # once per run, the line changes only with the run
+        case "$ci_seen" in *" $name:${ci%%,*} "*) ;; *) echo "CI $name: $ci"; ci_seen="$ci_seen$name:${ci%%,*} ";; esac
+      fi
       age="$(wt_idle "$wt" "$limit" "$batch")"
       if [ "$age" -gt 0 ]; then
         echo "WAKE $name: idle $age min in $(native_path "$wt"). Send to the $name agent: \"Idle for $age minutes. Reply in one line with your state and next step, or run: warmd handoff $name \\\"what is done\\\" \\\"what is next\\\" and end with its AGENT line.\""

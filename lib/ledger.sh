@@ -64,3 +64,20 @@ ledger_rate() { # area tier
   local f; f="$(ledger_file)"; [ -s "$f" ] || { echo "0 0"; return; }
   awk -F'\t' -v a="$1" -v t="$2" '$4==a && $3==t {n++; if($8!="ok")e++} END{print n+0, e+0}' "$f"
 }
+
+# CI durations: one row per run, time, run id, branch, seconds, conclusion. Same common git dir as the ledger, never committed.
+ci_hist_file() { local d; d="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1; echo "$d/warmd-ci.tsv"; }
+
+ci_record() { # run branch secs conclusion
+  local f; f="$(ci_hist_file)" || return 0
+  [ -f "$f" ] && { awk -F'\t' -v id="$1" '$2 != id' "$f" > "$f.tmp"; mv "$f.tmp" "$f"; }
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$2" "$3" "$4" >> "$f"
+}
+
+# Median seconds and count of the last 9 green runs, nothing without history
+ci_median() {
+  local f; f="$(ci_hist_file)" || return 0
+  [ -f "$f" ] || return 0
+  awk -F'\t' '$5 == "success" && $4 ~ /^[0-9]+$/ { print $4 }' "$f" | tail -n 9 | sort -n |
+    awk '{ v[++n]=$1 } END { if (n) print (n % 2 ? v[(n+1)/2] : int((v[n/2] + v[n/2+1]) / 2)), n }'
+}
