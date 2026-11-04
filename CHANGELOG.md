@@ -4,6 +4,12 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-11-04
+
+### Changed
+- watch counts a growing agent transcript as movement; a stopped agent's engine stops
+- Unity tests run only the project's own assemblies (packages=1 runs embedded package tests too); InitTestScene leftovers are no change
+
 ## [0.4.6] - 2026-11-04
 
 ### Changed
@@ -107,7 +113,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.6...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.3...v0.4.4
