@@ -42,6 +42,18 @@ gh run watch 999 > /dev/null & g=$!; sleep 2
 busy "$W" && no "a watch on another branch's run counts as active" || ok "a watch on another branch's run does not count"
 kill $g 2>/dev/null; wait $g 2>/dev/null
 
+# warmd ci polls instead of gh run watch: its .warmd/ci.wait marker with a live pid is work, and watch gets an ETA line
+eta() { ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; wt_ci_eta "$1" ); }
+sleep 30 & s=$!
+echo "$s 4242 $(( $(date +%s) - 125 )) 600" > "$W/.warmd/ci.wait"
+busy "$W" && ok "a polling CI wait counts as active" || no "a polling CI wait counted as idle"
+out="$(eta "$W")"
+case "$out" in "run 4242, 2 min in, about 8 min left") ok "watch line names run, minutes and ETA";; *) no "ETA line: $out";; esac
+kill $s 2>/dev/null; wait $s 2>/dev/null
+busy "$W" && no "a dead CI wait still counts as active" || ok "a dead CI wait is idle"
+eta "$W" >/dev/null && no "a dead CI wait still gets an ETA line" || ok "no ETA line for a dead CI wait"
+rm -f "$W/.warmd/ci.wait"
+
 # Merge job launched through Win32_Process.Create: the msys pid in merge.owner is unknown here, the Windows pid lives
 if [ -d /proc ] && sleep 30 & s=$! && [ -r "/proc/$s/winpid" ]; then
   echo 999999 > "$W/.warmd/merge.owner"; cat "/proc/$s/winpid" > "$W/.warmd/merge.owner.win"
