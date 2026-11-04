@@ -87,7 +87,7 @@ Then run `warmd init` once in your project. warmd detects the stack from its fil
 <details>
 <summary><b>Safety: what it sends, writes, undoes and kills</b></summary>
 
-About 4,100 lines of bash, one C# file, three small GDScript files and a PowerShell installer. You can read it in one sitting.
+About 4,200 lines of bash, one C# file, three small GDScript files and a PowerShell installer. You can read it in one sitting.
 
 - **No telemetry.** It talks only to git remotes: it pushes finished branches to yours, and with a GitHub CI it uses `gh` to open the pull request, wait for the checks and merge. `warmd status` and `warmd doctor` check at most every 6 hours for a newer version with a `git fetch` of the warmd clone, `WARMD_UPDATE_CHECK=0` turns it off. A new version is installed only by `warmd update`, or by a `warmd ship --release` of warmd itself.
 - **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. The setup adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
