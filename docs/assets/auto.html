@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- What warmd runs by itself after warmd init, in four stations. Every line matches a section of README.md. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:330px}
+body{padding:26px 34px}
+.head{display:flex;justify-content:space-between}
+h2{font:600 30px/1.05 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 22px}
+.line{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.line:before{content:"";position:absolute;left:22px;right:22px;top:22px;border-top:1px dashed var(--mute)}
+.st{position:relative}
+.ic{width:44px;height:44px;background:var(--bg);border:1.5px solid var(--ink);display:grid;place-items:center;position:relative}
+.st.hot .ic{background:var(--heat);border-color:var(--heat)}
+.st.hot .ic svg{stroke:#fff}
+.ic svg{width:24px;height:24px;fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:square}
+.n{font:600 11px "Cascadia Mono",Consolas,monospace;letter-spacing:.14em;color:var(--heat);margin-top:14px}
+.st h3{font:600 19px/1.1 Bahnschrift,"Segoe UI",sans-serif;margin:4px 0 8px}
+.st li{list-style:none;font-size:12.5px;line-height:1.55;color:var(--mute);padding-left:12px;position:relative}
+.st li:before{content:"";position:absolute;left:0;top:.62em;width:5px;height:5px;background:var(--rule)}
+.st li b{color:var(--ink);font-weight:600}
+</style></head><body>
+<div class="head"><span class="label"><b>&#9632;</b> Runs by itself</span><span class="label">after one warmd init</span></div>
+<h2>Your agent calls warmd. Nobody types it.</h2>
+<div class="line">
+<div class="st hot"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-3 2-4 2-7 2 1 3 3 3 5"/></svg></div>
+ <div class="n">01 TEST</div><h3>Warm and short</h3><ul><li><b>Engine</b> stays open</li><li><b>Affected</b> tests only</li><li><b>Green</b> runs cached</li><li><b>Errors</b> only, file:line</li></ul></div>
+<div class="st"><div class="ic"><svg viewBox="0 0 24 24"><path d="M4 18h4l4-12h8M4 6h4l2 5M14 18h6"/></svg></div>
+ <div class="n">02 ROUTE</div><h3>Cheapest model</h3><ul><li><b>Tier</b> per task</li><li><b>Escalates</b> on failure</li><li><b>Hands off</b> at 70%</li><li><b>Shared</b> brief</li></ul></div>
+<div class="st"><div class="ic"><svg viewBox="0 0 24 24"><path d="M6 3v18M6 8c0 5 12 3 12 9M18 17v4M6 21h0"/><circle cx="18" cy="7" r="2.5"/></svg></div>
+ <div class="n">03 MERGE</div><h3>Green or back</h3><ul><li><b>One</b> branch at a time</li><li><b>Checks</b> each result</li><li><b>Rollback</b> on red</li><li><b>One PR</b> on CI</li></ul></div>
+<div class="st"><div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11"/><path d="M8 20h8M12 16v4M7 12l3-3 2 2 4-4"/></svg></div>
+ <div class="n">04 MACHINE</div><h3>Never frozen</h3><ul><li><b>RAM</b> wait under 15%</li><li><b>Queue</b> slots per PC</li><li><b>Idle</b> daemon ends</li><li><b>Own</b> processes only</li></ul></div>
+</div>
+</body></html>

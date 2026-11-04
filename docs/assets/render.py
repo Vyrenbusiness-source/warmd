@@ -1,12 +1,16 @@
 """Rebuild every image in docs/assets from its HTML source.
 
     python docs/assets/render.py            # all images
-    python docs/assets/render.py speed      # one image
+    python docs/assets/render.py speed      # one source
 
-Each HTML file sets its own size on html,body. The PNG is always 1280 px wide: a smaller page is rendered at a
-higher device scale, so text stays sharp and every image in the README has the same width.
+All sources share theme.css (light by default, html.dark for the dark variant). README images are rendered twice,
+<name>-light.png and <name>-dark.png, for a <picture> that follows prefers-color-scheme. Each source is 800 CSS px
+wide and rendered at device scale 2, so every README image is 1600 px wide and crisp at 2x when shown at width 800.
+social.png is 1280x640 for the GitHub social preview, light only.
 Bars: every element with data-v gets a width proportional to the largest data-v of its card (class "card"),
-the largest bar is 82%. tests/bars.sh checks the result. Needs Chrome, Edge or Chromium (WARMD_BROWSER wins).
+the largest bar is 82%. tests/bars.sh checks the result.
+With Pillow installed the PNG is reduced to a 256 colour palette, which keeps the flat art sharp and the file small.
+Needs Chrome, Edge or Chromium (WARMD_BROWSER wins). hero.log holds the raw warmd session shown in hero.html.
 """
 import os
 import re
@@ -16,9 +20,15 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WIDTH = 1280
-# source html -> png name; proof-*.png are real warmd shot captures and are never rendered
-PAGES = {"hero": "social", "demo": "demo", "speed": "speed", "tokens": "tokens", "flow": "flow", "features": "features"}
+# source html -> (png base name, themes, output width); proof-*.png are real warmd shot captures and are never rendered
+PAGES = {
+    "hero": ("hero", ("light", "dark"), 1600),
+    "auto": ("auto", ("light", "dark"), 1600),
+    "speed": ("speed", ("light", "dark"), 1600),
+    "tokens": ("tokens", ("light", "dark"), 1600),
+    "social": ("social", ("light",), 1280),
+}
+BG = {"light": "f6f1e8ff", "dark": "14110eff"}
 
 
 def browser():
@@ -52,6 +62,16 @@ def size(html):
     return int(m.group(1)), int(m.group(2))
 
 
+def shrink(png):
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    with Image.open(png) as im:
+        q = im.convert("RGB").quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    q.save(png, optimize=True)
+
+
 def render(name, exe):
     src = os.path.join(HERE, name + ".html")
     with open(src, encoding="utf-8") as f:
@@ -60,15 +80,25 @@ def render(name, exe):
     if new != html:
         with open(src, "w", encoding="utf-8", newline="\n") as f:
             f.write(new)
+    base, themes, width = PAGES[name]
     w, h = size(new)
-    scale = WIDTH / w
-    png = os.path.join(HERE, PAGES[name] + ".png")
-    with tempfile.TemporaryDirectory() as prof:
-        subprocess.run([exe, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--user-data-dir=" + prof,
-                        "--force-device-scale-factor=%g" % scale, "--window-size=%d,%d" % (w, h),
-                        "--default-background-color=0b0f14ff", "--screenshot=" + png, "file:///" + src.replace("\\", "/")],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
-    print("ok   %s.png %dx%d" % (PAGES[name], round(w * scale), round(h * scale)))
+    scale = width / w
+    for theme in themes:
+        png = os.path.join(HERE, base + (".png" if len(themes) == 1 else "-%s.png" % theme))
+        # the themed copy sits next to the source so theme.css resolves, and is removed right after
+        fd, tmp = tempfile.mkstemp(suffix=".html", prefix=".render-", dir=HERE)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(new.replace("<html>", '<html class="%s">' % theme, 1))
+        try:
+            with tempfile.TemporaryDirectory() as prof:
+                subprocess.run([exe, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--user-data-dir=" + prof,
+                                "--force-device-scale-factor=%g" % scale, "--window-size=%d,%d" % (w, h),
+                                "--default-background-color=" + BG[theme], "--screenshot=" + png, "file:///" + tmp.replace("\\", "/")],
+                               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        finally:
+            os.remove(tmp)
+        shrink(png)
+        print("ok   %s %dx%d %d KB" % (os.path.basename(png), round(w * scale), round(h * scale), os.path.getsize(png) // 1024))
 
 
 if __name__ == "__main__":
