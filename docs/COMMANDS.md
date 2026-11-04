@@ -7,7 +7,7 @@ Examples show real output from a small throwaway Node project with one failing t
 ## Everyday
 
 ### warmd status
-Shows what was detected and what is warm. Use it first in a new project.
+Shows what was detected and what is warm. Use it first in a new project. When the installed copy is behind its origin it adds one line `UPDATE installed <sha> behind origin <sha> by <n> commits, run: warmd update`; `warmd doctor` shows the same line.
 ```text
 warmd status
 warmd 0.3.0: web project at <project>
@@ -167,7 +167,7 @@ FAIL perf: no baseline, run warmd perf --save first
 ```
 
 ### warmd ship
-Builds the integration branch `warmd-ship` from `origin/<base>`, merges the finished task branches one by one, pushes, opens or updates one PR, waits for CI and merges on green. A conflict is resolved only when every conflicting line in `bin/warmd` is a usage or dispatch line, both sides are kept. Any other conflict stops with the file names. On red it names the failing tests and does not merge. `--release vX.Y.Z` then creates a release with notes from `git log` since the last tag. Syntax: `warmd ship [--base B] [--release vX.Y.Z] <branch>...`. Needs `gh`.
+Builds the integration branch `warmd-ship` from `origin/<base>`, merges the finished task branches one by one, pushes, opens or updates one PR, waits for CI and merges on green. A conflict is resolved only when every conflicting line in `bin/warmd` is a usage or dispatch line, both sides are kept. Any other conflict stops with the file names. On red it names the failing tests and does not merge. `--release vX.Y.Z` first sets the version in `bin/warmd` and moves the Unreleased part of `CHANGELOG.md` to it, then creates the release with notes from `git log` since the last tag, deletes the merged task branches on `origin` and updates the installed copy when it is a clean clone of the same repo. Syntax: `warmd ship [--base B] [--release vX.Y.Z] <branch>...`. Needs `gh`.
 ```text
 warmd ship alpha beta
 ok   merged alpha
@@ -182,6 +182,18 @@ SHIPPED PR #7
 
 ### warmd ci
 Waits for the newest CI run of the current branch, prints one line per job and the failing test names on red. Syntax: `warmd ci [branch]`. Exit 1 on red.
+It polls GitHub instead of blocking, so it notices trouble by itself:
+- the first red job, or a failed step in a job that still runs, ends the wait at once;
+- a job whose steps are all finished counts by its steps, even while GitHub still shows it in progress;
+- `ETA` gives the minutes left from the median of recent green runs, `SLOW` names job and step once a run passes 1.5 times that median;
+- the wait stops at twice the median (at least 5 min, 20 min without history). `WARMD_CI_MAX=<minutes>` sets the cap by hand.
+While it waits, `warmd watch` counts the agent as busy, not idle.
+```text
+warmd ci
+ETA run 41: about 3 min left, median 5 min of 6 runs
+FAIL shellcheck
+RED run 41
+```
 
 ## Setup
 
