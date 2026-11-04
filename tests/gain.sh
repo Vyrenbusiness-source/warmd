@@ -8,7 +8,7 @@ fails=0
 ok() { echo "ok   $1"; }
 no() { echo "FAIL $1"; fails=$((fails+1)); }
 expect() { if echo "$3" | grep -qE "$2"; then ok "$1"; else no "$1: wanted /$2/, got: $(echo "$3" | head -4)"; fi; }
-export XDG_CONFIG_HOME="$(mktemp -d)"
+XDG_CONFIG_HOME="$(mktemp -d)"; export XDG_CONFIG_HOME
 
 out="$("$WARMD" gain "$FX/session1.jsonl")"
 # Two messages after dedup: input 20, cache-new 1000, cache-read 1000, output 150, calls 2

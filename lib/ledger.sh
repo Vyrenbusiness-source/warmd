@@ -52,7 +52,9 @@ ledger_report() {
       printf "%-6s %5s %4s %5s %9s %9s %6s %7s\n","tier","tasks","ok","esc","tokens","tok/task","calls","secs"
       split("cheap mid top",o," ")
       for(i=1;i<=3;i++){t=o[i]; if(!n[t])continue
-        printf "%-6s %5d %4d %5d %9d %9s %6d %7d\n",t,n[t],ok[t],es[t]+fl[t],tok[t],(nt[t]?int(tok[t]/nt[t]):"-"),cl[t],sc[t]}
+        printf "%-6s %5d %4d %5d %9d %9s %6d %7d\n",t,n[t],ok[t],es[t]+fl[t],tok[t],(nt[t]?int(tok[t]/nt[t]):"-"),cl[t],sc[t]
+        if(nt[t]<n[t]) gap=gap sprintf("%s%s %d of %d", (gap==""?"":", "), t, nt[t], n[t])}
+      if(gap!="") printf "tokens known for %s tasks, tok/task averages only those (finish --tokens N records them)\n",gap
       printf "escalation wasted: %d tokens in %d attempts\n",wt,wn
     }' "$f"
 }

@@ -83,10 +83,12 @@ out="$("$WARMD" watch --once)"
 rm -f "$W/a/.warmd/run/result.txt"
 
 # ---- compaction: work committed, handoff written, the agent's next Bash call ends it ----
-echo half > "$W/b/b.txt"
+echo half > "$W/b/b.txt"; echo never-added > "$W/b/fresh.txt"; mkdir -p "$W/b/.warmd"; echo junk > "$W/b/.warmd/ignored.txt"
 transcript "$TMP/b.jsonl" b "working"
 printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreCompact","trigger":"auto"}' "$(native_path "$TMP/b.jsonl")" | "$WARMD" hook-compact; rc=$?
 [ "$rc" = 0 ] && [ -z "$(git -C "$W/b" status --porcelain -uno)" ] && git -C "$W/b" log -1 --format=%s | grep -q '^WIP b: automatic handoff at compaction' && ok "compaction commits the work" || no "compaction commit rc=$rc: $(git -C "$W/b" log -1 --format=%s)"
+git -C "$W/b" ls-tree --name-only HEAD | grep -qx fresh.txt && ok "the WIP commit takes a file the agent never added" || no "WIP commit misses an untracked file: $(git -C "$W/b" status --porcelain)"
+[ -z "$(git -C "$W/b" ls-tree -r --name-only HEAD .warmd)" ] && ok "the WIP commit leaves gitignored files out" || no "WIP commit took ignored files"
 grep -q '^## Handoff 1' "$C/warmd-handoff/b.md" && grep -q 'Automatic handoff at compaction' "$C/warmd-handoff/b.md" && ok "compaction writes a handoff" || no "handoff note: $(cat "$C/warmd-handoff/b.md" 2>&1)"
 pre() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}' "$(native_path "$1")" | "$WARMD" hook-pre; }
 out="$(pre "$TMP/b.jsonl")"
@@ -120,6 +122,17 @@ old d   # find -newer may compare whole seconds: a marker from this very second 
 echo more > "$W/d/d.txt"
 out="$("$WARMD" watch --once)"; rc=$?
 [ "$rc" = 0 ] && echo "$out" | grep -q '^OK all worktrees moved.*paused: a b c$' && [ ! -f "$C/warmd-auto/paused/d" ] && ok "a worktree that moves is live again" || no "resume rc=$rc: $out"
+
+# ---- a new agent on a paused task: the Agent call clears the marker, watch does not end while it still reads ----
+agent() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"t","prompt":%s}}' "$(native_path "$TMP/main.jsonl")" "$(jstr "Read $1 and do it.")" | "$WARMD" hook-pre; }
+out="$(agent "$(taskpath a)")"; rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] && [ ! -f "$C/warmd-auto/paused/a" ] && [ -f "$C/warmd-auto/paused/b" ] && ok "an Agent call on a task clears only its pause marker" || no "agent start rc=$rc, out $out, paused: $(ls "$C/warmd-auto/paused")"
+out="$("$WARMD" watch --once)"
+echo "$out" | grep -q '^WAKE a:' && ok "watch counts the new agent as running" || no "watch after agent start: $out"
+case "$(taskpath b)" in ?:/*)
+  agent "$(taskpath b | tr '/' '\\')" >/dev/null
+  [ ! -f "$C/warmd-auto/paused/b" ] && ok "a Windows path with backslashes clears the marker too" || no "backslash path kept the marker";;
+esac
 
 # ---- red run for every adapter: the exit code of the last warmd test or check, not only the daemon's result.txt ----
 G="$TMP/gen"; mkdir -p "$G" && cd "$G" && git init -q -b main . && git config core.autocrlf false && git config user.name t && git config user.email t@example.com

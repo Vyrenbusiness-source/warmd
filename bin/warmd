@@ -23,6 +23,7 @@ reg() { # name "usage line" function
 "; eval "reg_fn_${1//-/_}=\$3"
 }
 # One grep for all libs, a process start per lib is slow on Windows.
+# shellcheck source=/dev/null
 while IFS= read -r f; do . "$f"; done < <(grep -l '^reg ' "$WARMD_HOME"/lib/*.sh)
 
 usage() {
@@ -70,7 +71,7 @@ Setup
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
-Config    warmd.conf in the project root, see README
+Config    warmd.conf in the project root, every key in docs/COMMANDS.md
 EOF
 }
 
@@ -83,6 +84,7 @@ CMD="${1:-status}"; [ $# -gt 0 ] && shift
 case "$CMD $*" in run\ *|hook-*|init\ *--hooks*|init\ *--no-hooks*) . "$WARMD_HOME/lib/hook.sh"; hook_main "$CMD" "$@"; exit $?;; esac
 case "$REG_NAMES" in *" $CMD "*) fn="reg_fn_${CMD//-/_}"; "${!fn}" "$@"; exit $?;; esac
 detect_project
+# shellcheck source=/dev/null
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
 
 case "$CMD" in

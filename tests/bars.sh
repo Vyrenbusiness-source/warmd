@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Chart check: inside each card, bar width must be proportional to its value (2% tolerance), and a smaller value is never wider.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 bad=0
 for f in docs/assets/speed.html docs/assets/tokens.html; do
   out=$(awk -v f="$f" '

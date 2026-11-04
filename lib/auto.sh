@@ -27,6 +27,20 @@ auto_paused() { # common name worktree
   return 0
 }
 
+# An Agent call whose prompt names .warmd/tasks/<name>.md starts a new agent on that task: its pause marker goes now.
+# Waiting for the worktree to move is not enough, a fresh agent that still reads counts as paused and warmd watch ends.
+auto_agent_start() { # hook JSON -> 0 when it was an Agent call
+  [[ $1 =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]] || return 1
+  local p name root common
+  while IFS= read -r p; do
+    p="$(printf '%s' "$p" | tr -s '\\' '/')"
+    name="${p##*/}"; name="${name%.md}"; root="${p%/.warmd/tasks/*}"
+    common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
+    rm -f "$(auto_dir "$common")/paused/$name"
+  done < <(printf '%s' "$1" | grep -oE '[^" ]*\.warmd[\\/]+tasks[\\/]+[A-Za-z0-9_.-]+\.md')
+  return 0
+}
+
 # ---- queue: lines for the session, printed by warmd watch ----
 auto_queue() { mkdir -p "$(auto_dir "$1")" && printf '%s\n' "$2" >> "$(auto_dir "$1")/queue"; }   # common line
 auto_drain() { # common -> prints and empties the queue, 1 when it was empty
@@ -119,11 +133,11 @@ auto_compact() { # hook JSON on stdin
 
 # Commit what is there, write the handoff note, keep the deny message for this transcript. Once per transcript.
 auto_save() { # name taskfile key reason
-  local name="$1" tf="$2" key="$3" why="$4" wt d f out line
+  local name="$1" tf="$2" key="$3" why="$4" wt d out line
   d="$(auto_cache)"; mkdir -p "$d"; : > "$d/$key.done"
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 1
-  git -C "$wt" add -u 2>/dev/null
-  for f in $(sed -n 's/^Files you own: //p' "$tf" | tr ',' ' '); do [ -e "$wt/$f" ] && git -C "$wt" add -- "$f" 2>/dev/null; done
+  # -A: a new file the agent never added belongs to the work too; .gitignore keeps build output out
+  git -C "$wt" add -A 2>/dev/null
   git -C "$wt" diff --cached --quiet 2>/dev/null || git -C "$wt" commit -qm "WIP $name: automatic handoff at $why" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} 2>/dev/null
   out="$(cd "$wt" && bash "$WARMD_HOME/bin/warmd" handoff "$name" "Automatic handoff at $why. The work so far is in the commits below." "Check the commits against Done when and finish what is left." 2>&1)"
   line="$(printf '%s\n' "$out" | grep "^AGENT $name:" | tail -1)"

@@ -76,5 +76,5 @@ git checkout -q -b feat2; printf 'sleep 1.5
 expect "merge refuses the slowdown" '^FAIL merge feat2: .*perf regression: cmd_ms' "$("$WARMD" merge feat2)"
 grep -q '^sleep 1.5' work.sh && no "merge left the slow change" || ok "merge rolled back"
 
-cd "$HERE"; rm -rf "$TMP" 2>/dev/null
+cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
 [ $fails = 0 ] && echo "all perf tests passed" || { echo "$fails failed"; exit 1; }

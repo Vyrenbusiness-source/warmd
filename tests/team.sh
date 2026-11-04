@@ -55,5 +55,5 @@ fi
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
-cd "$HERE"; rm -rf "$TMP" 2>/dev/null
+cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
 exit $fails

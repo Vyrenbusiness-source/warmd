@@ -1,3 +1,11 @@
+# Line endings: LF everywhere, so bash runs the scripts on Windows checkouts too.
 * text=auto eol=lf
+*.sh text eol=lf
+bin/warmd text eol=lf
+*.gd text eol=lf
+*.cs text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
 *.png binary
 *.gif binary
+*.jpg binary

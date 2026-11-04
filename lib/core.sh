@@ -183,8 +183,8 @@ slot_try() {
     if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; SLOT="$dir/$i"; return 0; fi
     [ -d "$dir" ] || { mkdir -p "$dir"; i=$((i - 1)); continue; }
     holder=""; read -r holder 2>/dev/null < "$dir/$i/pid"
-    if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "$dir/$i"
-    elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$dir/$i"; fi
+    if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "${dir:?}/$i"
+    elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "${dir:?}/$i"; fi
   done
   return 1
 }
@@ -209,6 +209,7 @@ changed_files() {
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
+# shellcheck disable=SC2120  # check calls it without a filter on purpose: that is the full suite
 run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
 
 # Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
@@ -295,7 +296,7 @@ common_update() {
 }
 
 common_status() {
-  echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"
+  if [ "$KIND" = none ]; then echo "warmd $WARMD_VERSION: no known project type at $(native_path "$PROJECT")"; else echo "warmd $WARMD_VERSION: $KIND project at $(native_path "$PROJECT")"; fi
   local held=("$CACHE_ROOT"/slots/*); [ -e "${held[0]}" ] || held=()
   echo "heavy runs: ${#held[@]} of $(slots_max)"
   [ -n "$(type -t team_agents)" ] || . "$WARMD_HOME/lib/team.sh" 2>/dev/null
@@ -303,7 +304,7 @@ common_status() {
 }
 
 common_doctor() {
-  echo "detected: $KIND at $(native_path "$PROJECT")"
+  echo "detected: $([ "$KIND" = none ] && echo "no known project type" || echo "$KIND") at $(native_path "$PROJECT")"
   local fix_git="install git with your package manager" fix_py="install python 3 with your package manager" bin="${WARMD_BIN:-$HOME/.local/bin}"
   [ "$OS" = win ] && { fix_git="winget install --id Git.Git -e"; fix_py="winget install --id Python.Python.3.12 -e"; }
   # printf %()T needs bash 4.2, macOS ships 3.2
