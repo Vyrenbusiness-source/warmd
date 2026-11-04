@@ -1,35 +1,25 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0}
-html,body{width:1280px;height:640px;overflow:hidden}
-body{background:#0b0f14;color:#e6edf3;font-family:"Segoe UI",system-ui,sans-serif;display:grid;grid-template-columns:560px 1fr;gap:44px;padding:56px;position:relative}
-body:before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% 12%,rgba(255,122,48,.2),transparent 62%)}
-.left,.term{position:relative}
-.left{display:flex;flex-direction:column}
-.logo{font:800 92px/1 "Segoe UI",system-ui;letter-spacing:-3px}
-.logo span{color:#ff7a30}
-h1{font-size:43px;line-height:1.14;letter-spacing:-.8px;margin-top:22px;font-weight:700}
-.sub{color:#9aa7b4;font-size:22px;line-height:1.4;margin-top:20px}
-.stacks{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
-.stacks b{font-size:18px;font-weight:600;padding:7px 13px;border:1px solid #2c3641;border-radius:9px;color:#d2dae2}
-.term{background:#11171e;border:1px solid #2c3641;border-radius:16px;padding:16px 26px;font:20px/1.6 Consolas,"Cascadia Mono",monospace}
-.dots{display:flex;gap:9px;margin-bottom:18px}.dots i{width:13px;height:13px;border-radius:50%;background:#3a4552}
-.c{color:#6e7c8a}.p{color:#ff7a30}.g{color:#3fd07f}.r{color:#ff6b6b}
-.stats{position:relative;display:flex;flex-direction:column;gap:16px;justify-content:center}
-.card{background:#11171e;border:1px solid #2c3641;border-radius:16px;padding:18px 26px;display:grid;grid-template-columns:172px 1fr;align-items:center;column-gap:18px}
-.n{grid-row:span 2;font:800 68px/1 "Segoe UI",system-ui;letter-spacing:-2px;color:#ff7a30}
-.l{font-size:24px;font-weight:600;line-height:1.2}
-.m{color:#9aa7b4;font-size:18px;margin-top:4px}
+<!-- README hero. render.py fills TERMINAL from hero.log, the real session recorded by capture.sh with warmd on a throwaway
+     Node project: lines unchanged, see terminal() in render.py for the few lines left out and the one comment added. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:556px}
+body{padding:30px 34px 0}
+.stripe{position:absolute;left:0;right:0;top:0}
+.top{display:flex;justify-content:space-between;align-items:flex-start}
+.mark{font-size:58px;line-height:.9}
+.top .label{text-align:right;line-height:1.7;margin-top:4px}
+h1{font:600 31px/1.1 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:16px 0 20px}
+h1 em{font-style:normal;color:var(--heat)}
+.term{background:var(--term);color:var(--tink);border:1px solid var(--trule);position:relative}
+.bar{height:28px;border-bottom:1px solid var(--trule);display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  font:11px "Cascadia Mono",Consolas,monospace;letter-spacing:.08em;color:var(--tmute);text-transform:uppercase}
+.bar i{display:inline-block;width:8px;height:8px;background:var(--heat);margin-right:8px}
+pre{padding:12px 16px 14px;font-size:13px;line-height:1.55;white-space:pre;tab-size:2}
+.p{color:#ff8a66}.c{color:var(--tmute)}.ok{color:#6fd99a;font-weight:700}.no{color:#ff7a6e;font-weight:700}.add{color:#6fd99a}.del{color:#ff7a6e}.dim{color:var(--tmute)}
 </style></head><body>
-<div class="left">
-  <div class="logo">warm<span>d</span></div>
-  <h1>Your coding agent should not wait for the engine.</h1>
-  <p class="sub">Warm engines, cached green runs, error-only output, cheapest-fit models and merges that roll back on red. Install once, it runs itself.</p>
-  <div class="stacks"><b>Unity</b><b>Godot</b><b>Web</b><b>Python</b><b>Rust</b><b>Go</b><b>.NET</b></div>
-</div>
-<div class="stats">
-  <div class="card"><div class="n">95%</div><div class="l">faster Unity test class</div><div class="m">56 s &rarr; 3 s, large HDRP project</div></div>
-  <div class="card"><div class="n">98%</div><div class="l">fewer tokens per green run</div><div class="m">web 289 &rarr; 6, Python 309 &rarr; 6</div></div>
-  <div class="card"><div class="n">26%</div><div class="l">fewer tokens per agent fix</div><div class="m">web bug, 5 runs per arm, 5 of 5 fixed</div></div>
-</div>
+<div class="stripe"></div>
+<div class="top"><div class="mark">warmd<i></i></div><div class="label">engine-side helper<br>for coding agents</div></div>
+<h1>Your coding agent <em>waits less</em> and <em>reads less</em>.</h1>
+<div class="term"><div class="bar"><span><i></i>Git Bash &middot; C:/dev/cart-demo</span><span>real session, see hero.log</span></div>
+<pre>TERMINAL</pre></div>
 </body></html>

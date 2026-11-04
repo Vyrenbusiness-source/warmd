@@ -1,40 +1,35 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0}
-html,body{width:1280px;height:660px;overflow:hidden}
-body{background:#0b0f14;color:#e6edf3;font-family:"Segoe UI",system-ui,sans-serif;padding:44px 56px;position:relative}
-body:before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% 0%,rgba(255,122,48,.18),transparent 62%)}
-body>*{position:relative}
-.logo{font:800 30px/1 "Segoe UI",system-ui;letter-spacing:-1px}.logo span{color:#ff7a30}
-h1{font-size:40px;line-height:1.15;letter-spacing:-.8px;font-weight:700;margin-top:12px}
-.card{background:#11171e;border:1px solid #2c3641;border-radius:16px}
-.rows{margin-top:24px;display:flex;flex-direction:column;gap:14px}
-.row{padding:14px 26px}
-.t{font-size:22px;font-weight:600;margin-bottom:6px}.t small{font-size:17px;font-weight:400;color:#9aa7b4;margin-left:10px}
-.b{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:14px;margin-top:6px}
-.b i{font-style:normal;font-size:17px;color:#9aa7b4}
-.foot{position:absolute;left:56px;right:56px;bottom:20px;color:#6e7c8a;font-size:16px}
-.tr{display:flex;align-items:center;gap:12px}
-.bar{height:28px;border-radius:3px;min-width:2px;flex:none}
-.num{font:700 18px Consolas,monospace;white-space:nowrap}
-.bef{background:#3a4552}.aft{background:#ff7a30}
+<!-- Measured on Windows 10, Unity 6000.4, large HDRP project, one run each. Raw output: docs/MEASURED.md and docs/PROOF.md. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:380px}
+body{padding:26px 34px}
+.head{display:flex;justify-content:space-between;align-items:baseline}
+h2{font:600 30px/1.05 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 16px}
+.card{border-top:1px solid var(--rule);padding:12px 0 10px;display:grid;grid-template-columns:210px 1fr;column-gap:16px}
+.t{font-size:15px;font-weight:600;grid-row:span 3}.t small{display:block;font-weight:400;color:var(--mute);font-size:12.5px;margin-top:3px}
+.b{display:grid;grid-template-columns:62px 1fr;align-items:center;gap:8px;height:22px}
+.b i{font:normal 11.5px "Cascadia Mono",Consolas,monospace;color:var(--mute)}
+.tr{display:flex;align-items:center;gap:8px}
+.bar{height:12px;min-width:2px;flex:none}
+.bef{background:repeating-linear-gradient(135deg,var(--rule) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1px var(--rule)}
+.aft{background:var(--heat)}
+.num{font:700 13px "Cascadia Mono",Consolas,monospace;white-space:nowrap}
+.foot{position:absolute;left:34px;bottom:18px;font-size:11.5px;color:var(--mute)}
 </style></head><body>
-<div class="logo">warm<span>d</span></div>
-<h1>Same tests, a fraction of the wait.</h1>
-<div class="rows">
-<div class="card row"><div class="t">Unity, one test class<small>large HDRP project</small></div>
+<div class="head"><span class="label"><b>&#9632;</b> Proof / games</span><span class="label">seconds, lower is better</span></div>
+<h2>The engine start was most of the wait.</h2>
+<div class="card"><div class="t">Unity, one test class<small>large HDRP project</small></div>
   <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="56" style="width:82.0000%"></div><span class="num">56 s</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="3" style="width:4.3929%"></div><span class="num">3 s</span></div></div>
 </div>
-<div class="card row"><div class="t">Unity, full PlayMode test<small>same project</small></div>
+<div class="card"><div class="t">Unity, full PlayMode test<small>same project</small></div>
   <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="54" style="width:82.0000%"></div><span class="num">54 s</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="26" style="width:39.4815%"></div><span class="num">26 s</span></div></div>
   <div class="b"><i>--speed 8</i><div class="tr"><div class="bar aft" data-v="8" style="width:12.1481%"></div><span class="num">8 s</span></div></div>
 </div>
-<div class="card row"><div class="t">Repeat run, code unchanged<small>green results are cached</small></div>
+<div class="card"><div class="t">Repeat run<small>code unchanged, green is cached</small></div>
   <div class="b"><i>before</i><div class="tr"><div class="bar bef" data-v="3" style="width:82.0000%"></div><span class="num">3 s</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="0.4" style="width:10.9333%"></div><span class="num">0.4 s</span></div></div>
 </div>
-</div>
-<div class="foot">Windows 10, Unity 6000.4. One run. Raw output in docs/PROOF.md. Bar lengths are proportional within each card.</div>
+<div class="foot">Windows 10, Unity 6000.4, one run each. Bar lengths are proportional within each row. Raw output: docs/PROOF.md</div>
 </body></html>

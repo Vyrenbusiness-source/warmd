@@ -1,39 +1,38 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0}
-html,body{width:1280px;height:660px;overflow:hidden}
-body{background:#0b0f14;color:#e6edf3;font-family:"Segoe UI",system-ui,sans-serif;padding:44px 56px;position:relative}
-body:before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% 0%,rgba(255,122,48,.18),transparent 62%)}
-body>*{position:relative}
-.logo{font:800 30px/1 "Segoe UI",system-ui;letter-spacing:-1px}.logo span{color:#ff7a30}
-h1{font-size:40px;line-height:1.15;letter-spacing:-.8px;font-weight:700;margin-top:12px}
-.card{background:#11171e;border:1px solid #2c3641;border-radius:16px}
-.rows{margin-top:24px;display:flex;flex-direction:column;gap:14px}
-.row{padding:14px 26px}
-.t{font-size:22px;font-weight:600;margin-bottom:6px}.t small{font-size:17px;font-weight:400;color:#9aa7b4;margin-left:10px}
-.b{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:14px;margin-top:6px}
-.b i{font-style:normal;font-size:17px;color:#9aa7b4}
-.foot{position:absolute;left:56px;right:56px;bottom:18px;color:#6e7c8a;font-size:16px}
-.tr{display:flex;align-items:center;gap:12px}
-.bar{height:28px;border-radius:3px;min-width:2px;flex:none}
-.num{font:700 18px Consolas,monospace;white-space:nowrap}
-.bef{background:#3a4552}.aft{background:#ff7a30}
+<!-- Unity: one green run, log bytes vs warmd output. Web (Vite + Vitest) and Python (pytest): real tokens from docs/ab.md. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:450px}
+body{padding:26px 34px}
+.head{display:flex;justify-content:space-between;align-items:baseline}
+h2{font:600 30px/1.05 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 16px}
+.card{border-top:1px solid var(--rule);padding:12px 0 10px;display:grid;grid-template-columns:210px 1fr;column-gap:16px}
+.t{font-size:15px;font-weight:600;grid-row:span 3}.t small{display:block;font-weight:400;color:var(--mute);font-size:12.5px;margin-top:3px}
+.b{display:grid;grid-template-columns:62px 1fr;align-items:center;gap:8px;height:22px}
+.b i{font:normal 11.5px "Cascadia Mono",Consolas,monospace;color:var(--mute)}
+.tr{display:flex;align-items:center;gap:8px}
+.bar{height:12px;min-width:2px;flex:none}
+.bef{background:repeating-linear-gradient(135deg,var(--rule) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1px var(--rule)}
+.aft{background:var(--heat)}
+.num{font:700 13px "Cascadia Mono",Consolas,monospace;white-space:nowrap}
+.foot{position:absolute;left:34px;bottom:18px;font-size:11.5px;color:var(--mute)}
 </style></head><body>
-<div class="logo">warm<span>d</span></div>
-<h1>The agent reads the error, not the log.</h1>
-<div class="rows">
-<div class="card row"><div class="t">Unity, green run<small>per test run</small></div>
+<div class="head"><span class="label"><b>&#9632;</b> Proof / output</span><span class="label">what the agent reads, lower is better</span></div>
+<h2>The agent reads the error, not the log.</h2>
+<div class="card"><div class="t">Unity, green run<small>per test run</small></div>
   <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="33323" style="width:82.0000%"></div><span class="num">33,323 bytes</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="41" style="width:0.1009%"></div><span class="num">41 bytes</span></div></div>
 </div>
-<div class="card row"><div class="t">Web, red run<small>Vitest, real tokens</small></div>
+<div class="card"><div class="t">Web, green run<small>Vitest, 17 tests</small></div>
+  <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="289" style="width:82.0000%"></div><span class="num">289 tokens</span></div></div>
+  <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="6" style="width:1.7024%"></div><span class="num">6 tokens</span></div></div>
+</div>
+<div class="card"><div class="t">Web, red run<small>Vitest, 17 tests</small></div>
   <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="714" style="width:82.0000%"></div><span class="num">714 tokens</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="136" style="width:15.6190%"></div><span class="num">136 tokens</span></div></div>
 </div>
-<div class="card row"><div class="t">Python, red run<small>pytest, real tokens</small></div>
+<div class="card"><div class="t">Python, red run<small>pytest, 13 tests</small></div>
   <div class="b"><i>raw</i><div class="tr"><div class="bar bef" data-v="479" style="width:82.0000%"></div><span class="num">479 tokens</span></div></div>
   <div class="b"><i>warmd</i><div class="tr"><div class="bar aft" data-v="153" style="width:26.1921%"></div><span class="num">153 tokens</span></div></div>
 </div>
-</div>
-<div class="foot">Only build and test output is shortened, never your code. Bar lengths are proportional within each card.</div>
+<div class="foot">Only build and test output is shortened, never your code. Full log stays on disk. Method: docs/ab.md</div>
 </body></html>
