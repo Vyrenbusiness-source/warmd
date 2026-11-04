@@ -43,6 +43,17 @@ expect "bin change runs the full suite" '^run$' "$(ran)"
 change tests/run.sh
 "$WARMD" check >/dev/null 2>&1
 expect "tests/run.sh change runs the full suite" '^run$' "$(ran)"
+# full=ci: the full suite never runs here, check says where it runs instead.
+git checkout -q main; printf 'test=bash tests/run.sh\nfull=ci\n' > warmd.conf; git commit -qam "full on ci"
+change bin/tool
+out="$("$WARMD" check 2>&1)"; rc=$?
+expect "full=ci runs nothing locally" '^none$' "$(ran)"
+expect "full=ci says where the full suite runs" '^PUSH the full suite runs on CI only \(bin/tool changed, full=ci in warmd.conf\): push, then warmd ci$' "$out"
+[ $rc = 0 ] && ok "full=ci exits zero" || no "full=ci exited $rc"
+change lib/alpha.sh
+"$WARMD" check >/dev/null 2>&1
+expect "full=ci still runs the own test of a lib file" '^alpha$' "$(ran)"
+git checkout -q main; printf 'test=bash tests/run.sh\n' > warmd.conf; git commit -qam "full local again"
 change lib/notest.sh
 out="$("$WARMD" check 2>&1)"
 expect "a lib file without its own test falls back to the full suite" '^run$' "$(ran)"

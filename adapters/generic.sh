@@ -82,7 +82,10 @@ shell_check() {
   case "$SH_MODE" in
     CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
     NONE) echo "OK no test depends on this change"; return 0;;
-    ALL) echo "(running all tests: $SH_REASON)"
+    ALL)
+      # full=ci: this machine never runs the full suite (too slow or too heavy here), the CI of the pushed branch does.
+      if [ "$CFG_full" = ci ]; then echo "PUSH the full suite runs on CI only ($SH_REASON, full=ci in warmd.conf): push, then warmd ci"; return 0; fi
+      echo "(running all tests: $SH_REASON)"
       if [ -n "$CFG_test" ]; then a_test; else slot_take; cached "test|" run_bounded test in_project bash tests/run.sh; fi; return;;
   esac
   local t list=""; for t in $SH_TESTS; do list="${list:+$list }tests/$t.sh"; done
