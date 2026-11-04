@@ -15,12 +15,12 @@ The [CI workflow](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-fas
 
 Unity 6000.4.6f1 on Windows 10.
 
-The 56 s and 54 s baselines come from a private game project with HDRP and a large scene, so that project cannot be published. Everything else below can be repeated on any Unity project.
+The 56 s and 54 s baselines come from a private game project with HDRP and a large scene. Its test names are shown as `<RulesTests>` and `<PlayModeTest>`, every other character of the output is unchanged. Everything else below can be repeated on any Unity project.
 
 One test class, warm editor, large project:
 
 ```console
-$ warmd test TourRulesTests --edit
+$ warmd test <RulesTests> --edit
 OK 3s test
 8 passed, 0 failed, 0 skipped
 ```
@@ -37,11 +37,11 @@ Measured at 443 ms.
 Time lapse on a full PlayMode test, large project:
 
 ```console
-$ warmd test WholeTour --play
+$ warmd test <PlayModeTest> --play
 OK 26s test
 1 passed, 0 failed, 0 skipped
 
-$ warmd test WholeTour --play --speed 8
+$ warmd test <PlayModeTest> --play --speed 8
 OK 8s test
 1 passed, 0 failed, 0 skipped
 ```
@@ -61,10 +61,10 @@ RED Adds: ScoreTests.cs:2 Expected: 5    But was:  -1
 A hung test names itself:
 
 ```console
-$ WARMD_TIMEOUT=5 warmd test WholeTour --play
+$ WARMD_TIMEOUT=5 warmd test <PlayModeTest> --play
 FAIL 5s test
 timeout after 5s in phase testing
-stuck in: WholeTour_FromTheBoardToTheBill_ByShip
+stuck in: <PlayModeTest>_<case>
 ```
 
 ## Tokens

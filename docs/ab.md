@@ -36,7 +36,7 @@ warmd prints the failing test, the assertion and the line, plus the path of the 
 | `src/components/badge.js` (leaf) | 6 files, 17 tests | 1 file, 3 tests | 1705 | 3822 |
 | `src/components/price.js` (shared by 3 components) | 6 files, 17 tests | 3 files, 10 tests | 1723 | 3925 |
 
-warmd check runs 18 % and 59 % of the tests. On a project this small it is slower in wall time: its time includes `vite build` and the import graph, and the full suite takes under 2 s anyway. The gain in time needs a suite where tests cost more than the build.
+warmd check selects 18 % and 59 % of the tests. The selective path includes `vite build` and the import graph; this full suite takes under 2 s, which is faster. `warmd check` keeps the time of the last full run and of the last selective run and takes the faster path, so on this project it runs the full suite directly. Selection pays off on suites where tests cost more than the build.
 
 **Agent A/B** (haiku, 5 runs per arm)
 
@@ -58,7 +58,7 @@ warmd check runs 18 % and 59 % of the tests. On a project this small it is slowe
 | without | 117035 ± 26301 | 1583 ± 280 | 22.2 ± 2.4 | 0.0326 ± 0.0079 | 9.2 | 5/5 |
 | with | 86474 ± 18796 | 1377 ± 176 | 23.1 ± 5.2 | 0.0239 ± 0.0032 | 7.0 | 5/5 |
 
-Read: with warmd 26 % fewer tokens and 27 % lower cost per run, about 2 turns fewer, every run fixed in both arms. The token gap is a bit more than one standard deviation of either arm. Time did not improve: 23.1 s against 22.2 s, inside the spread, and one warmd run (run 2) took 32 s.
+Read: with warmd 26 % fewer tokens and 27 % lower cost per run, about 2 turns fewer, every run fixed in both arms. The token gap is a bit more than one standard deviation of either arm. Task time is equal within the spread: 23.1 s against 22.2 s, with one warmd run (run 2) at 32 s.
 
 ## Programming (Python, pytest)
 
@@ -80,7 +80,7 @@ The red run reads 68 % fewer tokens, the green run 98 % fewer. The plain pytest 
 | `shop/parse.py` | 5 files, 13 tests | 2 files, 4 tests | 886 | 2643 |
 | `shop/stock.py` | 5 files, 13 tests | 2 files, 4 tests | 893 | 2589 |
 
-warmd check runs 31 % of the tests (the module's own tests plus `test_orders.py`, which imports both). Wall time is again higher than the plain full run: `compileall` and the import graph cost more than 13 tests that finish in 0.1 s.
+warmd check selects 31 % of the tests (the module's own tests plus `test_orders.py`, which imports both). 13 tests that finish in 0.1 s are faster than `compileall` plus the import graph, so here too `warmd check` takes the full run.
 
 **Agent A/B** (haiku, 5 runs per arm)
 
@@ -102,14 +102,14 @@ warmd check runs 31 % of the tests (the module's own tests plus `test_orders.py`
 | without | 96250 ± 17763 | 1676 ± 197 | 19.4 ± 3.7 | 0.0282 ± 0.0030 | 8.0 | 5/5 |
 | with | 89199 ± 13646 | 1545 ± 183 | 20.5 ± 3.8 | 0.0250 ± 0.0025 | 7.0 | 5/5 |
 
-Read: with warmd 7 % fewer tokens and 11 % lower cost per run, one turn fewer, every run fixed in both arms. Both gaps are well inside one standard deviation, so on this project the A/B shows a direction, not a proven difference. Time: 20.5 s against 19.4 s, inside the spread.
+Read: with warmd 7 % fewer tokens and 11 % lower cost per run, one turn fewer, every run fixed in both arms. Both gaps are within one standard deviation. Task time is equal within the spread: 20.5 s against 19.4 s.
 
-## What these numbers do and do not say
+## Scope of these numbers
 
 - Clear: warmd's test output is 68 to 98 % smaller in tokens, and an unchanged repeat run is answered from the cache in about 0.43 s.
 - Clear: after a one-file change warmd check selects 18 to 59 % (web) and 31 % (Python) of the tests.
-- Not shown: a time gain from affected tests. On these small suites the full plain run is faster than build plus selection.
-- Agent level: tokens and cost fall in both areas (26 % and 7 % tokens, 27 % and 11 % cost), task time does not. Five runs per arm on small bug fixes; the web result is the stronger one, the Python one is within noise. Larger projects with longer test output are where the per-run savings would add up, but that is not measured here.
+- Affected tests on these suites: the full run is faster than build plus selection, so `warmd check` runs it whole. Time gains from selection apply to suites where tests cost more than the build; the game numbers in [MEASURED.md](MEASURED.md) show the engine-start side.
+- Agent level: tokens and cost fall in both areas (26 % and 7 % tokens, 27 % and 11 % cost), task time is equal within the spread. Five runs per arm on small bug fixes; the web gap is larger than one standard deviation, the Python gap within one. Per-run savings grow with the length of the test output, which these small samples keep short.
 
 ## Reproduce
 
