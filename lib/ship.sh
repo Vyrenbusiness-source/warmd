@@ -25,8 +25,11 @@ ship_union() { # file -> 0 resolved, 1 not safe
   mv "$1.warmd-union" "$1"
 }
 
-ship_run_id() { # branch -> newest run id
-  gh run list --branch "$1" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null
+# Only the run of the pushed commit counts: right after a push GitHub still lists the previous run of the branch,
+# and that one must never count for the new head (PR #14 merged on the green run of PR #12).
+ship_run_id() { # branch -> id of the newest run for the branch's current commit
+  local sha; sha="$(git rev-parse -q --verify "$1^{commit}" 2>/dev/null || git rev-parse -q --verify "origin/$1^{commit}" 2>/dev/null)"   # local first: an unpushed head has no run yet, and says so
+  gh run list --branch "$1" ${sha:+--commit "$sha"} --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null
 }
 
 # One poll of a run. Line 1: run|status|conclusion|createdAt. Then per job: name|status|conclusion|open steps|failed steps|current step|steps.
