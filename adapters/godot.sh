@@ -34,9 +34,10 @@ a_start_daemon() {
 class_cache_fresh() {
   local cache="$PROJECT/.godot/global_script_class_cache.cfg" f
   [ -f "$cache" ] || return 1
-  for f in $(find "$PROJECT" -name '*.gd' -newer "$cache" -not -path '*/.godot/*' 2>/dev/null); do
+  # A read loop, not for-in over find: a project path with a space stays one path
+  while IFS= read -r f; do
     if grep -q '^class_name ' "$f" && ! grep -q "$(sed -n 's/^class_name \([A-Za-z0-9_]*\).*/\1/p' "$f" | head -1)" "$cache"; then return 1; fi
-  done
+  done < <(find "$PROJECT" -name '*.gd' -newer "$cache" -not -path '*/.godot/*' 2>/dev/null)
 }
 refresh_classes() {
   class_cache_fresh && return 0
@@ -47,7 +48,7 @@ refresh_classes() {
 
 # job_oneshot <kind> [key=value...]: one engine start, one job, no daemon. Same scripts, same result format.
 job_oneshot() {
-  local kind="$1" id="j$(now_ms)" exe; shift
+  local kind="$1" id exe; id="j$(now_ms)"; shift
   exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
   rm -f "$RUN/result.txt"
   { echo "id=$id"; echo "kind=$kind"; printf '%s\n' "$@"; echo "quit_after=1"; } > "$RUN/job.txt"
@@ -109,6 +110,7 @@ a_shot() {
   gfx_take
   exe="$(godot_exe)" || { echo "FAIL Godot not found"; return 1; }
   mkdir -p "$RUN/shots"
+  # shellcheck disable=SC2046  # the GPU flag is one word or none, quoted it would pass an empty argument
   WARMD_SHOT="$(native_path "$out")" WARMD_SCENE="$scene" run_bounded shot "$exe" $(tune_godot_gpu_flag "$exe") --path "$(native_path "$PROJECT")" --resolution 960x540 --script "$(native_path "$WARMD_HOME/godot/shot.gd")" || return 1
   echo "image $(native_path "$out")"
 }

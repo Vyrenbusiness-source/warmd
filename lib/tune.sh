@@ -214,8 +214,8 @@ claim_slot() {
     if [ -n "$(find "$clean" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$clean" 2>/dev/null; fi
     if mkdir "$clean" 2>/dev/null; then
       holder="$(cat "$dir/$i/pid" 2>/dev/null)"
-      if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "$dir/$i"
-      elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$dir/$i"; fi
+      if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "${dir:?}/$i"
+      elif [ -n "$(find "$dir/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "${dir:?}/$i"; fi
       rmdir "$clean" 2>/dev/null
     fi
   done

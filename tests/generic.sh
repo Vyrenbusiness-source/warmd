@@ -69,9 +69,9 @@ expect "small suite: check runs the full suite instead" '^\(running all tests: t
 WARMD_SELECT=1 "$WARMD" check 2>&1 | grep -q 'running all tests: the full suite' && no "WARMD_SELECT=1 still took the shortcut" || ok "WARMD_SELECT=1 keeps the selection"
 echo 9999999 > .warmd/full.ms
 WARMD_SELECT=0 "$WARMD" check 2>&1 | grep -q 'running all tests: the full suite' && no "a slow full suite still took the shortcut" || ok "a slow full suite keeps build plus selection"
-cd "$HERE"
+cd "$HERE" || exit 1
 
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
-cd "$HERE"; rm -rf "$TMP" 2>/dev/null
+cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
 exit $fails

@@ -73,7 +73,7 @@ EOF
 mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; echo 999999 > "$XDG_CACHE_HOME/warmd/slots/1/pid"
 echo '// x' >> test.js
 expect "a dead slot owner expires" 'OK [0-9]+s test' "$("$WARMD" test)"
-[ -z "$(ls "$XDG_CACHE_HOME/warmd/slots" | grep -v '^$')" ] && ok "slot released on exit" || no "slot left behind"
+[ -z "$(find "$XDG_CACHE_HOME/warmd/slots" -mindepth 1 -maxdepth 1 -name '[!.]*' 2>/dev/null)" ] && ok "slot released on exit" || no "slot left behind"
 rm warmd.conf; git checkout -q test.js
 
 # ---- guards ----

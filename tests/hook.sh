@@ -226,7 +226,7 @@ printf '{"hooks":{"SessionStart":[{"matcher":"compact","hooks":[{"type":"command
 out="$(cd "$R" && "$WARMD" init)"
 echo "$out" | grep -q '^OK hooks installed' && [ "$(grep -c 'hook-session' "$S2")" = 1 ] && grep -q 'hook-subagent' "$S2" && grep -q 'hook-pre' "$S2" && ! grep -q '/old/bin' "$S2" && ok "warmd init installs all hooks and replaces old ones" || no "init: $out"
 (cd "$R" && "$WARMD" init --no-hooks >/dev/null); [ ! -e "$S2" ] && ok "warmd init --no-hooks removes them" || no "no-hooks left: $(cat "$S2")"
-cd "$TMP"
+cd "$TMP" || exit 1
 
 # ---- path forms: an 8.3 short name and the long name are the same worktree ----
 if command -v cygpath >/dev/null 2>&1; then

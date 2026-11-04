@@ -101,6 +101,7 @@ mcp_audit() {
     [ -f "$f" ] && awk -v L=settings -v F="${f#"$root/"}" "$MCP_AWK" "$f" >> "$tmp/set"
   done
   for f in "$HOME/.claude.json" "$root/.mcp.json"; do
+  # shellcheck disable=SC2088  # the literal ~/.claude.json is a label for the output, not a path
     [ -f "$f" ] && awk -v L=servers -v F="$( [ "$f" = "$root/.mcp.json" ] && echo .mcp.json || echo '~/.claude.json')" -v ROOT="$(native_path "$root" | sed 's#\\#/#g; s#/*$##' | tr 'A-Z' 'a-z')" "$MCP_AWK" "$f" >> "$tmp/srv"
   done
   touch "$tmp/set" "$tmp/srv"
