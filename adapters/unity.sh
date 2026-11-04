@@ -44,18 +44,48 @@ a_start_daemon() {
   wait_ready 600
 }
 
-csproj_list() { ls "$PROJECT"/*.csproj 2>/dev/null | grep -vE '/(Unity|com\.unity)\.' ; }
+# Project code compiles from Assets. A csproj without Assets sources is a package (cache, embedded or linked): Unity built it into Library/ScriptAssemblies already, and its sources do not compile outside Unity.
+csproj_list() { grep -l 'Compile Include="Assets[\/]' "$PROJECT"/*.csproj 2>/dev/null; }
+pkg_projects() { local p; for p in "$PROJECT"/*.csproj; do [ -f "$p" ] && ! grep -q 'Compile Include="Assets[\/]' "$p" && basename "$p" .csproj; done; }
 # Fresh means every script is listed. Otherwise only Unity can compile.
 csproj_fresh() {
   local listed have
   [ -n "$(csproj_list)" ] || return 1
-  listed="$(cat $(csproj_list) | grep -o 'Include="Assets[^"]*\.cs"' | sed 's/Include="//; s/"$//; s#\\#/#g' | sort -u)"
+  listed="$(cat $(csproj_list) | grep -o 'Include="Assets[^"]*\.cs"' | sed 's/Include="//; s/"$//; s#[\]#/#g' | sort -u)"
   have="$(cd "$PROJECT" && find Assets -name '*.cs' | sort -u)"
   [ -z "$(comm -13 <(echo "$listed") <(echo "$have"))" ]
 }
+# Assemblies the project csprojs reference but the Library lacks: dotnet would report every use as an error, so Unity has to compile once
+refs_missing() {
+  local p h
+  {
+    for p in $(csproj_list); do
+      grep -o '<HintPath>[^<]*' "$p" | sed 's/<HintPath>//; s#[\]#/#g'
+      for h in $(grep -o 'ProjectReference Include="[^"]*"' "$p" | sed 's/.*Include="//; s/"$//; s/\.csproj$//'); do
+        pkg_projects | grep -qxF "$h" && echo "Library/ScriptAssemblies/$h.dll"
+      done
+    done
+  } | sort -u | while IFS= read -r h; do (cd "$PROJECT" && [ -f "$h" ]) || echo "$h"; done
+}
+# Package projects stay unbuilt: a reference to one points at its dll in Library/ScriptAssemblies
+pkg_targets() {
+  cat <<'X'
+<Project>
+  <Target Name="WarmdPackageDlls" BeforeTargets="_GenerateRestoreProjectReferencePaths;AssignProjectConfiguration" Condition="'$(WarmdPkgs)'!=''">
+    <ItemGroup>
+      <_WarmdPkg Include="@(ProjectReference)" Condition="$(WarmdPkgs.Contains('|%(Filename)|'))" />
+      <ProjectReference Remove="@(_WarmdPkg)" />
+      <Reference Include="@(_WarmdPkg->'%(Filename)')" HintPath="$(MSBuildProjectDirectory)/Library/ScriptAssemblies/%(Filename).dll" Private="false" />
+    </ItemGroup>
+  </Target>
+</Project>
+X
+}
 # One parallel msbuild over all projects with warm nodes, Runtime builds once. Unity empties Temp on exit, so restore only when it is gone.
 dotnet_errors() {
-  local p proj="$RUN/all.proj" restore=""
+  local p proj="$RUN/all.proj" restore="" pkgs
+  pkgs="|$(pkg_projects | paste -sd'|' -)|"
+  pkg_targets > "$RUN/pkg.targets"
   {
     echo '<Project DefaultTargets="Build"><ItemGroup>'
     for p in $(csproj_list); do echo "<P Include=\"$(native_path "$p")\" />"; done
@@ -67,12 +97,14 @@ dotnet_errors() {
   for p in $(csproj_list); do
     [ -f "$PROJECT/Temp/obj/$(basename "$p" .csproj)/project.assets.json" ] || [ -f "$PROJECT/obj/project.assets.json" ] || restore=1
   done
-  ( cd "$PROJECT" && timeout 300 $(tune_prefix) dotnet msbuild "$(native_path "$proj")" -p:R="${restore:-0}" -nr:true -m:"$(tune_threads)" -nologo -v q -clp:NoSummary 2>&1 ) | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
+  ( cd "$PROJECT" && timeout 300 $(tune_prefix) dotnet msbuild "$(native_path "$proj")" -p:R="${restore:-0}" "-p:WarmdPkgs=$pkgs" "-p:CustomAfterMicrosoftCommonTargets=$(native_path "$RUN/pkg.targets")" -p:DisableTransitiveProjectReferences=true -nr:true -m:"$(tune_threads)" -nologo -v q -clp:NoSummary 2>&1 ) | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
 }
 a_build() {
   command -v dotnet >/dev/null 2>&1 || { job compile; return; }
   csproj_fresh || { echo "(csproj stale, compiling in Unity)"; job compile; return; }
-  local errs n; errs="$(dotnet_errors)"
+  local errs n miss; miss="$(refs_missing)"
+  if [ -n "$miss" ]; then echo "(Library lacks $(echo "$miss" | wc -l | tr -d ' ') referenced assemblies, e.g. $(echo "$miss" | head -1), compiling in Unity)"; job compile; return; fi
+  errs="$(dotnet_errors)"
   if [ -n "$errs" ]; then n="$(echo "$errs" | wc -l | tr -d ' ')"; echo "FAIL $(secs)s dotnet: $n errors"; echo "$errs" | head -13 | cut -c1-200; return 1; fi
   daemon_alive && job_async compile
   echo "OK $(secs)s compile (no Unity needed)"
