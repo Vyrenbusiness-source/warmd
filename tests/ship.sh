@@ -104,6 +104,15 @@ expect "changelog Unreleased link moves" '^\[Unreleased\]: https://github.com/o/
 expect "merged branches deleted on origin" 'deleted origin/beta' "$out"
 expect "origin has no task branches" '^$' "$(git --git-dir="$TMP/remote.git" branch --list alpha beta)"
 expect "installed copy updated" 'ok   installed copy ' "$out"
+# A release with nothing under Unreleased: the section lists the commit subjects since the last tag, never an empty heading.
+git checkout -q main; git pull -q origin main 2>/dev/null; git checkout -q -b gamma; echo g > gamma.txt; git add -A; git commit -qm "add gamma feature"; git push -q origin gamma
+git checkout -q main
+out="$("$WARMD" ship --release v0.3.0 gamma 2>&1)"
+cl="$(git --git-dir="$TMP/remote.git" show main:CHANGELOG.md)"
+expect "empty Unreleased: the release section still has content" '^## \[0\.3\.0\]' "$cl"
+expect "content comes from the commit subjects" '^- add gamma feature$' "$cl"
+expect "under a Changed heading" '^### Changed$' "$cl"
+expect "release commits are not listed" '^$' "$(echo "$cl" | grep -- '- release v')"
 [ "$(git -C "$TMP/install" rev-parse HEAD)" = "$(git --git-dir="$TMP/remote.git" rev-parse main)" ] && ok "installed copy at origin main" || no "installed copy left behind"
 ci_hist="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-ci.tsv"
 expect "run duration recorded" '	41	warmd-ship	[0-9]+	success$' "$(cat "$ci_hist")"
