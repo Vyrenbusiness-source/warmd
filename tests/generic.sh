@@ -88,6 +88,18 @@ echo 9999999 > .warmd/full.ms
 WARMD_SELECT=0 "$WARMD" check 2>&1 | grep -q 'running all tests: the full suite' && no "a slow full suite still took the shortcut" || ok "a slow full suite keeps build plus selection"
 cd "$HERE" || exit 1
 
+# ---- an agent ended its turn while its own warmd test runs in the background: warmd stop --idle keeps the engine ----
+Q="$TMP/bg"; mkdir -p "$Q"; cd "$Q" || exit 1
+git init -q -b main .; git config core.autocrlf false; git config user.name t; git config user.email t@example.com
+printf 'test=sleep 6\n' > warmd.conf; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+WARMD_DETACHED=1 "$WARMD" test > "$TMP/bg.out" 2>&1 & bg=$!
+for _ in $(seq 50); do ls .warmd/run/active/* >/dev/null 2>&1 && break; sleep 0.2; done
+expect "stop --idle keeps the engine while a warmd test of this project runs" '^OK engine kept, warmd test runs here' "$("$WARMD" stop --idle 2>&1)"
+wait $bg; expect "the background test was not cut off" '^OK .*test' "$(tail -1 "$TMP/bg.out")"
+[ -z "$(ls .warmd/run/active 2>/dev/null)" ] && ok "the run mark goes with the run" || no "run mark left: $(ls .warmd/run/active)"
+expect "stop --idle stops once the run is over" '^OK nothing warm' "$("$WARMD" stop --idle 2>&1)"
+cd "$HERE" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

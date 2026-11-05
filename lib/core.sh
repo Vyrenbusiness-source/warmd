@@ -3,7 +3,7 @@ printf -v T0 '%(%s)T' -1
 secs() { local n; printf -v n '%(%s)T' -1; echo $(( n - T0 )); }
 TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
-LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
+LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""; RUNMARK=""
 PARENT_PID="$PPID"
 on_exit() {
   local rc=$?
@@ -14,7 +14,29 @@ on_exit() {
   [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
   [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
+  [ -n "$RUNMARK" ] && rm -f "$RUNMARK"
   return 0
+}
+# A heavy run marks itself in .warmd/run/active/<pid> (content: Windows pid or -, command) while it lives.
+# An agent that ends its turn while its own warmd test runs in the background keeps its engine (warmd stop --idle),
+# and warmd watch counts its worktree as working.
+run_mark() {
+  mkdir -p "$RUN/active" 2>/dev/null || return 0
+  local w=""; [ -r "/proc/$$/winpid" ] && read -r w < "/proc/$$/winpid"
+  echo "${w:--} $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
+}
+# run_active <state dir>: prints "<pid> <command>" of a live run there, returns 1 when none. Marks of dead runs go.
+# A job started through Win32_Process.Create may not see this shell's msys pids: the Windows pid decides then.
+run_active() {
+  local f pid w c
+  for f in "$1"/run/active/*; do
+    [ -f "$f" ] || continue
+    pid="${f##*/}"; w=""; c=""; read -r w c < "$f" 2>/dev/null
+    [ "$pid" = "$$" ] && continue
+    if shell_alive "$pid" || { [ -n "$w" ] && [ "$w" != - ] && pid_alive "$w"; }; then echo "$pid ${c:-run}"; return 0; fi
+    rm -f "$f"
+  done
+  return 1
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
 orphan_check() {

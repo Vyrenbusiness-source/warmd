@@ -295,7 +295,8 @@ hook_job() {
 
 # The agent is gone, its warm engine is not: an idle editor holds gigabytes for 30 minutes while the next agents wait for RAM.
 # A fresh agent on the same task starts it again in a minute; a stuck machine costs far more.
-hook_cool() { echo "$(date '+%F %T') $(bash "$WARMD_HOME/bin/warmd" stop 2>&1 | tail -1)"; }
+# --idle: an agent that ended its turn while its own warmd test runs in the background keeps the engine, the test goes on.
+hook_cool() { echo "$(date '+%F %T') $(bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"; }
 
 # The last stopped agent of a batch merges: every ok branch one by one through warmd merge, red or conflict rolls back.
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.

@@ -88,6 +88,7 @@ case "$REG_NAMES" in *" $CMD "*) fn="reg_fn_${CMD//-/_}"; "${!fn}" "$@"; exit $?
 detect_project
 # shellcheck source=/dev/null
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
+case "$CMD" in test|check|build|bench|shot|layout|call|package|perf) run_mark;; esac
 
 case "$CMD" in
   status)  common_status; install_behind; a_status;;
@@ -97,7 +98,7 @@ case "$CMD" in
   bench)   run_bench "$@";;
   shot)    merge_guard; a_shot "$@";;
   layout)  merge_guard; layout_run "$@";;
-  stop)    a_stop;;
+  stop)    if [ "${1:-}" = --idle ] && r="$(run_active "$STATE")"; then echo "OK engine kept, warmd ${r#* } runs here (pid ${r%% *})"; else a_stop; fi;;
   ping)    job ping;;
   package) a_package;;
   call)    a_call "$@";;

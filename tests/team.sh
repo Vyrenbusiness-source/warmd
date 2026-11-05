@@ -54,6 +54,22 @@ busy "$W" && no "a dead CI wait still counts as active" || ok "a dead CI wait is
 eta "$W" >/dev/null && no "a dead CI wait still gets an ETA line" || ok "no ETA line for a dead CI wait"
 rm -f "$W/.warmd/ci.wait"
 
+# warmd watch: an agent that stopped its turn while its own warmd run goes on still counts as working, the watch does not end
+R="$TMP/repo"; mkdir -p "$R"; cd "$R" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+for n in menu tempo; do git worktree add -q -b "warmd/$n" "$TMP/$n"; done
+C="$(git rev-parse --path-format=absolute --git-common-dir)"
+printf '%s\n%s\n' "$(cd "$TMP/menu" && pwd)" "$(cd "$TMP/tempo" && pwd)" > "$C/warmd-batch"
+printf '%s\tok\n' "$(cd "$TMP/tempo" && pwd)" > "$C/warmd-batch-done"
+mkdir -p "$C/warmd-auto/paused"; : > "$C/warmd-auto/paused/menu"; : > "$C/warmd-auto/paused/tempo"
+sleep 30 & s=$!; mkdir -p "$TMP/tempo/.warmd/run/active"; echo "- test" > "$TMP/tempo/.warmd/run/active/$s"
+out="$(cd "$R" && "$HERE/bin/warmd" watch --once 5 2>&1)"
+case "$out" in "OK all worktrees moved in the last 5 minutes, paused: menu") ok "a stopped agent whose warmd test still runs keeps the watch going";; *) no "watch with a background run: $out";; esac
+kill $s 2>/dev/null; wait $s 2>/dev/null
+out="$(cd "$R" && "$HERE/bin/warmd" watch --once 5 2>&1)"
+case "$out" in "OK no agent runs, paused: menu") ok "once the run is over the stopped agent is done again";; *) no "watch after the run: $out";; esac
+cd "$TMP" || exit 1
+
 # Merge job launched through Win32_Process.Create: the msys pid in merge.owner is unknown here, the Windows pid lives
 if [ -d /proc ] && sleep 30 & s=$! && [ -r "/proc/$s/winpid" ]; then
   echo 999999 > "$W/.warmd/merge.owner"; cat "/proc/$s/winpid" > "$W/.warmd/merge.owner.win"
