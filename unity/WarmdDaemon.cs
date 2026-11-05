@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.Compilation;
@@ -30,6 +32,9 @@ namespace Warmd
         static double nextTick, nextBeat;
         static TestRunnerApi api;
         static bool callbacksReady;
+        // warmd test --window: an editor with a window, started by warmd, so it ends when idle like a headless one
+        static readonly bool OwnWindow = Environment.GetEnvironmentVariable("WARMD_WINDOW") == "1";
+        const string PlacedKey = "warmd_placed";
 
         static WarmdDaemon()
         {
@@ -42,7 +47,7 @@ namespace Warmd
             {
                 SessionState.SetBool("warmd_init", true);
                 SessionState.SetString(LastJobKey, NowMs().ToString());
-                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt", "current.full", "current.ms" }) if (File.Exists(F(f))) File.Delete(F(f));
+                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt", "current.full", "current.ms", "screen.txt" }) if (File.Exists(F(f))) File.Delete(F(f));
             }
             if (Application.isBatchMode)
             {
@@ -110,10 +115,10 @@ namespace Warmd
             SessionState.SetString(LastJobKey, NowMs().ToString());
         }
 
-        /// <summary>A forgotten daemon costs gigabytes for nothing. A visible editor stays open.</summary>
+        /// <summary>A forgotten daemon costs gigabytes for nothing. A visible editor stays open, unless warmd opened it.</summary>
         static void ExitWhenIdle()
         {
-            if (!Application.isBatchMode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            if ((!Application.isBatchMode && !OwnWindow) || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
             if (!double.TryParse(Environment.GetEnvironmentVariable("WARMD_IDLE_MIN"), out double minutes)) minutes = DefaultIdleMinutes;
             if (!long.TryParse(SessionState.GetString(LastJobKey, ""), out long last) || NowMs() - last < minutes * 60000) return;
             File.Delete(F("alive.txt"));
@@ -136,7 +141,7 @@ namespace Warmd
             nextTick = now + 0.2;
             try
             {
-                if (now >= nextBeat) { nextBeat = now + 1.0; File.WriteAllText(F("alive.txt"), NowMs().ToString()); }
+                if (now >= nextBeat) { nextBeat = now + 1.0; File.WriteAllText(F("alive.txt"), NowMs().ToString()); if (OwnWindow) PlaceOnce(); }
                 EnsureCallbacks();
                 var state = Read("state.txt");
                 string phase = Get(state, "phase", "idle");
@@ -150,6 +155,74 @@ namespace Warmd
                 UnityEngine.Debug.LogError("[warmd] " + e);
                 Finish(state, false, new[] { "daemon exception: " + Short(e.Message) });
             }
+        }
+
+        // ---- window on another monitor ---------------------------------------------------------
+        // -monitor N is a player argument, an editor ignores it. The daemon moves its own main window instead:
+        // WARMD_MONITOR (default 2), monitor 1 is the primary, the others follow by their Windows number.
+
+        /// <summary>Once per editor session, a domain reload must not move it again. Tries for 15 s while the window comes up.</summary>
+        static void PlaceOnce()
+        {
+            if (SessionState.GetBool(PlacedKey, false)) return;
+            int tries = SessionState.GetInt(PlacedKey + "_tries", 0) + 1;
+            SessionState.SetInt(PlacedKey + "_tries", tries);
+            if (!int.TryParse(Environment.GetEnvironmentVariable("WARMD_MONITOR"), out int want) || want < 1) want = 2;
+            string line;
+            try { line = PlaceWindow(want); }
+            catch (Exception e) { line = "window not moved: " + Short(e.Message); }
+            if (line == null && tries < 15) return;
+            SessionState.SetBool(PlacedKey, true);
+            File.WriteAllText(F("screen.txt"), line ?? "window not moved: no editor main window found");
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct Rect32 { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct MonitorInfo { public int Size; public Rect32 Monitor, Work; public uint Flags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Device; }
+        delegate bool MonitorProc(IntPtr monitor, IntPtr hdc, IntPtr rect, IntPtr data);
+        delegate bool WindowProc(IntPtr hwnd, IntPtr data);
+        [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorProc proc, IntPtr data);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+        [DllImport("user32.dll")] static extern bool EnumWindows(WindowProc proc, IntPtr data);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out Rect32 rect);
+        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+
+        /// <summary>The line for screen.txt, or null while the editor has no main window yet</summary>
+        static string PlaceWindow(int want)
+        {
+            if (Application.platform != RuntimePlatform.WindowsEditor) return "window not moved: only on Windows";
+            var monitors = new List<MonitorInfo>();
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (m, hdc, r, d) =>
+            {
+                var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+                if (GetMonitorInfo(m, ref info)) monitors.Add(info);
+                return true;
+            }, IntPtr.Zero);
+            monitors = monitors.OrderBy(i => (i.Flags & 1) == 1 ? 0 : 1)
+                .ThenBy(i => int.TryParse(Regex.Match(i.Device ?? "", @"\d+$").Value, out int n) ? n : 99).ToList();
+            // The main window is the biggest visible Unity container window of this process
+            uint me = (uint)Process.GetCurrentProcess().Id;
+            IntPtr main = IntPtr.Zero; long area = 0;
+            EnumWindows((h, d) =>
+            {
+                if (!IsWindowVisible(h) || GetWindowThreadProcessId(h, out uint pid) == 0 || pid != me) return true;
+                var cls = new StringBuilder(64); GetClassName(h, cls, 64);
+                if (cls.ToString() != "UnityContainerWndClass" || !GetWindowRect(h, out Rect32 r)) return true;
+                long a = (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+                if (a > area) { area = a; main = h; }
+                return true;
+            }, IntPtr.Zero);
+            if (main == IntPtr.Zero) return null;
+            if (monitors.Count < want) return "window stays on monitor 1: monitor " + want + " not found, " + monitors.Count + " connected";
+            var w = monitors[want - 1].Work;
+            ShowWindow(main, 9);   // SW_RESTORE: a maximized window does not move
+            SetWindowPos(main, IntPtr.Zero, w.Left, w.Top, w.Right - w.Left, w.Bottom - w.Top, 0x0004 | 0x0010);   // SWP_NOZORDER | SWP_NOACTIVATE
+            ShowWindow(main, 3);   // SW_MAXIMIZE on that monitor
+            return "window editor on monitor " + want + " of " + monitors.Count + " (" + (w.Right - w.Left) + "x" + (w.Bottom - w.Top) + " at " + w.Left + "," + w.Top + ")";
         }
 
         static void EnsureCallbacks()

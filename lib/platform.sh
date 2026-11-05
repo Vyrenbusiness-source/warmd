@@ -43,15 +43,18 @@ kill_tree() {
   else pkill -9 -P "$pid" 2>/dev/null; kill -9 "$pid" 2>/dev/null; fi
 }
 
-# spawn <log> <program> <args...>: start detached, output goes to the log
+# spawn <log> <program> <args...>: start detached, output goes to the log.
+# SPAWN_STYLE=Normal shows the program's windows (default Hidden), SPAWN_PID=<file> receives the system pid.
 spawn() {
   local log="$1" exe="$2"; shift 2
   if [ "$OS" = win ]; then
-    local list="" a
+    local list="" a keep=""
     for a in "$@"; do list="$list'$(printf '%s' "$a" | sed "s/'/''/g")',"; done
-    powershell.exe -NoProfile -Command "Start-Process -FilePath '$(native_path "$exe")' -ArgumentList ${list%,} -WindowStyle Hidden -RedirectStandardOutput '$(native_path "$log")' -RedirectStandardError '$(native_path "$log.err")'" >/dev/null 2>&1
+    [ -n "${SPAWN_PID:-}" ] && keep="; Set-Content -Path '$(native_path "$SPAWN_PID")' -Value \$p.Id"
+    powershell.exe -NoProfile -Command "\$p = Start-Process -PassThru -FilePath '$(native_path "$exe")' -ArgumentList ${list%,} -WindowStyle ${SPAWN_STYLE:-Hidden} -RedirectStandardOutput '$(native_path "$log")' -RedirectStandardError '$(native_path "$log.err")'$keep" >/dev/null 2>&1
   else
     nohup "$exe" "$@" > "$log" 2>&1 < /dev/null &
+    [ -z "${SPAWN_PID:-}" ] || echo "$!" > "$SPAWN_PID"
   fi
 }
 

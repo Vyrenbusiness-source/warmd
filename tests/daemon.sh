@@ -5,6 +5,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"; export XDG_CACHE_HOME="$TMP/cache"
 trap 'rm -rf "$TMP"' EXIT
+. "$HERE/lib/platform.sh"   # OS
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: wanted /$2/, got: $(echo "$3" | head -4)"; fails=$((fails+1)); fi; }
 refuse() { if echo "$3" | grep -qE "$2"; then echo "FAIL $1: $(echo "$3" | grep -E "$2" | head -2)"; fails=$((fails+1)); else echo "ok   $1"; fi; }
@@ -69,5 +70,78 @@ rm -f "$TMP/rounds/"*.hung
 out="$(rounds 10)"
 expect "a green run stays one round" '^1$' "$(wc -l < "$TMP/calls" | tr -d ' ')"
 refuse "without a list of rounds" 'all rounds|goes on' "$out"
+
+# ---- warmd test --window: a visible editor, moved to monitor 2 by the daemon, closed after the run ----
+mkdir -p "$P/Assets/Editor/Warmd" "$P/Packages"; cp "$HERE"/unity/* "$P/Assets/Editor/Warmd/"; echo '{ "dependencies": {} }' > "$P/Packages/manifest.json"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/Unity"; chmod +x "$TMP/Unity"
+# start <WARMD_WINDOW>: a_start_daemon with spawn and the waits as stubs, prints the spawn line
+start() {
+  ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
+    && export WARMD_UNITY="$TMP/Unity" WARMD_WINDOW="$1" && mkdir -p "$RUN" \
+    && unity_sync() { :; } && a_daemon_procs() { :; } && foreign_unity() { :; } && gfx_take() { :; } && tune_unity_gpu_flag() { :; } && tune_unity_workers() { echo 3; } \
+    && spawn() { echo "spawn style=$SPAWN_STYLE pid=${SPAWN_PID##*/} monitor=$WARMD_MONITOR window=$WARMD_WINDOW $*"; } \
+    && wait_ready() { echo "wait_ready"; } && unity_wait_window() { echo "wait_window"; } && a_start_daemon ); echo "rc=$?"
+}
+mkdir -p "$P/Temp/__Backupscenes"; echo x > "$P/Temp/__Backupscenes/0.backup"
+out="$(start 1)"
+expect "a window start shows the editor" '^spawn style=Normal pid=spawn.pid monitor=2 window=1 ' "$out"
+refuse "without -batchmode and -nographics" 'spawn .*(-batchmode|-nographics)' "$out"
+expect "and waits for the window editor" '^wait_window$' "$out"
+[ -d "$P/Temp/__Backupscenes" ] && { echo "FAIL scene backups still there, the editor would ask to recover them"; fails=$((fails+1)); } || echo "ok   scene backups are gone before a window start"
+expect "window.txt marks the window daemon" '^1$' "$(cat "$P/.warmd/run/window.txt")"
+out="$(WARMD_MONITOR=3 start 1)"
+expect "WARMD_MONITOR picks another monitor" '^spawn .* monitor=3 window=1 ' "$out"
+out="$(start 0)"
+expect "a headless start stays hidden in batchmode" '^spawn style=Hidden pid=spawn.pid monitor=2 window=0 .*/Unity -batchmode .*-nographics ' "$out"
+expect "and waits as before" '^wait_ready$' "$out"
+echo '{ "dependencies": { "com.x.local": "file:../../gone/x" } }' > "$P/Packages/manifest.json"
+out="$(start 1)"
+expect "a missing local package stops the window start before the dialog" '^FAIL Packages/manifest.json names a local package that is missing: \.\./\.\./gone/x\. A window editor would stop at the dialog Packages with Errors$' "$out"
+expect "with exit 2" '^rc=2$' "$out"
+refuse "and no editor starts" '^spawn' "$out"
+echo '{ "dependencies": {} }' > "$P/Packages/manifest.json"
+
+# A dialog the watcher found ends the wait at once and the editor with it
+ww() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
+  && mkdir -p "$RUN" && rm -f "$RUN/alive.txt" && unity_dialog_watch() { :; } && a_kill_daemon() { echo "killed"; } && daemon_alive() { [ -f "$RUN/alive.txt" ]; } && unity_wait_window 5; echo "rc=$?" ); }
+echo 'Packages with Errors: An error occurred while resolving packages [Retry/Continue/Quit]' > "$P/.warmd/run/dialog.txt"
+out="$(ww)"
+expect "a dialog is named with its text and buttons" '^FAIL a dialog stops the window editor: Packages with Errors: An error occurred while resolving packages \[Retry/Continue/Quit\]\. Editor ended, nothing answered$' "$out"
+expect "and the editor is ended" '^killed$' "$out"
+rm -f "$P/.warmd/run/dialog.txt"; echo "window editor on monitor 2 of 2 (2560x1400 at 1920,0)" > "$P/.warmd/run/screen.txt"; echo 1 > "$P/.warmd/run/alive.txt"
+out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
+  && unity_dialog_watch() { :; } && daemon_alive() { :; } && unity_wait_window 5; echo "rc=$?" ) )"
+expect "a ready window editor says where it is" '^\(window editor on monitor 2 of 2 \(2560x1400 at 1920,0\)\)$' "$out"
+expect "and the start goes on" '^rc=0$' "$out"
+rm -f "$P/.warmd/run/screen.txt" "$P/.warmd/run/alive.txt"
+
+# --window: the cache keeps it apart, a headless daemon makes way, the window closes after the run
+wt() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
+  && unity_world() { :; } && unity_sync() { :; } && daemon_alive() { :; } && daemon_stop() { echo "daemon_stop window=${WARMD_WINDOW:-0}" >> "$TMP/order"; } \
+  && cached() { echo "cached $1 window=${WARMD_WINDOW:-0}" | tee -a "$TMP/order"; } && a_test "$@" ); }
+echo 0 > "$P/.warmd/run/window.txt"; rm -f "$TMP/order"
+out="$(wt ShotTests --play --window)"
+expect "the window run has a cache key of its own" '^cached test\|Play\|ShotTests\|\|\|gfx0\|window window=1$' "$out"
+expect "a headless daemon makes way first, the window closes after" '^daemon_stop window=1,cached .*,daemon_stop window=1$' "$(paste -sd, "$TMP/order")"
+expect "and says so" '^\(window editor closed\)$' "$out"
+expect "WARMD_WINDOW=1 does the same" '^cached test\|Play\|ShotTests\|\|\|gfx0\|window window=1$' "$(WARMD_WINDOW=1 wt ShotTests --play)"
+rm -f "$TMP/order"; out="$(wt ShotTests --play)"
+expect "without it the key stays as before" '^cached test\|Play\|ShotTests\|\|\|gfx0 window=0$' "$out"
+refuse "and nothing is closed" 'daemon_stop|window editor closed' "$out$(cat "$TMP/order" 2>/dev/null)"
+
+if [ "$OS" = win ]; then
+  # spawn hands back the system pid of the new process
+  ( . "$HERE/lib/platform.sh"; SPAWN_PID="$TMP/sp.pid" spawn "$TMP/sp.log" "$(cygpath -u "$COMSPEC")" /c exit 0 )
+  expect "spawn writes the pid of the new process" '^[0-9]+$' "$(tr -d '\r' < "$TMP/sp.pid" 2>/dev/null)"
+  # The watcher finds a real modal dialog by its buttons and names it. The box is up for a few seconds only.
+  W="$TMP/watch"; mkdir -p "$W"
+  powershell.exe -NoProfile -Command "\$p = Start-Process -PassThru powershell.exe -ArgumentList '-NoProfile','-Command','Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(''warmd self-test, closes by itself'', ''warmd self-test'', ''YesNo'')'; Set-Content -Path '$(native_path "$W/spawn.pid")' -Value \$p.Id" >/dev/null 2>&1
+  ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && RUN="$W" && unity_dialog_watch 20 )
+  expect "the watcher names a dialog with its buttons" '^warmd self-test: warmd self-test, closes by itself \[(Yes|Ja)/(No|Nein)\]$' "$(tr -d '\r' < "$W/dialog.txt" 2>/dev/null)"
+  kill_tree "$(tr -d '\r' < "$W/spawn.pid")"
+  rm -f "$W/dialog.txt"; echo 999999 > "$W/spawn.pid"
+  ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && RUN="$W" && unity_dialog_watch 20 )
+  [ -f "$W/dialog.txt" ] && { echo "FAIL the watcher reported a dialog of a gone process"; fails=$((fails+1)); } || echo "ok   the watcher ends quietly when the editor is gone"
+fi
 
 [ $fails = 0 ] && echo "ALL OK" || { echo "$fails failed"; exit 1; }
