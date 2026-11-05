@@ -105,9 +105,12 @@ echo '{ "dependencies": {} }' > "$P/Packages/manifest.json"
 ww() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
   && mkdir -p "$RUN" && rm -f "$RUN/alive.txt" && unity_dialog_watch() { :; } && a_kill_daemon() { echo "killed"; } && daemon_alive() { [ -f "$RUN/alive.txt" ]; } && unity_wait_window 5; echo "rc=$?" ); }
 echo 'Packages with Errors: An error occurred while resolving packages [Retry/Continue/Quit]' > "$P/.warmd/run/dialog.txt"
-out="$(ww)"
+out="$(ww 2>/dev/null)"
 expect "a dialog is named with its text and buttons" '^FAIL a dialog stops the window editor: Packages with Errors: An error occurred while resolving packages \[Retry/Continue/Quit\]\. Editor ended, nothing answered$' "$out"
 expect "and the editor is ended" '^killed$' "$out"
+expect "a dialog is a blocked start, no red test" '^blocked BLOCKED a dialog stops the window editor: Packages with Errors' "$(head -1 "$P/.warmd/run/result.txt")"
+out="$(ww 2>&1 >/dev/null)"
+expect "and is said on stderr too" '^FAIL a dialog stops the window editor' "$out"
 rm -f "$P/.warmd/run/dialog.txt"; echo "window editor on monitor 2 of 2 (2560x1400 at 1920,0)" > "$P/.warmd/run/screen.txt"; echo 1 > "$P/.warmd/run/alive.txt"
 out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" \
   && unity_dialog_watch() { :; } && daemon_alive() { :; } && unity_wait_window 5; echo "rc=$?" ) )"

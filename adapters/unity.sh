@@ -117,7 +117,9 @@ unity_wait_window() { # seconds
     if [ -s "$RUN/dialog.txt" ]; then
       d="$(tr -d '\r' < "$RUN/dialog.txt" | head -1 | cut -c1-300)"
       a_kill_daemon
-      echo "FAIL a dialog stops the window editor: $d. Editor ended, nothing answered"; exit 2
+      # Like a blocked start (a_start_daemon): on stdout, stderr and in result.txt, and no red test
+      d="FAIL a dialog stops the window editor: $d. Editor ended, nothing answered"
+      echo "$d"; echo "$d" >&2; echo "blocked BLOCKED ${d#FAIL }" > "$RUN/result.txt" 2>/dev/null; exit 2
     fi
     [ $i -gt "$1" ] && { echo "FAIL window editor not ready after ${1}s, see $(native_path "$RUN/warmd-daemon.log")"; a_kill_daemon; exit 1; }
   done
