@@ -245,6 +245,23 @@ echo "$out" | grep -q '^OK hooks installed' && [ "$(grep -c 'hook-session' "$S2"
 (cd "$R" && "$WARMD" init --no-hooks >/dev/null); [ ! -e "$S2" ] && ok "warmd init --no-hooks removes them" || no "no-hooks left: $(cat "$S2")"
 cd "$TMP" || exit 1
 
+# ---- warmd batch-resume: the lost batch marker comes back from the open tasks, in the form warmd split writes ----
+E="$TMP/resume"; mkdir -p "$E" && cd "$E" && git init -q -b main . && git config user.name t && git config user.email t@example.com || exit 1
+echo '{ "name": "t", "scripts": { "test": "true" } }' > package.json; printf '.warmd\n' > .gitignore
+git add -A && GIT_COMMITTER_DATE="2026-01-01T00:00:00" git commit -qm init --date "2026-01-01T00:00:00"
+printf 'ra | add a | a | ra.txt\nrb | add b | b | rb.txt\nrc | add c | c | rc.txt\n' > "$TMP/rtasks.txt"
+WARMD_NO_PREWARM=1 "$WARMD" split "$TMP/rtasks.txt" > /dev/null
+EC="$(git rev-parse --path-format=absolute --git-common-dir)"; EW="$(dirname "$E")/.warmd-worktrees/resume"
+want="$(grep -v '/rc$' "$EC/warmd-batch")"
+(cd "$EW/ra" && echo a > ra.txt && git add -A && git commit -qm a)
+(cd "$EW/rc" && echo c > rc.txt && git add -A && git commit -qm c) && git merge -q --no-edit warmd/rc && touch -d "-10 min" .warmd/tasks/rc.md
+rm -f "$EC/warmd-batch"
+out="$("$WARMD" batch-resume)"
+[ "$(cat "$EC/warmd-batch" 2>/dev/null)" = "$want" ] && ok "batch-resume writes the open tasks as warmd split wrote them" || no "batch-resume: $out, marker $(cat "$EC/warmd-batch" 2>/dev/null), wanted $want"
+echo "$out" | grep -q '^OK batch marker rebuilt: 2 open: ra rb$' && ok "batch-resume names what it found, the merged task stays out" || no "batch-resume out: $out"
+(cd "$EW/ra" && "$WARMD" status >/dev/null 2>&1) && ok "a worktree of the rebuilt batch passes the batch guard" || no "rebuilt marker locks out its own worktree"
+cd "$TMP" || exit 1
+
 # ---- path forms: an 8.3 short name and the long name are the same worktree ----
 if command -v cygpath >/dev/null 2>&1; then
   mkdir -p "$TMP/a long worktree name"; sn="$(cygpath -u "$(cygpath -s -m "$TMP/a long worktree name")" 2>/dev/null)"
