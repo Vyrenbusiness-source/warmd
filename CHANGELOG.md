@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-11-05
+
+### Changed
+- batch_guard accepts both spellings of a worktree path in the batch marker
+
 ## [0.4.8] - 2026-11-05
 
 ### Changed
@@ -120,7 +125,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.8...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.9...HEAD
+[0.4.9]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.5...v0.4.6
