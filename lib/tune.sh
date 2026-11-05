@@ -141,10 +141,11 @@ tune_wait_ram() {
   while :; do
     pct="$(tune_free_pct)"
     [ "$pct" -ge "$min" ] && break
-    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; }
+    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark; }
     [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
     sleep "${WARMD_RAM_POLL:-3}"; orphan_check
   done
+  [ -z "$said" ] || queue_done
   [ -z "$said" ] || [ $anyway = 1 ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
   return 0
 }
@@ -190,8 +191,9 @@ GFXSLOT=""   # freed by on_exit in lib/core.sh
 gfx_take() {
   [ -n "$GFXSLOT" ] && return 0
   claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT && return 0
-  echo "(queued: $(tune_gfx_slots) graphics runs active)"
+  echo "(queued: $(tune_gfx_slots) graphics runs active)"; queue_mark
   until claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT; do sleep 3; orphan_check; done
+  queue_done
 }
 
 tune_doctor() {

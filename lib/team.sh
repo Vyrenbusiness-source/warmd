@@ -244,9 +244,16 @@ wt_ci_eta() { # worktree
   else echo "run $id, $((el / 60)) min in, no ETA yet"; fi
 }
 
+# A warmd test, check or build of this worktree is running: its own project or one in a subfolder (lib/core.sh run_mark)
+wt_run_active() { # worktree
+  local d; for d in "$1/.warmd" "$1"/*/.warmd; do [ -d "$d/run/active" ] && run_active "$d" >/dev/null && return 0; done
+  return 1
+}
+
 wt_busy() { # worktree
   local wt="$1" f pid
   wt_ci_mark "$wt" >/dev/null && return 0   # polling CI is work, not idle
+  wt_run_active "$wt" && return 0
   for f in "$wt/.warmd/job.lock/pid" "$wt/.warmd/merge.owner"; do
     pid="$(cat "$f" 2>/dev/null)"
     [ -n "$pid" ] && shell_alive "$pid" && return 0
@@ -343,8 +350,12 @@ team_watch() {
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
       name="$(wt_task "$wt")"
-      wt_finished "$common" "$wt" && continue   # its agent stopped and none started since: nothing to wake
-      if auto_paused "$common" "$name" "$wt"; then paused="$paused $name"; continue; fi   # no agent runs there, nothing to wake
+      # Its agent stopped and none started since: nothing to wake. Unless its own warmd run still works there:
+      # an agent that ended its turn waiting for a background test comes back for the result, the batch is not over.
+      if wt_finished "$common" "$wt"; then wt_run_active "$wt" && live=1; continue; fi
+      if auto_paused "$common" "$name" "$wt"; then   # no agent runs there, nothing to wake
+        if wt_run_active "$wt"; then live=1; else paused="$paused $name"; fi; continue
+      fi
       grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
       if reason="$(agent_dead "$wt" "$name")"; then
         echo "DEAD $name: died at start, no commit. Reason: $reason. Fix the cause, then start it again: \"Read $(native_path "$STATE/tasks/$name.md") and do it.\""

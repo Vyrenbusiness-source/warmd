@@ -3,10 +3,21 @@ printf -v T0 '%(%s)T' -1
 secs() { local n; printf -v n '%(%s)T' -1; echo $(( n - T0 )); }
 TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
-LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
+LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""; RUNMARK=""
 PARENT_PID="$PPID"
 on_exit() {
   local rc=$?
+  # An exit deep inside a cached run (a refusal in the engine start) skipped the cat of its output: say it now, with reason and log
+  if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
+    {   # stderr: stdout still goes to the file here. No saved stdout fd: a daemon started inside would inherit it and hold the caller's pipe open
+      cat "$CACHED_OUT"
+      if [ "$rc" != 0 ]; then
+        local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
+        echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
+      fi
+    } >&2
+    rm -f "$CACHED_OUT"
+  fi
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
   case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
@@ -14,7 +25,30 @@ on_exit() {
   [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
   [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
+  [ -n "$RUNMARK" ] && rm -f "$RUNMARK"
   return 0
+}
+# A heavy run marks itself in .warmd/run/active/<pid> (content: Windows pid or -, command) while it lives.
+# An agent that ends its turn while its own warmd test runs in the background keeps its engine (warmd stop --idle),
+# and warmd watch counts its worktree as working.
+run_mark() {
+  mkdir -p "$RUN/active" 2>/dev/null || return 0
+  local w=""; [ -r "/proc/$$/winpid" ] && read -r w < "/proc/$$/winpid"
+  echo "${w:--} $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
+  queue_done
+}
+# run_active <state dir>: prints "<pid> <command>" of a live run there, returns 1 when none. Marks of dead runs go.
+# A job started through Win32_Process.Create may not see this shell's msys pids: the Windows pid decides then.
+run_active() {
+  local f pid w c
+  for f in "$1"/run/active/*; do
+    [ -f "$f" ] || continue
+    pid="${f##*/}"; w=""; c=""; read -r w c < "$f" 2>/dev/null
+    [ "$pid" = "$$" ] && continue
+    if shell_alive "$pid" || { [ -n "$w" ] && [ "$w" != - ] && pid_alive "$w"; }; then echo "$pid ${c:-run}"; return 0; fi
+    rm -f "$f"
+  done
+  return 1
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
 orphan_check() {
@@ -168,7 +202,7 @@ cached() {
   f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
   if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
   slot_now
-  tmp="$(mktemp)"; "$@" > "$tmp"; rc=$?; cat "$tmp"
+  tmp="$(mktemp)"; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; cat "$tmp"
   if [ $rc = 0 ]; then
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
     find "$CACHE_ROOT/green" -type f -mtime +7 -delete 2>/dev/null
@@ -197,9 +231,9 @@ slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
-  echo "(queued: $(slots_max) heavy runs active)"
+  echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   until slot_try; do sleep 3; orphan_check; done
-  echo "(slot free after $(secs)s)"
+  queue_done; echo "(slot free after $(secs)s)"
 }
 
 changed_files() {
