@@ -180,6 +180,8 @@ hook_session() {
       fi
     done < "$batch"
     echo "$open of $n open. When the last one stops, warmd merges the finished branches by itself."
+    # The open agents start again now: a batch from before a reboot must not count as stale (batch_guard drops markers older than 240 min).
+    [ "$open" -gt 0 ] && [ "$src" != compact ] && touch "$batch"
   fi
   if [ -s "$log" ]; then
     echo "warmd: last automatic merge:"; tail -n 12 "$log"; mv -f "$log" "$log.seen"
