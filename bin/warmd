@@ -4,7 +4,7 @@ set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.4.11
+WARMD_VERSION=0.4.12
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/tune.sh"
@@ -69,7 +69,7 @@ Setup
   warmd update                 fetch the newest version, only when you run it
   warmd package                build a player with your own method (Unity)
 
-Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit (Unity)
+Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit | --window (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
 Config    warmd.conf in the project root, every key in docs/COMMANDS.md
 EOF

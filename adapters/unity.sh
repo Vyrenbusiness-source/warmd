@@ -72,19 +72,108 @@ a_start_daemon() {
     echo "$m"; echo "$m" >&2; echo "blocked BLOCKED ${m#FAIL }" > "$RUN/result.txt" 2>/dev/null
     exit 2
   fi
-  rm -f "$RUN/alive.txt" "$RUN/state.txt"
-  local exe gfx=(-nographics); exe="$(unity_exe)"
+  rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/dialog.txt" "$RUN/screen.txt" "$RUN/spawn.pid"
+  local exe gfx=(-nographics) batch=(-batchmode) win="${WARMD_WINDOW:-0}"; exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
-  [ "${WARMD_GFX:-0}" = 1 ] && { gfx=(); gfx_take; gfx+=($(tune_unity_gpu_flag)); }
-  [ "${WARMD_GFX:-0}" = 1 ] && echo 1 > "$RUN/gfx.txt" || echo 0 > "$RUN/gfx.txt"   # gfx_tests: a headless daemon makes way
+  if [ "$win" = 1 ]; then batch=(); unity_window_prep || exit 2; fi
+  [ "${WARMD_GFX:-0}" = 1 ] || [ "$win" = 1 ] && { gfx=(); gfx_take; gfx+=($(tune_unity_gpu_flag)); }
+  [ "${WARMD_GFX:-0}" = 1 ] || [ "$win" = 1 ] && echo 1 > "$RUN/gfx.txt" || echo 0 > "$RUN/gfx.txt"   # gfx_tests: a headless daemon makes way
+  echo "$win" > "$RUN/window.txt"
   # Each worktree gets a stable port block, so parallel daemons never collide and no agent has to think about it
   if [ -n "$CFG_port_env" ]; then
     export "$CFG_port_env=$(( 7830 + 10 * ( $(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1) % 160 ) ))"
   fi
-  export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
+  export WARMD_DIR WARMD_WINDOW="$win" WARMD_MONITOR="${WARMD_MONITOR:-2}"; WARMD_DIR="$(native_path "$RUN")"
   # -logFile with warmd-daemon in the path is how the daemon is told from a human's editor
-  spawn "$RUN/unity_out.log" "$exe" -batchmode -job-worker-count "$(tune_unity_workers)" "${gfx[@]}" -projectPath "$(native_path "$PROJECT")" -logFile "$(native_path "$RUN/warmd-daemon.log")"
-  wait_ready 600
+  SPAWN_STYLE="$([ "$win" = 1 ] && echo Normal || echo Hidden)" SPAWN_PID="$RUN/spawn.pid" \
+    spawn "$RUN/unity_out.log" "$exe" "${batch[@]}" -job-worker-count "$(tune_unity_workers)" "${gfx[@]}" -projectPath "$(native_path "$PROJECT")" -logFile "$(native_path "$RUN/warmd-daemon.log")"
+  if [ "$win" = 1 ]; then unity_wait_window 600; else wait_ready 600; fi
+}
+
+# warmd test --window (or WARMD_WINDOW=1): a visible editor for tests that need one, PlayMode screenshots for example.
+# -monitor is a player argument, an editor ignores it: the daemon moves its own main window to monitor WARMD_MONITOR
+# (default 2, monitor 1 is the primary) through Win32 and maximizes it there. A dialog would hold the start until the
+# timeout, so the start removes what raises one and names any that still comes up.
+unity_window_prep() {
+  # Scene backups of an editor that died in PlayMode raise "Recovering Scene Backups" at the next start with a window
+  rm -rf "$PROJECT/Temp/__Backupscenes"
+  # A local package the manifest names but the disk lacks raises "Packages with Errors"
+  local d p
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case "$d" in /*|[A-Za-z]:*) p="$d";; *) p="$PROJECT/Packages/$d";; esac
+    [ -e "$p" ] || { echo "FAIL Packages/manifest.json names a local package that is missing: $d. A window editor would stop at the dialog Packages with Errors"; return 1; }
+  done < <(sed -n 's/.*"file:\([^"]*\)".*/\1/p' "$PROJECT/Packages/manifest.json" 2>/dev/null | tr -d '\r')
+  return 0
+}
+
+# Like wait_ready, and a modal dialog of the new editor ends the start at once with its title, text and buttons
+unity_wait_window() { # seconds
+  local i=0 d
+  [ "$OS" = win ] && unity_dialog_watch "$1" >/dev/null 2>&1 &   # never holds the caller's output pipe open
+  while :; do
+    sleep 1; i=$((i+1))
+    if [ -f "$RUN/alive.txt" ] && daemon_alive; then break; fi
+    if [ -s "$RUN/dialog.txt" ]; then
+      d="$(tr -d '\r' < "$RUN/dialog.txt" | head -1 | cut -c1-300)"
+      a_kill_daemon
+      # Like a blocked start (a_start_daemon): on stdout, stderr and in result.txt, and no red test
+      d="FAIL a dialog stops the window editor: $d. Editor ended, nothing answered"
+      echo "$d"; echo "$d" >&2; echo "blocked BLOCKED ${d#FAIL }" > "$RUN/result.txt" 2>/dev/null; exit 2
+    fi
+    [ $i -gt "$1" ] && { echo "FAIL window editor not ready after ${1}s, see $(native_path "$RUN/warmd-daemon.log")"; a_kill_daemon; exit 1; }
+  done
+  i=0; while [ ! -s "$RUN/screen.txt" ] && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done
+  [ -s "$RUN/screen.txt" ] && echo "($(tr -d '\r' < "$RUN/screen.txt" | head -1))"
+  return 0
+}
+
+# One PowerShell for the whole start: every second the visible dialogs (class #32770) of the editor pid. One with a known
+# title or with two buttons or more is a question nobody answers; a progress window has one button at most.
+unity_dialog_watch() { # seconds
+  cat > "$RUN/dialog.ps1" <<'PS'
+param([string]$PidFile, [string]$Alive, [string]$Out, [int]$Seconds)
+Add-Type -TypeDefinition @'
+using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+public static class WarmdDialog {
+  delegate bool Cb(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(Cb cb, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr p, Cb cb, IntPtr l);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
+  static string Txt(IntPtr h) { var s = new StringBuilder(2048); GetWindowText(h, s, 2048); return s.ToString(); }
+  public static string Find(uint pid, string known) {
+    string found = null;
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p);
+      if (p != pid || !IsWindowVisible(h) || Cls(h) != "#32770") return true;
+      var text = new List<string>(); var buttons = new List<string>();
+      EnumChildWindows(h, (c, l2) => { string k = Cls(c), t = Txt(c).Replace("&", "").Trim(); if (t != "") { if (k == "Button") buttons.Add(t); else if (k == "Static") text.Add(t); } return true; }, IntPtr.Zero);
+      string title = Txt(h);
+      if (buttons.Count < 2 && !System.Text.RegularExpressions.Regex.IsMatch(title, known)) return true;
+      found = title + (text.Count > 0 ? ": " + string.Join(" ", text) : "") + (buttons.Count > 0 ? " [" + string.Join("/", buttons) + "]" : "");
+      return false;
+    }, IntPtr.Zero);
+    return found == null ? null : found.Replace("\r", " ").Replace("\n", " ");
+  }
+}
+'@
+$end = (Get-Date).AddSeconds($Seconds)
+while ((Get-Date) -lt $end) {
+  Start-Sleep -Seconds 1
+  if (Test-Path $Alive) { exit 0 }
+  if (-not (Test-Path $PidFile)) { continue }
+  $id = [uint32]((Get-Content $PidFile -TotalCount 1).Trim())
+  if (-not (Get-Process -Id $id -ErrorAction SilentlyContinue)) { exit 0 }
+  $d = [WarmdDialog]::Find($id, 'Packages with Errors|Scene Backups|Safe Mode|already open|another Unity')
+  if ($d) { [IO.File]::WriteAllText($Out, $d); exit 0 }
+}
+PS
+  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(native_path "$RUN/dialog.ps1")" \
+    -PidFile "$(native_path "$RUN/spawn.pid")" -Alive "$(native_path "$RUN/alive.txt")" -Out "$(native_path "$RUN/dialog.txt")" -Seconds "$1" >/dev/null 2>&1
 }
 
 # Project code compiles from Assets. A csproj without Assets sources is a package (cache, embedded or linked): Unity built it into Library/ScriptAssemblies already, and its sources do not compile outside Unity.
@@ -197,20 +286,68 @@ unity_gfx_hint() { # output -> the hint line when a failure looks like missing g
   return 0
 }
 
+# A HUNG test ends the editor (lib/daemon.sh job), the tests after it would never run. So the run goes on: a fresh daemon
+# runs the same filter again without every test that already ran and without the hung one (skip= in the job, the daemon
+# narrows the filter to the rest). Up to hung_resume rounds (warmd.conf, default 10, 0 = stop at the first HUNG).
+# At the end tests.txt and result.txt hold every round as one list, a hung test is an H row.
+unity_test_rounds() { # job test arguments
+  local max="${CFG_hung_resume:-10}" round=0 rc cur why first="" all="$STATE/tests.rounds" skip="$STATE/tests.skip"
+  rm -f "$all" "$skip"
+  while :; do
+    if [ $round = 0 ]; then job test "$@"; else job test "$@" "skip=$(native_path "$skip")"; fi; rc=$?
+    [ $rc != 0 ] && [ "$max" -gt 0 ] && grep -q '^HUNG ' "$RUN/result.txt" 2>/dev/null || break
+    cur=""; { IFS= read -r cur < "$RUN/current.full"; } 2>/dev/null; cur="${cur%$'\r'}"
+    why="$(grep -m1 '^HUNG ' "$RUN/result.txt" | tr -d '\r' | sed 's/^HUNG [^:]*: //')"
+    [ -n "$first" ] || first="$(head -1 "$RUN/result.txt" | cut -d' ' -f1)"
+    { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null >> "$all"
+    printf 'H\t%s\t%s\n' "${cur:-outside any test in round $((round + 1))}" "$why" >> "$all"
+    round=$((round + 1))
+    # Hung outside a test (fixture setup, before the first one), or the same test once more: nothing left to step over
+    [ -n "$cur" ] && ! grep -qxF "$cur" "$skip" 2>/dev/null || break
+    { { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null | cut -f2; echo "$cur"; } >> "$skip"
+    [ $round -le "$max" ] || { echo "(hung_resume: $max rounds reached, the rest stays unrun)"; break; }
+    echo "(goes on after HUNG ${cur##*.}: fresh editor, round $((round + 1)), $(grep -c . "$skip") tests done or hung)"
+  done
+  [ $round = 0 ] && return $rc
+  unity_rounds_list "$rc" "$first"
+}
+
+# Every round in one list: counts, then each hung test, then each red one
+unity_rounds_list() { # rc of the last round, id of the first round
+  local all="$STATE/tests.rounds" p f s h body ok=FAIL
+  grep -q '^HUNG ' "$RUN/result.txt" 2>/dev/null || { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null >> "$all"
+  p="$(grep -c $'^P\t' "$all")"; f="$(grep -c $'^F\t' "$all")"; s="$(grep -c $'^S\t' "$all")"; h="$(grep -c $'^H\t' "$all")"
+  body="$(echo "all rounds: $p passed, $f failed, $s skipped, $h hung"
+    awk -F'\t' '$1=="H" { n=split($2, a, "."); print "HUNG " a[n] ": " $3 }' "$all"
+    awk -F'\t' '$1=="F" { n=split($2, a, "."); print "RED " a[n] ": " $3 }' "$all")"
+  [ $((f + h)) = 0 ] && [ "$1" = 0 ] && ok=OK
+  cp "$all" "$RUN/tests.txt"
+  { echo "${2:-r$(now_ms)} $ok $(secs)s test"; echo "$body" | head -14; } > "$RUN/result.txt"
+  echo "$body" | head -14
+  [ $ok = OK ]
+}
+
 a_test() {
   unity_world || return 1
   local filter="" mode="" cat="" speed="" rc
-  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; *) filter="$1";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; *) filter="$1";; esac; shift; done
   [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
   if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
     echo "(gfx_tests: $filter runs with graphics)"; export WARMD_GFX=1
     if daemon_alive && [ "$(cat "$RUN/gfx.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
   fi
+  # --window: a headless daemon makes way for a visible editor, which closes again after the run
+  local win="${WARMD_WINDOW:-0}" wkey=""
+  if [ "$win" = 1 ]; then
+    wkey="|window"
+    if daemon_alive && [ "$(cat "$RUN/window.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
+  fi
   unity_sync
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
-  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
   [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
+  if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; fi
   return $rc
 }
 

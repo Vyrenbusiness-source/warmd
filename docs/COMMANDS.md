@@ -29,7 +29,9 @@ OK nothing to compile
 
 ### warmd test
 Runs the tests. A green result is cached by code hash, a red one never. Exit 1 on red, with only the error lines and the path of the full log.
-Syntax: `warmd test [filter] [--play|--edit] [--speed N]`. `WARMD_NOCACHE=1` ignores the cache.
+Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window]`. `WARMD_NOCACHE=1` ignores the cache.
+
+Unity `--window` (or `WARMD_WINDOW=1`) runs the tests in an editor with a window, for tests that skip their work in batchmode, PlayMode screenshots for example. `-monitor` is a player argument that an editor ignores, so the daemon moves its own main window through Win32 to monitor `WARMD_MONITOR` (default 2, monitor 1 is the primary) and maximizes it there; with one monitor it stays where it opened and says so. Before the start warmd removes `Temp/__Backupscenes` (the dialog Recovering Scene Backups) and stops when the manifest names a local package that is missing (the dialog Packages with Errors). Any other modal dialog during the start ends the editor at once with its title, text and buttons, nothing is answered. A headless daemon on the project makes way, and the window closes after the run. The window run has its own cache key.
 ```text
 warmd test
 FAIL 15s test (full log: <project>/.warmd/run/last.log)
@@ -41,7 +43,7 @@ FAIL 15s test (full log: <project>/.warmd/run/last.log)
 ```
 
 ### warmd check
-Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit. In a Unity project check runs PlayMode tests only for the affected test classes, never the whole PlayMode suite: that runs in the merge gate or with `WARMD_FULL=1`. In Unity a filter that names a test file instead of a class (`DamageJobTests` for `DamageJobTests.cs`) runs the classes declared in that file and says so; a filter that matches no test is red. A test that hangs ends the run with `HUNG <test>` and the results before it, at `test_timeout` or at the job timeout. Before every Unity run the daemon copy in `Assets/Editor/Warmd` is compared with the installed warmd and renewed when it differs, a warm editor restarts for it.
+Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit. In a Unity project check runs PlayMode tests only for the affected test classes, never the whole PlayMode suite: that runs in the merge gate or with `WARMD_FULL=1`. In Unity a filter that names a test file instead of a class (`DamageJobTests` for `DamageJobTests.cs`) runs the classes declared in that file and says so; a filter that matches no test is red. A test that hangs is named with `HUNG <test>`, at `test_timeout` or at the job timeout; the run then goes on in a fresh editor with the same filter, without the tests that already ran and without the hung one, up to `hung_resume` times, and ends with one list over all rounds (counts, every `HUNG` and every `RED` line, all rows in `.warmd/run/tests.txt`). Before every Unity run the daemon copy in `Assets/Editor/Warmd` is compared with the installed warmd and renewed when it differs, a warm editor restarts for it.
 ```text
 warmd check
 OK nothing to compile
@@ -262,7 +264,8 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |
 | `world_outputs` | What `world_method` writes: not counted as a source change, left out of automatic commits; the merge gate commits it | none |
 | `gfx_tests` | Unity: filter regex of tests that need a graphics device. A matching `warmd test` filter runs with graphics by itself (a headless daemon makes way); any test that fails with a graphics error such as `RenderTexture.Create failed` gets a `HINT needs graphics` line | none |
-| `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the run ends with a `HUNG <test>` line and what finished before it | off |
+| `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the test gets a `HUNG <test>` line and the run goes on after it (`hung_resume`) | off |
+| `hung_resume` | Unity: how often a run goes on in a fresh editor after a `HUNG` test, the hung test and the finished ones left out; 0 stops at the first `HUNG` | 10 |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
 | `floor` | Lowest tier this project accepts: `mid` or `top` | none |
@@ -274,4 +277,4 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `port_env` | Env variable that gets a stable port per worktree | none |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 
-Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`. Unity also has `warmd call Namespace.Class.Method`.
+Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`. Unity also has `warmd call Namespace.Class.Method`.
