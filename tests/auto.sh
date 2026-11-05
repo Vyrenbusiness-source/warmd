@@ -192,6 +192,7 @@ printf '# P\n\n## warmd\n\nUse `warmd` for every build, test and screenshot.\n\n
 
 # ---- a handoff carries the green runs from warmd's own record, not from the agent's memory ----
 cd "$R" || exit 1
+echo agents=20 >> warmd.conf   # a small runner caps the batch at its core count, this task must get a place
 printf 'hh | add hh | hh.txt exists | hh.txt\n' > "$TMP/hh.txt"; WARMD_NO_PREWARM=1 WARMD_BASE=1 "$WARMD" split "$TMP/hh.txt" > /dev/null 2>&1
 ( cd "$W/hh" && echo hh > hh.txt && git add hh.txt && git commit -qm hh && WARMD_NOCACHE=1 "$WARMD" test >/dev/null 2>&1; "$WARMD" handoff hh "hh written" "nothing" >/dev/null 2>&1 )
 sha="$(git -C "$W/hh" rev-parse --short HEAD)"
