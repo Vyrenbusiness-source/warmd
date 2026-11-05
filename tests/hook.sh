@@ -165,6 +165,7 @@ work a a.txt
 stop a "All done.
 DONE warmd/a" > "$TMP/stop.out"; fast "SubagentStop" "$STOP_MS"
 [ "$STOP_RC" = 0 ] && [ ! -s "$TMP/stop.out" ] && ok "SubagentStop prints nothing and exits 0" || no "SubagentStop rc=$STOP_RC out=$(cat "$TMP/stop.out")"
+grep -q '^## Last message of the agent' "$C/warmd-handoff/a.md" 2>/dev/null && grep -q '^All done.$' "$C/warmd-handoff/a.md" && ok "the agent's last message lands in its handoff note" || no "last message: $(cat "$C/warmd-handoff/a.md" 2>&1)"
 waitfor 'grep -qF "$W/a	" "$C/warmd-batch-done" 2>/dev/null' || no "job for a never finished: $(tail -3 "$C/warmd-hook.log")"
 [ "$(row a)" = "$(printf '6384\t2\tok')" ] && ok "ledger sums tokens over all 3 turns, a turn split in 2 lines once, and counts calls" || no "ledger row a: $(row a), want 6384 = 1115 + 2227 + 3042"
 if [ "$OS" = win ]; then grep -q ' a stopped: .*(detached via cim)' "$C/warmd-hook.log" && ok "job started through Win32_Process.Create, outside the session's tree" || no "job not via cim: $(grep ' a stopped' "$C/warmd-hook.log")"; fi

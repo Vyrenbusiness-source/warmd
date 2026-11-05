@@ -103,11 +103,16 @@ auto_esc() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "${s//$'\n'
 auto_deny() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$(auto_esc "$1")"; }
 
 # PreToolUse fast path: a builtin time check, python at most once a minute per agent. Prints the deny and returns 0 when the agent must end.
+# After the limit an agent may still hand over what it found and record its end: warmd handoff, note and finish pass.
+auto_allowed() { # hook JSON
+  local re='"command"[[:space:]]*:[[:space:]]*"([^"]*[/\\])?warmd(\.cmd)?[[:space:]]+(handoff|finish|note)([[:space:]]|")'
+  [[ $1 =~ $re ]]
+}
 auto_pre() { # hook JSON
   local in="$1" tp key d now last=0 r name tf tok calls budget pct
   auto_json_tp "$in" || return 1; tp="$REPLY"
   d="$(auto_cache)"; key="${tp##*/}"; key="${key%.jsonl}"
-  [ -f "$d/$key.pending" ] && { auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
   [ -f "$d/$key.done" ] && return 1
   printf -v now '%(%s)T' -1
   [ -f "$d/$key.t" ] && read -r last < "$d/$key.t"
@@ -121,7 +126,7 @@ auto_pre() { # hook JSON
   if [ "$pct" -ge "$AUTO_PCT" ]; then auto_save "$name" "$tf" "$key" "$pct% of the ${budget%000}k budget"
   elif [ "${calls:-0}" -ge "$AUTO_CALLS" ]; then auto_save "$name" "$tf" "$key" "$calls tool calls"
   else return 1; fi
-  [ -f "$d/$key.pending" ] && { auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
   return 1
 }
 
@@ -177,7 +182,7 @@ auto_save() { # name taskfile key reason
   out="$(cd "$wt" && bash "$WARMD_HOME/bin/warmd" handoff "$name" "Automatic handoff at $why. The work so far is in the commits below." "Check the commits against Done when and finish what is left." 2>&1)"
   line="$(printf '%s\n' "$out" | grep "^AGENT $name:" | tail -1)"
   if [ -n "$line" ]; then
-    echo "Context at $why: warmd saved your work and wrote the handoff. Stop now, run nothing else, end your answer with this line: $line" > "$d/$key.pending"
+    echo "Context at $why: warmd saved your work and wrote the handoff. Only these still run: warmd handoff $name \"what you found\" \"what is next\" and warmd finish. Then stop and end your answer with this line: $line" > "$d/$key.pending"
   else
     echo "Context at $why and the automatic handoff failed: $(printf '%s' "$out" | tail -1 | cut -c1-160). Commit, then end with ESCALATE: context full" > "$d/$key.pending"
   fi

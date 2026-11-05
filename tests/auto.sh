@@ -93,6 +93,9 @@ grep -q '^## Handoff 1' "$C/warmd-handoff/b.md" && grep -q 'Automatic handoff at
 pre() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}' "$(native_path "$1")" | "$WARMD" hook-pre; }
 out="$(pre "$TMP/b.jsonl")"
 echo "$out" | "$PY" -c 'import json,sys; h=json.load(sys.stdin)["hookSpecificOutput"]; assert h["permissionDecision"]=="deny"; r=h["permissionDecisionReason"]; assert "AGENT b: " in r and "then " in r, r' 2>/dev/null && ok "next Bash call is denied with the AGENT line" || no "deny after compaction: $out"
+prec() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"}}' "$(native_path "$1")" "$2" | "$WARMD" hook-pre; }
+[ -z "$(prec "$TMP/b.jsonl" 'warmd handoff b \"found x in y.c:4\" \"fix z\"')" ] && [ -z "$(prec "$TMP/b.jsonl" 'warmd finish --outcome ok')" ] && ok "after the limit warmd handoff and warmd finish still run" || no "handoff or finish blocked after the limit"
+prec "$TMP/b.jsonl" 'git status' | grep -q '"deny"' && ok "anything else stays blocked" || no "other command passed after the limit"
 printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreCompact"}' "$(native_path "$TMP/b.jsonl")" | "$WARMD" hook-compact
 [ "$(grep -c '^## Handoff' "$C/warmd-handoff/b.md")" = 1 ] && ok "a second compaction of the same agent writes no second handoff" || no "handoff rounds: $(grep -c '^## Handoff' "$C/warmd-handoff/b.md")"
 transcript "$TMP/b2.jsonl" b "fresh"

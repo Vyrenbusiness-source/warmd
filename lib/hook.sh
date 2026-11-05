@@ -248,6 +248,9 @@ ctx = "-"
 if usage:
     last = list(usage.values())[-1]
     ctx = str(sum(int(last.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+import os
+if os.environ.get("WARMD_LASTMSG") and text.strip():
+    open(os.environ["WARMD_LASTMSG"], "w", encoding="utf-8").write(text.strip() + "\n")
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
 print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
@@ -257,7 +260,8 @@ hook_subagent() {
   local in py r name tf tokens calls outcome wt common
   in="$(cat)"
   py="$(hook_py)" || return 0
-  r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
+  local last="${CACHE_ROOT}/lastmsg-$$-$RANDOM.txt"; mkdir -p "$CACHE_ROOT"
+  r="$(printf '%s' "$in" | WARMD_LASTMSG="$last" "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || { rm -f "$last"; return 0; }
   IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
@@ -266,8 +270,18 @@ hook_subagent() {
   fi
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
   common="$(hook_common "$wt")" || return 0
+  hook_lastmsg "$common" "$name" "$last"
   hook_detach "$common/warmd-hook.log" "$wt" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome"
   return 0
+}
+
+# The agent's last message goes into its handoff note: findings it could only write into its answer are not lost
+# with the session. At most 40 lines, the newest message last.
+hook_lastmsg() { # common name file
+  [ -s "$3" ] || { rm -f "$3"; return 0; }
+  mkdir -p "$1/warmd-handoff"
+  { echo "## Last message of the agent, $(date '+%F %T')"; head -n 40 "$3"; } >> "$1/warmd-handoff/$2.md"
+  rm -f "$3"
 }
 
 # hook_detach <log> <dir> <warmd args...>: run warmd so it outlives the session that ran the hook.
