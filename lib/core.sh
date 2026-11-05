@@ -30,7 +30,11 @@ batch_guard() {
   [ -n "$GIT_ROOT" ] || return 0
   local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$f" ] || return 0
-  [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { rm -f "$f"; return 0; }
+  # Stale after 240 minutes, unless warmd watch saw agents work in that time: it touches warmd-batch-alive, never the marker,
+  # whose mtime stays the batch start for wt_idle.
+  if [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { [ ! -f "$f-alive" ] || [ -n "$(find "$f-alive" -mmin +240 2>/dev/null)" ]; }; then
+    rm -f "$f" "$f-alive"; return 0
+  fi
   # Both spellings of the same folder pass (/c/x and C:/x), a marker written by hand or by a Windows tool must not lock out its own worktrees.
   grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" && return 0
   echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
