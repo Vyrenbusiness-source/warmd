@@ -200,6 +200,9 @@ out="$("$WARMD" ci 2>&1)"
 expect "ci without a run" 'no CI run for' "$out"
 
 expect "help lists registered commands" 'warmd ship .*warmd ci' "$("$WARMD" --help | tr '\n' ' ')"
+out="$("$WARMD" ship --help 2>&1)"; rc=$?
+expect "ship --help shows its usage" '^ *warmd ship \[--base' "$out"
+[ $rc = 0 ] && ! echo "$out" | grep -q "not merged" && ok "ship --help runs nothing" || no "ship --help ran: $rc $out"
 out="$("$WARMD" ship --release 1.0 alpha 2>&1)"
 expect "bad release name" 'release must look like v1.2.3' "$out"
 
