@@ -98,6 +98,12 @@ rm "$S"; "$WARMD" init --hooks >/dev/null; "$WARMD" init --no-hooks >/dev/null
 "$WARMD" init --no-hooks | grep -q '^OK' && ok "remove with nothing installed is fine" || no "remove with nothing installed"
 [ -z "$(git status --short -- . ':!.claude')" ] && ok "init --hooks touches nothing outside .claude" || no "init touched other files"
 
+# find / walks /proc under Git Bash and leaks process handles: refused, a project find passes
+out="$(pre_json '"find / -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
+echo "$out" | grep -q '"permissionDecision":"deny"' && ok "find / is refused" || no "find / passed: $out"
+out="$(pre_json '"find . -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
+echo "$out" | grep -q 'deny' && no "project find refused: $out" || ok "find . passes"
+
 # ---- SessionStart compact: task and brief come back ----
 M="$TMP/main"; mkdir -p "$M/.warmd/tasks"; cd "$M" && git init -q -b main . && git config user.name t && git config user.email t@example.com && git commit -q --allow-empty -m i || exit 1
 git worktree add -q "$TMP/wt" -b w1 && git worktree add -q "$TMP/wt2" -b w2
