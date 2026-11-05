@@ -8,11 +8,16 @@ Examples show real output from a small throwaway Node project with one failing t
 
 ### warmd status
 Shows what was detected and what is warm. Use it first in a new project. When the installed copy is behind its origin it adds one line `UPDATE installed <sha> behind origin <sha> by <n> commits, run: warmd update`; `warmd doctor` shows the same line. A background `git fetch` of the warmd clone refreshes this at most every 6 hours, `WARMD_UPDATE_CHECK=0` turns it off.
+It also shows free RAM, in a Unity project every running Unity editor with its project path (warmd daemon, batchmode or window), and while a batch runs one line per branch with its last commit and how old it is.
 ```text
 warmd status
-warmd 0.3.0: web project at <project>
-heavy runs: 0 of 2
-dev server off
+warmd 0.4.11: unity project at <project>
+heavy runs: 1 of 2
+parallel agents: up to 4 (warmd.conf)
+RAM free: 9082 MB of 31913 MB (28%)
+Unity pid 22734: <worktree>/Game (warmd daemon)
+batch warmd/nav: 5b53120c 9 min ago, nav: compass at the helm
+Unity 6000.0.0f1 warm, pid 22734
 ```
 
 ### warmd build
@@ -83,7 +88,7 @@ e4aac13 WIP hook: SessionStart batch state, SubagentStop ledger+push, automerge,
 ```
 
 ### warmd stop
-Ends the warm process for real. Only processes warmd started are touched.
+Ends the warm process for real. In a Unity project it then ends every other Unity editor started with exactly this `-projectPath` by another tool, because such an editor blocks the next start: a batchmode editor is asked first and ended hard after `WARMD_STOP_GRACE` seconds (default 15). An editor with a window may hold unsaved work, so it is only asked to close; `warmd stop --force` ends it hard. Each ended editor gets one line. `warmd stop --idle` (used by the agent hooks) keeps the engine while a warmd test, check or build of this project still runs.
 
 ## Agents
 
