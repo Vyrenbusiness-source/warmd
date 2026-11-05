@@ -169,7 +169,7 @@ fi
 # ---- another tool's batchmode editor on a batch worktree no longer blocks the start: it is ended, the run goes on ----
 V="$TMP/ubatch"; mkdir -p "$V/ProjectSettings" "$V/Assets/Editor/Warmd"; printf 'm_EditorVersion: 6000.0.0f1\n' > "$V/ProjectSettings/ProjectVersion.txt"; cp "$HERE"/unity/* "$V/Assets/Editor/Warmd/"
 ( cd "$V" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf '.warmd\n' > .gitignore && git add -A && git commit -qm init )
-( cd "$V" && pwd ) > "$(git -C "$V" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+git -C "$V" rev-parse --show-toplevel > "$(git -C "$V" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"   # the form git reports: runner temp paths come in 8.3 and long spellings
 VN="$(native_path "$V")"
 bash "$TMP/fake/Unity" -batchmode -nographics -projectPath "$VN" & f4=$!; sleep 2
 out="$(cd "$V" && WARMD_STOP_GRACE=1 WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"
