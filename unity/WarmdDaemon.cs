@@ -25,7 +25,7 @@ namespace Warmd
         static string F(string name) => Path.Combine(Dir, name);
 
         const int MaxLines = 14;
-        const double DefaultIdleMinutes = 30;
+        const double DefaultIdleMinutes = 10;   // daemon_idle in warmd.conf, a forgotten editor holds gigabytes and a slot
         const string LastJobKey = "warmd_last_job";
         static double nextTick, nextBeat;
         static TestRunnerApi api;
@@ -42,7 +42,7 @@ namespace Warmd
             {
                 SessionState.SetBool("warmd_init", true);
                 SessionState.SetString(LastJobKey, NowMs().ToString());
-                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt" }) if (File.Exists(F(f))) File.Delete(F(f));
+                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt", "current.ms" }) if (File.Exists(F(f))) File.Delete(F(f));
             }
             if (Application.isBatchMode)
             {
@@ -199,6 +199,11 @@ namespace Warmd
             long age = NowMs() - long.Parse(Get(state, "start", NowMs().ToString()));
             long timeoutMs = long.Parse(Get(state, "timeout", "900")) * 1000;
             bool busy = EditorApplication.isCompiling || EditorApplication.isUpdating;
+            if (age > timeoutMs && phase == "testing")
+            {
+                Hung(state, "timeout after " + timeoutMs / 1000 + "s");
+                return;
+            }
             if (age > timeoutMs)
             {
                 string test = File.Exists(F("current.txt")) ? File.ReadAllText(F("current.txt")) : "";
@@ -218,7 +223,11 @@ namespace Warmd
                     StartTests(state);
                     break;
                 case "testing":
-                    break;   // RunFinished ends it, the timeout above guards it
+                    // test_timeout in warmd.conf: one test running longer counts as hung and red, the run ends with what finished before it
+                    if (long.TryParse(Get(state, "test_timeout"), out long limit) && limit > 0 && File.Exists(F("current.ms"))
+                        && long.TryParse(File.ReadAllText(F("current.ms")).Trim(), out long since) && NowMs() - since > limit * 1000)
+                        Hung(state, "hung after " + limit + "s (test_timeout)");
+                    break;   // RunFinished ends it, the timeouts above guard it
                 case "call":
                     if (busy || age < 300) return;
                     if (EditorUtility.scriptCompilationFailed) { Finish(state, false, ErrorLines()); return; }
@@ -240,6 +249,22 @@ namespace Warmd
             catch (TargetInvocationException e) { Finish(state, false, new[] { Short(e.InnerException.GetType().Name + ": " + e.InnerException.Message) }); }
         }
 
+        /// <summary>A test that never ends: name it and report what finished before it, instead of a bare timeout.
+        /// The runner is still stuck in that test, so warmd ends this editor on the HUNG line and the next job starts fresh.</summary>
+        static void Hung(Dictionary<string, string> state, string why)
+        {
+            string test = File.Exists(F("current.txt")) ? File.ReadAllText(F("current.txt")).Trim() : "";
+            var rows = File.Exists(F("tests.txt")) ? File.ReadAllLines(F("tests.txt")).Select(l => l.Split('\t')).Where(p => p.Length >= 3).ToList() : new List<string[]>();
+            var failed = rows.Where(p => p[0] == "F").ToList();
+            var lines = new List<string>
+            {
+                "HUNG " + (test == "" ? "before the first test" : test) + ": " + why,
+                $"before it: {rows.Count(p => p[0] == "P")} passed, {failed.Count} failed, {rows.Count(p => p[0] == "S")} skipped"
+            };
+            lines.AddRange(failed.Take(MaxLines - 3).Select(p => "RED " + p[1].Split('.').Last() + ": " + p[2]));
+            Finish(state, false, lines);
+        }
+
         static IEnumerable<string> ErrorLines()
         {
             var lines = File.Exists(F("errors.txt")) ? File.ReadAllLines(F("errors.txt")).Distinct().ToList() : new List<string>();
@@ -252,6 +277,7 @@ namespace Warmd
         static void StartTests(Dictionary<string, string> state)
         {
             File.Delete(F("tests.txt"));
+            File.Delete(F("current.txt")); File.Delete(F("current.ms"));
             state["phase"] = "testing";
             Write("state.txt", state);
             var filter = new Filter { testMode = Get(state, "mode", "Edit") == "Play" ? TestMode.PlayMode : TestMode.EditMode };
@@ -281,13 +307,19 @@ namespace Warmd
         sealed class TestCallbacks : ICallbacks, IErrorCallbacks
         {
             public void RunStarted(ITestAdaptor testsToRun) { }
-            public void TestStarted(ITestAdaptor test) { if (!test.HasChildren) File.WriteAllText(F("current.txt"), test.Name); }
+            public void TestStarted(ITestAdaptor test)
+            {
+                if (test.HasChildren) return;
+                File.WriteAllText(F("current.txt"), test.Name);
+                File.WriteAllText(F("current.ms"), NowMs().ToString());   // a file: entering PlayMode reloads the domain, statics are gone
+            }
 
             public void TestFinished(ITestResultAdaptor result)
             {
                 string state = result.ResultState ?? "";
                 // A suite is never a test, also an empty one: a filter that matches nothing left the root suite as "1 passed".
                 bool suite = result.Test.IsSuite || result.HasChildren;
+                if (!suite && File.Exists(F("current.ms"))) File.Delete(F("current.ms"));
                 bool suiteFail = suite && state.StartsWith("Failed") && !state.Contains("Child");
                 if (suite && !suiteFail) return;
                 string tag = state.StartsWith("Failed") ? "F" : state.StartsWith("Skipped") || state.StartsWith("Ignored") || state.StartsWith("Inconclusive") ? "S" : "P";
