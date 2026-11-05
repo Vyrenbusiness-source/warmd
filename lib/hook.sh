@@ -282,6 +282,9 @@ hook_job() {
   here="$(pwd)"; common="$(hook_common)" || return 1
   export WARMD_DETACHED=1
   echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls (detached via ${WARMD_VIA:-direct})"
+  # An agent ends its turn to wait for its own background run (a Bash call may take 600 s, a queued Unity run longer).
+  # While that run works or waits in a queue, nothing is recorded: no stop, no escalation, the engine stays; the agent comes back.
+  if wt_run_active "$here"; then echo "$(date '+%F %T') $name: its warmd run still works or waits here, no stop recorded"; return 0; fi
   outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null

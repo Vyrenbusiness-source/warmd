@@ -50,10 +50,26 @@ auto_agent_start() { # hook JSON -> 0 when it was an Agent call
 
 # ---- queue: lines for the session, printed by warmd watch ----
 auto_queue() { mkdir -p "$(auto_dir "$1")" && printf '%s\n' "$2" >> "$(auto_dir "$1")/queue"; }   # common line
-auto_drain() { # common -> prints and empties the queue, 1 when it was empty
-  local q; q="$(auto_dir "$1")/queue"
+# An AGENT line for a task whose old agent still works stays queued: its warmd run is active or waits, or its own
+# transcript grew in the last AUTO_HOLD minutes (an agent that ended its turn for a background run continues by itself).
+# Two agents in one worktree cost more than a late line.
+auto_drain() { # common -> prints the lines that may go and keeps the held ones, 1 when nothing goes
+  local q line name out="" keep=""; q="$(auto_dir "$1")/queue"
   [ -s "$q" ] || return 1
-  cat "$q"; : > "$q"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "AGENT "*:*) name="${line#AGENT }"; name="${name%%:*}"; auto_busy "$1" "$name" && { keep="$keep$line"$'\n'; continue; };; esac
+    out="$out$line"$'\n'
+  done < "$q"
+  printf '%s' "$keep" > "$q"
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
+}
+auto_busy() { # common name
+  local tf wt root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}"
+  tf="$(sed -n 1p "$1/warmd-handoff/$2.task" 2>/dev/null | tr -d '\r')"
+  wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$tf" 2>/dev/null)"
+  [ -n "$wt" ] && [ -d "$wt" ] && wt_run_active "$wt" && return 0
+  [ -d "$root" ] && find "$root" -path '*/subagents/*' -name '*.jsonl' -mmin "-${AUTO_HOLD:-2}" -exec grep -lF "tasks/$2.md" {} + 2>/dev/null | grep -q .
 }
 
 # ---- stop: called from hook-job with the outcome the transcript gave ----
@@ -70,10 +86,19 @@ auto_red() { # worktree
   [ "$(head -1 "$r/result.txt" 2>/dev/null | cut -d' ' -f2 | tr -d '\r')" = FAIL ]
 }
 
+# Did the last run in this worktree end while it waited in a queue? Then a failed or escalated stop is no failure of the model.
+auto_queued() { # worktree
+  local d; for d in "$1/.warmd/run" "$1"/*/.warmd/run; do [ -f "$d/queued" ] && return 0; done
+  return 1
+}
+
 auto_stop() { # common name worktree outcome
   local common="$1" name="$2" wt="$3" outcome="$4" m tf proj out
   m="$(auto_dir "$common")/paused/$name"
+  # Waiting for a slot is no failure: the task stays open like a handoff, the same tier continues
+  case "$outcome" in failed|escalated) auto_queued "$wt" && { auto_pause "$common" "$name"; echo handoff; return 0; };; esac
   [ "$outcome" = ok ] && auto_red "$wt" && outcome=failed
+  [ "$outcome" = failed ] && auto_queued "$wt" && { auto_pause "$common" "$name"; echo handoff; return 0; }
   case "$outcome" in failed|escalated) ;; *) auto_pause "$common" "$name"; echo "$outcome"; return 0;; esac
   # The same stop twice (hook fired twice): no second escalation
   if [ -n "$(find "$m" -maxdepth 0 -mmin "-$AUTO_DUP" 2>/dev/null)" ]; then echo escalated; return 0; fi

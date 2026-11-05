@@ -24,6 +24,7 @@ run_mark() {
   mkdir -p "$RUN/active" 2>/dev/null || return 0
   local w=""; [ -r "/proc/$$/winpid" ] && read -r w < "/proc/$$/winpid"
   echo "${w:--} $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
+  queue_done
 }
 # run_active <state dir>: prints "<pid> <command>" of a live run there, returns 1 when none. Marks of dead runs go.
 # A job started through Win32_Process.Create may not see this shell's msys pids: the Windows pid decides then.
@@ -217,9 +218,9 @@ slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
-  echo "(queued: $(slots_max) heavy runs active)"
+  echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   until slot_try; do sleep 3; orphan_check; done
-  echo "(slot free after $(secs)s)"
+  queue_done; echo "(slot free after $(secs)s)"
 }
 
 changed_files() {
