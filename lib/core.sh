@@ -9,13 +9,13 @@ on_exit() {
   local rc=$?
   # An exit deep inside a cached run (a refusal in the engine start) skipped the cat of its output: say it now, with reason and log
   if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
-    {   # fd 8 is the caller's stdout, saved by cached(): the exit happened while stdout went to the file
+    {   # stderr: stdout still goes to the file here. No saved stdout fd: a daemon started inside would inherit it and hold the caller's pipe open
       cat "$CACHED_OUT"
       if [ "$rc" != 0 ]; then
         local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
         echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
       fi
-    } >&8 2>/dev/null
+    } >&2
     rm -f "$CACHED_OUT"
   fi
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
@@ -200,7 +200,7 @@ cached() {
   f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
   if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
   slot_now
-  tmp="$(mktemp)"; exec 8>&1; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; exec 8>&-; cat "$tmp"
+  tmp="$(mktemp)"; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; cat "$tmp"
   if [ $rc = 0 ]; then
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
     find "$CACHE_ROOT/green" -type f -mtime +7 -delete 2>/dev/null
