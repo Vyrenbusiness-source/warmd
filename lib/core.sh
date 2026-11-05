@@ -112,6 +112,8 @@ load_config() {
 }
 
 base_branch() {
+  # WARMD_BASE_BRANCH: the automatic merge names the base of the shared checkout, a base worktree without its own warmd.conf agrees
+  if [ -n "${WARMD_BASE_BRANCH:-}" ]; then echo "$WARMD_BASE_BRANCH"; return; fi
   if [ -n "$CFG_base" ]; then echo "$CFG_base"; return; fi
   local b; b="$(git -C "$PROJECT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
   b="${b#origin/}"
