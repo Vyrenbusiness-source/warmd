@@ -159,6 +159,9 @@ Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch
 ### warmd batch-done
 Ends the batch, so the shared checkout opens again.
 
+### warmd batch-resume
+Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Use it when the marker was lost while agents still work.
+
 ### warmd perf
 Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline.
 ```text
