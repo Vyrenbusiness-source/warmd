@@ -103,9 +103,8 @@ tune_prefix() {
   return 0
 }
 
-# tune_free_pct: free RAM in percent, counting what the system can hand out at once. WARMD_FREE_PCT overrides.
-tune_free_pct() {
-  if [ -n "${WARMD_FREE_PCT:-}" ]; then echo "$WARMD_FREE_PCT"; return; fi
+# tune_mem: "<free bytes> <total bytes>", counting what the system can hand out at once. Nothing when unreadable.
+tune_mem() {
   local total="" avail="" v
   case "$OS" in
     mac)
@@ -120,8 +119,16 @@ tune_free_pct() {
       total="$(awk '/^MemTotal:/ {print $2*1024; exit}' /proc/meminfo 2>/dev/null)"
       avail="$(awk '/^MemAvailable:/ {print $2*1024; exit}' /proc/meminfo 2>/dev/null)";;
   esac
-  case "$total$avail" in ''|*[!0-9]*) echo 100; return;; esac   # unreadable: never block
-  [ "$total" -gt 0 ] 2>/dev/null || { echo 100; return; }
+  case "$total$avail" in ''|*[!0-9]*) return 1;; esac
+  [ "$total" -gt 0 ] 2>/dev/null || return 1
+  echo "$avail $total"
+}
+
+# tune_free_pct: free RAM in percent. WARMD_FREE_PCT overrides, unreadable counts as 100 so it never blocks.
+tune_free_pct() {
+  if [ -n "${WARMD_FREE_PCT:-}" ]; then echo "$WARMD_FREE_PCT"; return; fi
+  local m avail total; m="$(tune_mem)" || { echo 100; return; }
+  read -r avail total <<< "$m"
   echo $(( avail * 100 / total ))
 }
 
