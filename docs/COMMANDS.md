@@ -41,7 +41,7 @@ FAIL 15s test (full log: <project>/.warmd/run/last.log)
 ```
 
 ### warmd check
-Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit. In a Unity project check runs PlayMode tests only for the affected test classes, never the whole PlayMode suite: that runs in the merge gate or with `WARMD_FULL=1`. A test that hangs ends the run with `HUNG <test>` and the results before it, at `test_timeout` or at the job timeout. Before every Unity run the daemon copy in `Assets/Editor/Warmd` is compared with the installed warmd and renewed when it differs, a warm editor restarts for it.
+Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit. In a Unity project check runs PlayMode tests only for the affected test classes, never the whole PlayMode suite: that runs in the merge gate or with `WARMD_FULL=1`. In Unity a filter that names a test file instead of a class (`DamageJobTests` for `DamageJobTests.cs`) runs the classes declared in that file and says so; a filter that matches no test is red. A test that hangs ends the run with `HUNG <test>` and the results before it, at `test_timeout` or at the job timeout. Before every Unity run the daemon copy in `Assets/Editor/Warmd` is compared with the installed warmd and renewed when it differs, a warm editor restarts for it.
 ```text
 warmd check
 OK nothing to compile
@@ -261,6 +261,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `world_method` | Unity: static method that builds the generated parts of the project. Runs in the warm editor before `test` and `check` whenever its sources changed since its last run, so a merge or a pull never leaves generated parts behind | off |
 | `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |
 | `world_outputs` | What `world_method` writes: not counted as a source change, left out of automatic commits; the merge gate commits it | none |
+| `gfx_tests` | Unity: filter regex of tests that need a graphics device. A matching `warmd test` filter runs with graphics by itself (a headless daemon makes way); any test that fails with a graphics error such as `RenderTexture.Create failed` gets a `HINT needs graphics` line | none |
 | `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the run ends with a `HUNG <test>` line and what finished before it | off |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
