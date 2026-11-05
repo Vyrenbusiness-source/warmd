@@ -1,7 +1,7 @@
 # Unity: the warm thing is the editor, headless with -nographics. Job logic lives in unity/WarmdDaemon.cs.
 UNITY_VER="$(sed -n 's/^m_EditorVersion: //p' "$PROJECT/ProjectSettings/ProjectVersion.txt" | tr -d '\r')"
 EDITOR_DIR="$PROJECT/Assets/Editor/Warmd"
-export WARMD_IDLE_MIN="$CFG_idle_min"
+export WARMD_IDLE_MIN="${CFG_daemon_idle:-$CFG_idle_min}"
 
 unity_exe() {
   if [ -n "${WARMD_UNITY:-}" ]; then echo "$WARMD_UNITY"; return; fi
@@ -25,8 +25,28 @@ a_kill_daemon() {
   rm -f "$RUN/alive.txt" "$RUN/pid.txt"
 }
 
+# warmd init copies the engine side once, a newer warmd brings a newer daemon: before every Unity run the project copy is
+# compared with this install and replaced when it differs. A warm editor restarts, so Unity compiles the new code.
+# Builtins only (read), no process start per run. A tracked copy shows as changed until it is committed; warmd merge takes it along.
+unity_sync() {
+  [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] || return 0   # not installed: a_start_daemon says to run warmd init
+  local f dst a b changed=""
+  for f in "$WARMD_HOME"/unity/*; do
+    [ -f "$f" ] || continue
+    dst="$EDITOR_DIR/${f##*/}"; a=""; b=""
+    IFS= read -r -d '' a < "$f"; [ -f "$dst" ] && IFS= read -r -d '' b < "$dst"
+    [ "$a" = "$b" ] && continue
+    cp "$f" "$dst" && changed="$changed ${f##*/}"
+  done
+  [ -n "$changed" ] || return 0
+  echo "(daemon updated to $WARMD_VERSION:$changed)"
+  if daemon_alive; then echo "(warm editor restarts for the new daemon)"; daemon_stop >/dev/null; fi
+  return 0
+}
+
 a_start_daemon() {
   [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] || { echo "FAIL run warmd init first"; exit 2; }
+  unity_sync
   if [ -n "$(a_daemon_procs)" ]; then echo "(daemon not answering, restarting)"; a_kill_daemon; fi
   local other; other="$(foreign_unity)"
   [ -n "$other" ] && { echo "FAIL another Unity (pid $other) has this project open, nothing touched"; exit 2; }
@@ -100,6 +120,7 @@ dotnet_errors() {
   ( cd "$PROJECT" && timeout 300 $(tune_prefix) dotnet msbuild "$(native_path "$proj")" -p:R="${restore:-0}" "-p:WarmdPkgs=$pkgs" "-p:CustomAfterMicrosoftCommonTargets=$(native_path "$RUN/pkg.targets")" -p:DisableTransitiveProjectReferences=true -nr:true -m:"$(tune_threads)" -nologo -v q -clp:NoSummary 2>&1 ) | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
 }
 a_build() {
+  unity_sync
   command -v dotnet >/dev/null 2>&1 || { job compile; return; }
   csproj_fresh || { echo "(csproj stale, compiling in Unity)"; job compile; return; }
   local errs n miss; miss="$(refs_missing)"
@@ -110,34 +131,64 @@ a_build() {
   echo "OK $(secs)s compile (no Unity needed)"
 }
 
+# world_method in warmd.conf: the project's step that builds generated parts (a static method, run in the warm editor).
+# It runs before tests whenever its sources changed since its last run: after a merge or a pull nothing generated is missing,
+# and nobody reaches for another tool. world_sources: paths in the project, comma separated (default Assets);
+# world_outputs: what the step writes, left out of the sources and out of automatic commits (lib/auto.sh auto_unjunk).
+world_key() {
+  local s ex=() src=()
+  for s in ${CFG_world_sources//,/ }; do src+=("$s"); done; [ ${#src[@]} -gt 0 ] || src=(Assets)
+  for s in ${CFG_world_outputs//,/ }; do ex+=(":(exclude)$s"); done
+  { git -C "$PROJECT" ls-files -s -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" diff -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" ls-files -o --exclude-standard -- "${src[@]}" "${ex[@]}"; } 2>/dev/null | { sha1sum 2>/dev/null || shasum; } | cut -c1-20
+}
+unity_world() {
+  [ -n "${CFG_world_method:-}" ] && [ "${WORLD_DONE:-0}" = 0 ] || return 0
+  WORLD_DONE=1
+  local key old=""; key="$(world_key)"; read -r old 2>/dev/null < "$STATE/world.key"
+  [ "$key" = "$old" ] && return 0
+  echo "(world: its sources changed, running $CFG_world_method)"
+  a_call "$CFG_world_method" || { echo "FAIL world_method $CFG_world_method, tests not run"; return 1; }
+  echo "$key" > "$STATE/world.key"
+}
+
 a_test() {
+  unity_world || return 1
   local filter="" mode="" cat="" speed=""
   while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; *) filter="$1";; esac; shift; done
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "$filter" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "$filter" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
-  cached "test|$mode|$filter|$cat|$speed" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed"
+  unity_sync
+  # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
+  cached "test|$mode|$filter|$cat|$speed" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"
+}
+
+# The whole PlayMode suite runs long (minutes per test is common): warmd check runs it only in the merge gate or with WARMD_FULL=1
+unity_play_all() {
+  if [ "${WARMD_FULL:-0}" = 1 ] || [ "${WARMD_IN_MERGE:-0}" = 1 ]; then a_test --play; return; fi
+  echo "(PlayMode: no affected test class to pick, the full PlayMode suite runs in the merge gate or with WARMD_FULL=1)"
 }
 
 # Test classes that mention a changed class, per mode
 a_check() {
+  unity_world || return 1
   . "$WARMD_HOME/lib/affected.sh"
   affected_select cs Assets Packages
   case "$AFF_MODE" in
     CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
     NONE) echo "OK no test depends on this change"; return 0;;
-    ALL) echo "(running all tests: $AFF_REASON)"; a_test --edit && a_test --play; return;;
+    ALL) echo "(running all tests: $AFF_REASON)"; a_test --edit && unity_play_all; return;;
   esac
   local f ed="" pl="" other=0 e p
   for f in $AFF_FILES; do
     case "$f" in *PlayMode*) pl="$pl $f";; *EditMode*) ed="$ed $f";; *) other=1;; esac
   done
-  if [ $other = 1 ]; then echo "(a test sits outside EditMode and PlayMode, running all)"; a_test --edit && a_test --play; return; fi
+  if [ $other = 1 ]; then echo "(a test sits outside EditMode and PlayMode, running all)"; a_test --edit && unity_play_all; return; fi
   for f in $ed; do e="${e:+$e|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
   for f in $pl; do p="${p:+$p|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
   if [ -n "$e" ]; then echo "(touched Edit: $(echo "$e" | tr '|' ' ' | cut -c1-120))"; a_test "($e)" --edit || return 1; fi
   if [ -n "$p" ]; then echo "(touched Play: $(echo "$p" | tr '|' ' ' | cut -c1-120))"; a_test "($p)" --play || return 1; fi
 }
 
-a_call() { [ -n "${1:-}" ] || { echo "warmd call Namespace.Class.StaticMethod"; return 2; }; slot_take; job call "method=$1"; }
+a_call() { [ -n "${1:-}" ] || { echo "warmd call Namespace.Class.StaticMethod"; return 2; }; unity_sync; slot_take; job call "method=$1"; }
 
 a_shot() { # needs graphics, so one start of its own
   local out="${1:-$RUN/shots/game.png}"; mkdir -p "$(dirname "$out")"

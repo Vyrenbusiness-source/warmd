@@ -71,7 +71,8 @@ job() {
       if [ -f "$RUN/result.txt" ] && [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f1)" = "$id" ]; then
         head -15 "$RUN/result.txt" | tr -d '\r' | sed '1s/^[^ ]* //'
         # Timeout: the run is still stuck in the engine, the next job needs a fresh daemon
-        if grep -q '^timeout after' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
+        # HUNG: the test runner is still inside a test that never ended (lib unity daemon, test_timeout)
+        if grep -qE '^(timeout after|HUNG )' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
         [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f2)" = OK ]; return
       fi
       if [ $waited -lt 40 ]; then sleep 0.05; else sleep 0.4; fi
