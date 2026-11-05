@@ -141,9 +141,18 @@ auto_compact() { # hook JSON on stdin
 # Engine leftovers never ride along in an automatic commit: Unity's InitTestScene of a run that died, a new test result XML
 # next to ProjectSettings, packages-lock.json without a change to its manifest.json. They leave the index, the files stay.
 auto_unjunk() { # worktree
-  local f dir
+  local f dir c k v o outs=""
+  # world_outputs in the project's warmd.conf: generated parts go in with the merge gate only, never in a WIP commit
+  for c in "$1/warmd.conf" "$1"/*/warmd.conf; do
+    [ -f "$c" ] || continue; dir="${c%/warmd.conf}"; dir="${dir#"$1"}"; dir="${dir#/}"
+    while IFS='=' read -r k v || [ -n "$k" ]; do
+      [ "${k//[[:space:]]/}" = world_outputs ] || continue
+      v="${v%$'\r'}"; for o in ${v//,/ }; do outs="$outs ${dir:+$dir/}${o%/}"; done
+    done < "$c"
+  done
   while IFS= read -r f; do
     [ -n "$f" ] || continue
+    for o in $outs; do case "$f" in "$o"|"$o"/*) git -C "$1" reset -q -- "$f" 2>/dev/null; continue 2;; esac; done
     case "$f" in
       *InitTestScene*.unity|*InitTestScene*.unity.meta) ;;
       *.xml) dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.

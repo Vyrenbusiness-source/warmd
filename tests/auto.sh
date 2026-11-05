@@ -171,6 +171,10 @@ staged="$(git diff --cached --name-only | tr -d '\r' | sort | paste -sd' ' -)"
 [ -f Game/editmode.xml ] && [ -f Game/Assets/InitTestScene0a1b2c3d.unity ] && ok "the left out files stay on disk" || no "junk files deleted"
 echo '{"b":1}' > Game/Packages/manifest.json; ( . "$HERE/lib/platform.sh"; . "$HERE/lib/auto.sh"; git add -A; auto_unjunk "$J" )
 git diff --cached --name-only | grep -q 'packages-lock.json' && ok "a lock that goes with a manifest change is committed" || no "lock with manifest change dropped"
+printf 'world_outputs=Assets/Generated\n' > Game/warmd.conf; mkdir -p Game/Assets/Generated; echo g > Game/Assets/Generated/level.asset; echo 'class B {}' > Game/Assets/B.cs
+( . "$HERE/lib/platform.sh"; . "$HERE/lib/auto.sh"; git add -A; auto_unjunk "$J" )
+staged="$(git diff --cached --name-only | tr -d '\r' | grep -v -e packages -e A.cs -e kept.xml | sort | paste -sd' ' -)"
+[ "$staged" = "Game/Assets/B.cs Game/warmd.conf" ] && ok "world_outputs stay out of an automatic commit" || no "world outputs staged: $staged"
 
 # ---- the warmd block in CLAUDE.md stays current: init and the session start renew it ----
 cd "$R" || exit 1
