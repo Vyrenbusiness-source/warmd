@@ -53,5 +53,15 @@ refuse "no PlayMode run without WARMD_FULL" 'a_test' "$out"
 expect "WARMD_FULL=1 runs it" '^a_test --play$' "$(WARMD_FULL=1 pa)"
 expect "the merge gate runs it" '^a_test --play$' "$(WARMD_IN_MERGE=1 pa)"
 
+# world_method: generated parts are built again before tests whenever their sources changed, never otherwise
+mkdir -p "$P/Assets/WorldSrc" "$P/Assets/Generated"; echo a > "$P/Assets/WorldSrc/map.txt"; (cd "$P" && git add -A && git commit -qm world-src)
+printf 'world_method=Game.World.Build\nworld_sources=Assets/WorldSrc\nworld_outputs=Assets/Generated\n' > "$P/warmd.conf"
+wd() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && a_call() { echo "call $1"; echo x >> "$P/Assets/Generated/out.txt"; } && unity_world ); }
+expect "world_method runs when its sources are new" '^call Game.World.Build$' "$(wd)"
+refuse "and not again while they stay the same, its own output does not count" 'call' "$(wd)"
+echo b >> "$P/Assets/WorldSrc/map.txt"
+expect "a changed source runs it again" '^call Game.World.Build$' "$(wd)"
+rm -f "$P/warmd.conf" "$P/.warmd/world.key"
+
 [ $fails = 0 ] && echo "unity dotnet stage green" || echo "unity dotnet stage: $fails failed"
 exit $fails

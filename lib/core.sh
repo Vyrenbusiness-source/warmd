@@ -99,6 +99,7 @@ CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_pack
 CFG_floor=""; CFG_full=""; CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
 CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
+CFG_world_method=""; CFG_world_sources=""; CFG_world_outputs=""
 load_config() {
   local f="$PROJECT/warmd.conf" k v
   [ -f "$f" ] || return 0

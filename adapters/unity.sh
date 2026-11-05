@@ -131,7 +131,28 @@ a_build() {
   echo "OK $(secs)s compile (no Unity needed)"
 }
 
+# world_method in warmd.conf: the project's step that builds generated parts (a static method, run in the warm editor).
+# It runs before tests whenever its sources changed since its last run: after a merge or a pull nothing generated is missing,
+# and nobody reaches for another tool. world_sources: paths in the project, comma separated (default Assets);
+# world_outputs: what the step writes, left out of the sources and out of automatic commits (lib/auto.sh auto_unjunk).
+world_key() {
+  local s ex=() src=()
+  for s in ${CFG_world_sources//,/ }; do src+=("$s"); done; [ ${#src[@]} -gt 0 ] || src=(Assets)
+  for s in ${CFG_world_outputs//,/ }; do ex+=(":(exclude)$s"); done
+  { git -C "$PROJECT" ls-files -s -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" diff -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" ls-files -o --exclude-standard -- "${src[@]}" "${ex[@]}"; } 2>/dev/null | { sha1sum 2>/dev/null || shasum; } | cut -c1-20
+}
+unity_world() {
+  [ -n "${CFG_world_method:-}" ] && [ "${WORLD_DONE:-0}" = 0 ] || return 0
+  WORLD_DONE=1
+  local key old=""; key="$(world_key)"; read -r old 2>/dev/null < "$STATE/world.key"
+  [ "$key" = "$old" ] && return 0
+  echo "(world: its sources changed, running $CFG_world_method)"
+  a_call "$CFG_world_method" || { echo "FAIL world_method $CFG_world_method, tests not run"; return 1; }
+  echo "$key" > "$STATE/world.key"
+}
+
 a_test() {
+  unity_world || return 1
   local filter="" mode="" cat="" speed=""
   while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; *) filter="$1";; esac; shift; done
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "$filter" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "$filter" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
@@ -148,6 +169,7 @@ unity_play_all() {
 
 # Test classes that mention a changed class, per mode
 a_check() {
+  unity_world || return 1
   . "$WARMD_HOME/lib/affected.sh"
   affected_select cs Assets Packages
   case "$AFF_MODE" in

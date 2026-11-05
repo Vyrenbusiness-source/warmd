@@ -239,6 +239,9 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
 | `top_words` | Goal words that route to the top tier (regex) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
 | `daemon_idle` | Minutes until an idle daemon ends itself (`idle_min` is the older name) | 10 |
+| `world_method` | Unity: static method that builds the generated parts of the project. Runs in the warm editor before `test` and `check` whenever its sources changed since its last run, so a merge or a pull never leaves generated parts behind | off |
+| `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |
+| `world_outputs` | What `world_method` writes: not counted as a source change, left out of automatic commits; the merge gate commits it | none |
 | `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the run ends with a `HUNG <test>` line and what finished before it | off |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
