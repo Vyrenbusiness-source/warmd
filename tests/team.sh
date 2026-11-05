@@ -81,6 +81,21 @@ else
   kill "${s:-0}" 2>/dev/null; ok "Windows pid check skipped, no msys /proc/<pid>/winpid here"
 fi
 
+# warmd watch keeps a long batch alive: past 240 minutes the marker stays while agents work, its mtime stays the batch start
+A="$TMP/alive"; mkdir -p "$A"; cd "$A" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+git worktree add -q -b warmd/long "$TMP/long"; echo x > "$TMP/long/work.txt"
+AC="$(git rev-parse --path-format=absolute --git-common-dir)"
+( cd "$TMP/long" && pwd ) > "$AC/warmd-batch"; touch -d "-5 hours" "$AC/warmd-batch"; before="$(date -r "$AC/warmd-batch" +%s)"
+out="$(cd "$A" && "$HERE/bin/warmd" watch --once 5 2>&1)"
+[ -f "$AC/warmd-batch-alive" ] && [ "$(date -r "$AC/warmd-batch" +%s)" = "$before" ] && ok "watch with a working agent marks the batch alive, the marker's batch start stays" || no "alive mark: $out"
+out="$(cd "$A" && "$HERE/bin/warmd" build 2>&1)"
+[ -f "$AC/warmd-batch" ] && echo "$out" | grep -q '^FAIL a batch runs' && ok "a marker older than 240 minutes stays while watch sees agents work" || no "old marker dropped: $out"
+touch -d "-5 hours" "$AC/warmd-batch-alive"
+(cd "$A" && "$HERE/bin/warmd" build >/dev/null 2>&1)
+[ ! -f "$AC/warmd-batch" ] && [ ! -f "$AC/warmd-batch-alive" ] && ok "without work for 240 minutes the marker is stale again" || no "stale marker kept"
+cd "$TMP" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
