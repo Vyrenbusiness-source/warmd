@@ -3,10 +3,21 @@ printf -v T0 '%(%s)T' -1
 secs() { local n; printf -v n '%(%s)T' -1; echo $(( n - T0 )); }
 TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
-LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""
+LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""; RUNMARK=""
 PARENT_PID="$PPID"
 on_exit() {
   local rc=$?
+  # An exit deep inside a cached run (a refusal in the engine start) skipped the cat of its output: say it now, with reason and log
+  if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
+    {   # stderr: stdout still goes to the file here. No saved stdout fd: a daemon started inside would inherit it and hold the caller's pipe open
+      cat "$CACHED_OUT"
+      if [ "$rc" != 0 ]; then
+        local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
+        echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
+      fi
+    } >&2
+    rm -f "$CACHED_OUT"
+  fi
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
   case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
@@ -14,7 +25,30 @@ on_exit() {
   [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
   [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
+  [ -n "$RUNMARK" ] && rm -f "$RUNMARK"
   return 0
+}
+# A heavy run marks itself in .warmd/run/active/<pid> (content: Windows pid or -, command) while it lives.
+# An agent that ends its turn while its own warmd test runs in the background keeps its engine (warmd stop --idle),
+# and warmd watch counts its worktree as working.
+run_mark() {
+  mkdir -p "$RUN/active" 2>/dev/null || return 0
+  local w=""; [ -r "/proc/$$/winpid" ] && read -r w < "/proc/$$/winpid"
+  echo "${w:--} $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
+  queue_done
+}
+# run_active <state dir>: prints "<pid> <command>" of a live run there, returns 1 when none. Marks of dead runs go.
+# A job started through Win32_Process.Create may not see this shell's msys pids: the Windows pid decides then.
+run_active() {
+  local f pid w c
+  for f in "$1"/run/active/*; do
+    [ -f "$f" ] || continue
+    pid="${f##*/}"; w=""; c=""; read -r w c < "$f" 2>/dev/null
+    [ "$pid" = "$$" ] && continue
+    if shell_alive "$pid" || { [ -n "$w" ] && [ "$w" != - ] && pid_alive "$w"; }; then echo "$pid ${c:-run}"; return 0; fi
+    rm -f "$f"
+  done
+  return 1
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
 orphan_check() {
@@ -30,7 +64,11 @@ batch_guard() {
   [ -n "$GIT_ROOT" ] || return 0
   local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$f" ] || return 0
-  [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { rm -f "$f"; return 0; }
+  # Stale after 240 minutes, unless warmd watch saw agents work in that time: it touches warmd-batch-alive, never the marker,
+  # whose mtime stays the batch start for wt_idle.
+  if [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { [ ! -f "$f-alive" ] || [ -n "$(find "$f-alive" -mmin +240 2>/dev/null)" ]; }; then
+    rm -f "$f" "$f-alive"; return 0
+  fi
   # Both spellings of the same folder pass (/c/x and C:/x), a marker written by hand or by a Windows tool must not lock out its own worktrees.
   grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" && return 0
   echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
@@ -94,11 +132,12 @@ detect_project() {
   load_config
 }
 
-CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=30
+CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=10
 CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_package_args=""; CFG_shot_method=""
 CFG_floor=""; CFG_full=""; CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
 CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
+CFG_world_method=""; CFG_world_sources=""; CFG_world_outputs=""; CFG_gfx_tests=""
 load_config() {
   local f="$PROJECT/warmd.conf" k v
   [ -f "$f" ] || return 0
@@ -112,6 +151,8 @@ load_config() {
 }
 
 base_branch() {
+  # WARMD_BASE_BRANCH: the automatic merge names the base of the shared checkout, a base worktree without its own warmd.conf agrees
+  if [ -n "${WARMD_BASE_BRANCH:-}" ]; then echo "$WARMD_BASE_BRANCH"; return; fi
   if [ -n "$CFG_base" ]; then echo "$CFG_base"; return; fi
   local b; b="$(git -C "$PROJECT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
   b="${b#origin/}"
@@ -166,7 +207,7 @@ cached() {
   f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
   if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
   slot_now
-  tmp="$(mktemp)"; "$@" > "$tmp"; rc=$?; cat "$tmp"
+  tmp="$(mktemp)"; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; cat "$tmp"
   if [ $rc = 0 ]; then
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
     find "$CACHE_ROOT/green" -type f -mtime +7 -delete 2>/dev/null
@@ -195,9 +236,9 @@ slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
-  echo "(queued: $(slots_max) heavy runs active)"
+  echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   until slot_try; do sleep 3; orphan_check; done
-  echo "(slot free after $(secs)s)"
+  queue_done; echo "(slot free after $(secs)s)"
 }
 
 changed_files() {
@@ -206,14 +247,23 @@ changed_files() {
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
   # Unity leaves Assets/InitTestScene<guid>.unity behind when a PlayMode run dies: generated, never a change.
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' \
-    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$' | sort -u
+    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$|(^|/)__pycache__/|\.py[co]$|(^|/)\.DS_Store$|(^|/)Thumbs\.db$|(^|/)desktop\.ini$|\.sw[op]$|~$' | sort -u   # caches and editor droppings are no change
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
 # shellcheck disable=SC2120  # check calls it without a filter on purpose: that is the full suite
-run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; run_log test "$*" "$rc"; return $rc; }
+# Every test and check leaves a line in .warmd/run/runs.log: time, commit, exit code, command, filter. warmd handoff copies the
+# green ones of the current commit into the note, so a successor trusts the record instead of the last agent's memory.
+run_log() { # command args rc
+  [ -n "${RUN:-}" ] && [ -d "$RUN" ] || return 0
+  local sha; sha="$(git -C "$PROJECT" rev-parse --short HEAD 2>/dev/null)" || sha=-
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %T')" "$sha" "$3" "$1" "${2:-all}" >> "$RUN/runs.log" 2>/dev/null
+  [ "$(wc -l < "$RUN/runs.log" 2>/dev/null)" -gt 200 ] 2>/dev/null && { tail -n 100 "$RUN/runs.log" > "$RUN/runs.log.tmp" && mv -f "$RUN/runs.log.tmp" "$RUN/runs.log"; }
+  return 0
+}
 
 # Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
 # (full.ms) was faster than the last selective check (check.ms), check runs the full suite instead and stays under it.
@@ -225,11 +275,22 @@ run_check() {
     echo "(running all tests: the full suite took ${full}ms, build plus selection ${chk}ms)"
     run_tests; return
   fi
-  t="$(now_ms)"
-  a_build || return 1
+  t="$(now_ms)"; : > "$RUN/check.start" 2>/dev/null; CACHE_HIT=0
+  a_build || { echo "FAIL $(secs)s check: build red"; return 1; }
   a_check; rc=$?
+  run_log check "affected" "$rc"
   echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
+  check_line "$rc"
   return $rc
+}
+# The last line of every check, also on a cache hit or with no test touched: green has to be visible to be believed.
+check_line() { # rc
+  local sum=""
+  if [ "$1" != 0 ]; then echo "FAIL $(secs)s check: exit $1, cause above"; return; fi
+  [ "$RUN/result.txt" -nt "$RUN/check.start" ] && sum="$(sed -n 2p "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-80)"
+  [ -z "$sum" ] && [ "$RUN/last.log" -nt "$RUN/check.start" ] && sum="tests green"
+  [ "${CACHE_HIT:-0}" = 1 ] && sum="${sum:+$sum, }green from the cache"
+  echo "OK $(secs)s check: compiled, ${sum:-no tests affected}"
 }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
@@ -304,6 +365,26 @@ common_status() {
   echo "heavy runs: ${#held[@]} of $(slots_max)"
   [ -n "$(type -t team_agents)" ] || . "$WARMD_HOME/lib/team.sh" 2>/dev/null
   [ -n "$(type -t team_agents)" ] && echo "parallel agents: up to $(team_agents)${CFG_agents:+ (warmd.conf)}"
+  local m avail total; if m="$(tune_mem)"; then read -r avail total <<< "$m"; echo "RAM free: $(( avail / 1048576 )) MB of $(( total / 1048576 )) MB ($(( avail * 100 / total ))%)"; fi
+  # Every Unity editor on the machine with its project: an editor someone else started blocks this project's daemon
+  local pid path flags what n=0
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] || continue; n=$((n+1))
+    case "$flags" in *d*) what="warmd daemon";; *b*) what=batchmode;; *) what=window;; esac
+    echo "Unity pid $pid: $path ($what)$([ "${path,,}" = "$(native_path "$PROJECT" | tr '[:upper:]' '[:lower:]')" ] && echo ", this project")"
+  done < <([ "$KIND" = unity ] || [ "${WARMD_STATUS_UNITY:-0}" = 1 ] && unity_procs)
+  [ "$KIND" = unity ] && [ $n = 0 ] && echo "Unity editors: none running"
+  # The running batch: per branch its last commit and how old it is
+  local b wt line now; b="$([ -n "$GIT_ROOT" ] && git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-batch"
+  if [ -s "$b" ]; then
+    now="$(date +%s)"
+    while IFS= read -r wt; do
+      wt="${wt%$'\r'}"; [ -n "$wt" ] || continue
+      line="$(git -C "$wt" log -1 --format='%h %ct %s' 2>/dev/null)" || { echo "batch $wt: folder missing"; continue; }
+      read -r sha ct subj <<< "$line"
+      echo "batch $(git -C "$wt" branch --show-current 2>/dev/null): $sha $(( (now - ct) / 60 )) min ago, $(printf '%s' "$subj" | cut -c1-50)"
+    done < "$b"
+  fi
 }
 
 common_doctor() {
@@ -348,14 +429,37 @@ common_audit() {
 
 # Instructions for any agent: short, because this text is loaded on every turn. Claude Code reads agents and CLAUDE.md from the repo root.
 common_init() {
-  local f block="$WARMD_HOME/agents/INSTRUCTIONS.md" done=0 root="${GIT_ROOT:-$PROJECT}"
+  local f done=0 root="${GIT_ROOT:-$PROJECT}"
   mkdir -p "$root/.claude/agents"
   cp "$WARMD_HOME"/agents/warmd-*.md "$root/.claude/agents/"
   for f in CLAUDE.md AGENTS.md; do
     [ -f "$root/$f" ] || continue
-    grep -q 'warmd' "$root/$f" || { printf '\n' >> "$root/$f"; cat "$block" >> "$root/$f"; }
-    done=1
+    instr_sync "$root/$f"; done=1
   done
-  [ $done = 1 ] || cp "$block" "$root/AGENTS.md"
+  [ $done = 1 ] || instr_sync "$root/AGENTS.md"
   echo "OK agent definitions in .claude/agents, instructions in CLAUDE.md or AGENTS.md"
+}
+
+# The warmd block in CLAUDE.md or AGENTS.md stays current: between its markers it is replaced when warmd brings a newer one
+# (warmd init, and the session start hook in the shared checkout). A file without markers gets the block appended, an older
+# unmarked block (a "## warmd" section that starts with "Use `warmd` for every build") is replaced in place.
+INSTR_START='<!-- warmd: kept current by warmd, edits between these lines are replaced -->'
+INSTR_END='<!-- /warmd -->'
+instr_sync() { # file -> 0 when it changed, 1 when it was current
+  local f="$1" blk="$WARMD_HOME/agents/INSTRUCTIONS.md" mode=append
+  [ -f "$blk" ] || return 1
+  if [ -f "$f" ]; then
+    if grep -qxF "$INSTR_START" "$f"; then mode=marked
+    elif grep -qx '## warmd' "$f" && grep -qF 'Use `warmd` for every build' "$f"; then mode=legacy; fi
+  fi
+  awk -v s="$INSTR_START" -v e="$INSTR_END" -v bf="$blk" -v mode="$mode" '
+    BEGIN { while ((getline l < bf) > 0) b = b l "\n"; blk = s "\n" b e }
+    mode == "marked" && $0 == s { skip = 1; print blk; next }
+    mode == "marked" && skip { if ($0 == e) skip = 0; next }
+    mode == "legacy" && !done && $0 == "## warmd" { skip = 1; done = 1; print blk; next }
+    mode == "legacy" && skip { if ($0 ~ /^## / || $0 ~ /^# /) { skip = 0; print ""; print } ; next }
+    { print }
+    END { if (mode == "append") { if (NR > 0) print ""; print blk } }' "$f" 2>/dev/null > "$f.warmd" < /dev/null
+  if [ -f "$f" ] && cmp -s "$f" "$f.warmd"; then rm -f "$f.warmd"; return 1; fi
+  mv -f "$f.warmd" "$f"
 }

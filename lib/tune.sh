@@ -103,9 +103,8 @@ tune_prefix() {
   return 0
 }
 
-# tune_free_pct: free RAM in percent, counting what the system can hand out at once. WARMD_FREE_PCT overrides.
-tune_free_pct() {
-  if [ -n "${WARMD_FREE_PCT:-}" ]; then echo "$WARMD_FREE_PCT"; return; fi
+# tune_mem: "<free bytes> <total bytes>", counting what the system can hand out at once. Nothing when unreadable.
+tune_mem() {
   local total="" avail="" v
   case "$OS" in
     mac)
@@ -120,8 +119,16 @@ tune_free_pct() {
       total="$(awk '/^MemTotal:/ {print $2*1024; exit}' /proc/meminfo 2>/dev/null)"
       avail="$(awk '/^MemAvailable:/ {print $2*1024; exit}' /proc/meminfo 2>/dev/null)";;
   esac
-  case "$total$avail" in ''|*[!0-9]*) echo 100; return;; esac   # unreadable: never block
-  [ "$total" -gt 0 ] 2>/dev/null || { echo 100; return; }
+  case "$total$avail" in ''|*[!0-9]*) return 1;; esac
+  [ "$total" -gt 0 ] 2>/dev/null || return 1
+  echo "$avail $total"
+}
+
+# tune_free_pct: free RAM in percent. WARMD_FREE_PCT overrides, unreadable counts as 100 so it never blocks.
+tune_free_pct() {
+  if [ -n "${WARMD_FREE_PCT:-}" ]; then echo "$WARMD_FREE_PCT"; return; fi
+  local m avail total; m="$(tune_mem)" || { echo 100; return; }
+  read -r avail total <<< "$m"
   echo $(( avail * 100 / total ))
 }
 
@@ -141,10 +148,11 @@ tune_wait_ram() {
   while :; do
     pct="$(tune_free_pct)"
     [ "$pct" -ge "$min" ] && break
-    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; }
+    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark; }
     [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
     sleep "${WARMD_RAM_POLL:-3}"; orphan_check
   done
+  [ -z "$said" ] || queue_done
   [ -z "$said" ] || [ $anyway = 1 ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
   return 0
 }
@@ -190,8 +198,9 @@ GFXSLOT=""   # freed by on_exit in lib/core.sh
 gfx_take() {
   [ -n "$GFXSLOT" ] && return 0
   claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT && return 0
-  echo "(queued: $(tune_gfx_slots) graphics runs active)"
+  echo "(queued: $(tune_gfx_slots) graphics runs active)"; queue_mark
   until claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT; do sleep 3; orphan_check; done
+  queue_done
 }
 
 tune_doctor() {
@@ -244,10 +253,12 @@ cached() {
     SLOT_DEFER=0
     if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)"; then
       f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")"
-      [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; return 0; }
+      [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; CACHE_HIT=1; return 0; }
     fi
     slot_take_now
   fi
+  # A hit in cached_base counts too, for the closing line of warmd check
+  if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)" && [ -f "$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")" ]; then CACHE_HIT=1; fi
   cached_base "$@"
 }
 

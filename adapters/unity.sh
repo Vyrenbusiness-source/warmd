@@ -1,7 +1,7 @@
 # Unity: the warm thing is the editor, headless with -nographics. Job logic lives in unity/WarmdDaemon.cs.
 UNITY_VER="$(sed -n 's/^m_EditorVersion: //p' "$PROJECT/ProjectSettings/ProjectVersion.txt" | tr -d '\r')"
 EDITOR_DIR="$PROJECT/Assets/Editor/Warmd"
-export WARMD_IDLE_MIN="$CFG_idle_min"
+export WARMD_IDLE_MIN="${CFG_daemon_idle:-$CFG_idle_min}"
 
 unity_exe() {
   if [ -n "${WARMD_UNITY:-}" ]; then echo "$WARMD_UNITY"; return; fi
@@ -25,15 +25,58 @@ a_kill_daemon() {
   rm -f "$RUN/alive.txt" "$RUN/pid.txt"
 }
 
+# Another tool's editor on this project in a worktree of the running batch: when it runs in batchmode (no window, no user
+# at it) it is ended cleanly and the start goes on. A window, or a worktree outside the batch, is never touched here.
+unity_free_batch() {
+  local f pid path flags me n=0
+  f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-batch"
+  [ -n "$GIT_ROOT" ] && [ -f "$f" ] && grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" || return 1
+  me="$(native_path "$PROJECT")"; me="${me%/}"
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] && [ "${path,,}" = "${me,,}" ] || continue
+    case "$flags" in *d*) continue;; *b*) ;; *) return 1;; esac
+    stop_gently "$pid" "${WARMD_STOP_GRACE:-15}" || return 1
+    echo "(ended another tool's batchmode Unity pid $pid on this batch worktree, $STOP_HOW)"; n=$((n+1))
+  done < <(unity_procs)
+  [ $n -gt 0 ] && [ -z "$(foreign_unity)" ]
+}
+
+# warmd init copies the engine side once, a newer warmd brings a newer daemon: before every Unity run the project copy is
+# compared with this install and replaced when it differs. A warm editor restarts, so Unity compiles the new code.
+# Builtins only (read), no process start per run. A tracked copy shows as changed until it is committed; warmd merge takes it along.
+unity_sync() {
+  [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] || return 0   # not installed: a_start_daemon says to run warmd init
+  local f dst a b changed=""
+  for f in "$WARMD_HOME"/unity/*; do
+    [ -f "$f" ] || continue
+    dst="$EDITOR_DIR/${f##*/}"; a=""; b=""
+    IFS= read -r -d '' a < "$f"; [ -f "$dst" ] && IFS= read -r -d '' b < "$dst"
+    [ "$a" = "$b" ] && continue
+    cp "$f" "$dst" && changed="$changed ${f##*/}"
+  done
+  [ -n "$changed" ] || return 0
+  echo "(daemon updated to $WARMD_VERSION:$changed)"
+  if daemon_alive; then echo "(warm editor restarts for the new daemon)"; daemon_stop >/dev/null; fi
+  return 0
+}
+
 a_start_daemon() {
   [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] || { echo "FAIL run warmd init first"; exit 2; }
+  unity_sync
   if [ -n "$(a_daemon_procs)" ]; then echo "(daemon not answering, restarting)"; a_kill_daemon; fi
   local other; other="$(foreign_unity)"
-  [ -n "$other" ] && { echo "FAIL another Unity (pid $other) has this project open, nothing touched"; exit 2; }
+  if [ -n "$other" ] && ! unity_free_batch; then
+    # Said on stdout, stderr and in result.txt: an agent that sends the output to a file still sees why the run stopped.
+    # BLOCKED, not FAIL, in result.txt: a blocked start is no red test (lib/auto.sh auto_red), nobody escalates for it.
+    local m="FAIL another Unity (pid $other) has this project open, nothing touched. In a batch worktree a batchmode editor is ended by itself; this one has a window or the worktree is in no batch: close it, or warmd stop --force"
+    echo "$m"; echo "$m" >&2; echo "blocked BLOCKED ${m#FAIL }" > "$RUN/result.txt" 2>/dev/null
+    exit 2
+  fi
   rm -f "$RUN/alive.txt" "$RUN/state.txt"
   local exe gfx=(-nographics); exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
   [ "${WARMD_GFX:-0}" = 1 ] && { gfx=(); gfx_take; gfx+=($(tune_unity_gpu_flag)); }
+  [ "${WARMD_GFX:-0}" = 1 ] && echo 1 > "$RUN/gfx.txt" || echo 0 > "$RUN/gfx.txt"   # gfx_tests: a headless daemon makes way
   # Each worktree gets a stable port block, so parallel daemons never collide and no agent has to think about it
   if [ -n "$CFG_port_env" ]; then
     export "$CFG_port_env=$(( 7830 + 10 * ( $(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1) % 160 ) ))"
@@ -100,6 +143,7 @@ dotnet_errors() {
   ( cd "$PROJECT" && timeout 300 $(tune_prefix) dotnet msbuild "$(native_path "$proj")" -p:R="${restore:-0}" "-p:WarmdPkgs=$pkgs" "-p:CustomAfterMicrosoftCommonTargets=$(native_path "$RUN/pkg.targets")" -p:DisableTransitiveProjectReferences=true -nr:true -m:"$(tune_threads)" -nologo -v q -clp:NoSummary 2>&1 ) | sed 's#[\]#/#g' | grep -E ': error ' | sed -E 's#^.*/(Assets/[^(]*)\(([0-9]+),[0-9]+\): error ([A-Z0-9]+): (.*) \[.*$#\1:\2 \3 \4#' | sort -u
 }
 a_build() {
+  unity_sync
   command -v dotnet >/dev/null 2>&1 || { job compile; return; }
   csproj_fresh || { echo "(csproj stale, compiling in Unity)"; job compile; return; }
   local errs n miss; miss="$(refs_missing)"
@@ -110,34 +154,94 @@ a_build() {
   echo "OK $(secs)s compile (no Unity needed)"
 }
 
+# world_method in warmd.conf: the project's step that builds generated parts (a static method, run in the warm editor).
+# It runs before tests whenever its sources changed since its last run: after a merge or a pull nothing generated is missing,
+# and nobody reaches for another tool. world_sources: paths in the project, comma separated (default Assets);
+# world_outputs: what the step writes, left out of the sources and out of automatic commits (lib/auto.sh auto_unjunk).
+world_key() {
+  local s ex=() src=()
+  for s in ${CFG_world_sources//,/ }; do src+=("$s"); done; [ ${#src[@]} -gt 0 ] || src=(Assets)
+  for s in ${CFG_world_outputs//,/ }; do ex+=(":(exclude)$s"); done
+  { git -C "$PROJECT" ls-files -s -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" diff -- "${src[@]}" "${ex[@]}"; git -C "$PROJECT" ls-files -o --exclude-standard -- "${src[@]}" "${ex[@]}"; } 2>/dev/null | { sha1sum 2>/dev/null || shasum; } | cut -c1-20
+}
+unity_world() {
+  [ -n "${CFG_world_method:-}" ] && [ "${WORLD_DONE:-0}" = 0 ] || return 0
+  WORLD_DONE=1
+  local key old=""; key="$(world_key)"; read -r old 2>/dev/null < "$STATE/world.key"
+  [ "$key" = "$old" ] && return 0
+  echo "(world: its sources changed, running $CFG_world_method)"
+  a_call "$CFG_world_method" || { echo "FAIL world_method $CFG_world_method, tests not run"; return 1; }
+  echo "$key" > "$STATE/world.key"
+}
+
+# A filter that names no test class but a test file (DamageJobTests.cs holding class DamageFlowTests) means that file:
+# it becomes the classes declared in it, and says so. A filter that is a class name, or any regex, stays as it is.
+unity_filter_file() { # filter -> REPLY = filter to run
+  REPLY="$1"; UF_GREP=""
+  [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+  grep -rqE "class +$1([^A-Za-z0-9_]|$)" "$PROJECT/Assets" --include='*.cs' 2>/dev/null && return 0
+  local f cls; f="$(find "$PROJECT/Assets" -name "$1.cs" -not -path '*/Library/*' 2>/dev/null | head -1)"
+  [ -n "$f" ] || return 0
+  cls="$(grep -ohE 'class +[A-Za-z_][A-Za-z0-9_]*' "$f" | awk '{print $2}' | sort -u | paste -sd'|' -)"
+  [ -n "$cls" ] || return 0
+  echo "(filter $1 is a file, not a class: running its classes ${cls//|/ })"
+  REPLY="^(.*\.)?($cls)(\.|$)"; UF_GREP="class +($cls)"
+}
+
+# A test that needs a graphics device fails in the headless daemon. gfx_tests=<filter regex> in warmd.conf runs matching
+# filters with graphics (WARMD_GFX=1, a headless daemon makes way); any other graphics failure gets a line that says so.
+UNITY_GFX_ERR='RenderTexture\.Create failed|[Nn]o graphics device|graphics device is null|GraphicsDeviceType\.Null|Kernel .* not found|Shader.* not supported on this GPU|-nographics'
+unity_gfx_hint() { # output -> the hint line when a failure looks like missing graphics
+  [ "${WARMD_GFX:-0}" = 1 ] && return 0
+  printf '%s\n' "$1" | grep -qE "$UNITY_GFX_ERR" && echo "HINT needs graphics: run it with WARMD_GFX=1, or set gfx_tests=<filter> in warmd.conf so warmd does it by itself"
+  return 0
+}
+
 a_test() {
-  local filter="" mode="" cat="" speed=""
+  unity_world || return 1
+  local filter="" mode="" cat="" speed="" rc
   while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; *) filter="$1";; esac; shift; done
-  [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "$filter" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "$filter" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
-  cached "test|$mode|$filter|$cat|$speed" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed"
+  [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
+  [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
+  if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
+    echo "(gfx_tests: $filter runs with graphics)"; export WARMD_GFX=1
+    if daemon_alive && [ "$(cat "$RUN/gfx.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
+  fi
+  unity_sync
+  # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
+  return $rc
+}
+
+# The whole PlayMode suite runs long (minutes per test is common): warmd check runs it only in the merge gate or with WARMD_FULL=1
+unity_play_all() {
+  if [ "${WARMD_FULL:-0}" = 1 ] || [ "${WARMD_IN_MERGE:-0}" = 1 ]; then a_test --play; return; fi
+  echo "(PlayMode: no affected test class to pick, the full PlayMode suite runs in the merge gate or with WARMD_FULL=1)"
 }
 
 # Test classes that mention a changed class, per mode
 a_check() {
+  unity_world || return 1
   . "$WARMD_HOME/lib/affected.sh"
   affected_select cs Assets Packages
   case "$AFF_MODE" in
     CLEAN) echo "OK no code changed against $(base_branch)"; return 0;;
     NONE) echo "OK no test depends on this change"; return 0;;
-    ALL) echo "(running all tests: $AFF_REASON)"; a_test --edit && a_test --play; return;;
+    ALL) echo "(running all tests: $AFF_REASON)"; a_test --edit && unity_play_all; return;;
   esac
   local f ed="" pl="" other=0 e p
   for f in $AFF_FILES; do
     case "$f" in *PlayMode*) pl="$pl $f";; *EditMode*) ed="$ed $f";; *) other=1;; esac
   done
-  if [ $other = 1 ]; then echo "(a test sits outside EditMode and PlayMode, running all)"; a_test --edit && a_test --play; return; fi
+  if [ $other = 1 ]; then echo "(a test sits outside EditMode and PlayMode, running all)"; a_test --edit && unity_play_all; return; fi
   for f in $ed; do e="${e:+$e|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
   for f in $pl; do p="${p:+$p|}$(grep -ohE 'class +[A-Za-z_0-9]+' "$PROJECT/$f" | awk '{print $2}' | paste -sd'|' -)"; done
   if [ -n "$e" ]; then echo "(touched Edit: $(echo "$e" | tr '|' ' ' | cut -c1-120))"; a_test "($e)" --edit || return 1; fi
   if [ -n "$p" ]; then echo "(touched Play: $(echo "$p" | tr '|' ' ' | cut -c1-120))"; a_test "($p)" --play || return 1; fi
 }
 
-a_call() { [ -n "${1:-}" ] || { echo "warmd call Namespace.Class.StaticMethod"; return 2; }; slot_take; job call "method=$1"; }
+a_call() { [ -n "${1:-}" ] || { echo "warmd call Namespace.Class.StaticMethod"; return 2; }; unity_sync; slot_take; job call "method=$1"; }
 
 a_shot() { # needs graphics, so one start of its own
   local out="${1:-$RUN/shots/game.png}"; mkdir -p "$(dirname "$out")"
@@ -164,7 +268,28 @@ a_package() {
   return $rc
 }
 
-a_stop() { daemon_stop; }
+# The own daemon first, then every other Unity with exactly this -projectPath (another tool's editor blocks the next start).
+# A batchmode editor is asked to end, then ended hard. An editor with a window may hold unsaved work: asked only, --force ends it hard.
+a_stop() {
+  local rc pid path flags me n=0 force=0; [ "${1:-}" = --force ] && force=1
+  daemon_stop; rc=$?
+  me="$(native_path "$PROJECT")"; me="${me%/}"
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] && [ "${path,,}" = "${me,,}" ] || continue
+    case "$flags" in *d*) continue;; esac   # a warmd daemon: daemon_stop handled it
+    n=$((n+1))
+    if [[ $flags == *b* ]] || [ $force = 1 ]; then
+      if stop_gently "$pid" "${WARMD_STOP_GRACE:-15}"; then echo "OK stopped other Unity pid $pid on this project ($STOP_HOW$([[ $flags == *b* ]] && echo ", batchmode"))"
+      else echo "FAIL other Unity pid $pid on this project still alive after kill"; rc=1; fi
+    else
+      if [ "$OS" = win ]; then taskkill //PID "$pid" >/dev/null 2>&1; else kill -TERM "$pid" 2>/dev/null; fi
+      sleep 3
+      if pid_alive "$pid"; then echo "WARN Unity pid $pid has this project open in a window, maybe unsaved work: left open. Close it, or: warmd stop --force"
+      else echo "OK closed Unity window pid $pid on this project"; fi
+    fi
+  done < <(unity_procs)
+  return $rc
+}
 a_has_cache() { [ -d "$1/Library" ]; }
 a_status() { if daemon_alive; then echo "Unity $UNITY_VER warm, pid $(daemon_pid)"; else echo "Unity $UNITY_VER cold"; fi; }
 a_seed() { # Library is the slow part: a worktree without it reimports everything

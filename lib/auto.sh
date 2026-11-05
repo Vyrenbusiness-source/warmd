@@ -50,10 +50,26 @@ auto_agent_start() { # hook JSON -> 0 when it was an Agent call
 
 # ---- queue: lines for the session, printed by warmd watch ----
 auto_queue() { mkdir -p "$(auto_dir "$1")" && printf '%s\n' "$2" >> "$(auto_dir "$1")/queue"; }   # common line
-auto_drain() { # common -> prints and empties the queue, 1 when it was empty
-  local q; q="$(auto_dir "$1")/queue"
+# An AGENT line for a task whose old agent still works stays queued: its warmd run is active or waits, or its own
+# transcript grew in the last AUTO_HOLD minutes (an agent that ended its turn for a background run continues by itself).
+# Two agents in one worktree cost more than a late line.
+auto_drain() { # common -> prints the lines that may go and keeps the held ones, 1 when nothing goes
+  local q line name out="" keep=""; q="$(auto_dir "$1")/queue"
   [ -s "$q" ] || return 1
-  cat "$q"; : > "$q"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "AGENT "*:*) name="${line#AGENT }"; name="${name%%:*}"; auto_busy "$1" "$name" && { keep="$keep$line"$'\n'; continue; };; esac
+    out="$out$line"$'\n'
+  done < "$q"
+  printf '%s' "$keep" > "$q"
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
+}
+auto_busy() { # common name
+  local tf wt root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}"
+  tf="$(sed -n 1p "$1/warmd-handoff/$2.task" 2>/dev/null | tr -d '\r')"
+  wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$tf" 2>/dev/null)"
+  [ -n "$wt" ] && [ -d "$wt" ] && wt_run_active "$wt" && return 0
+  [ -d "$root" ] && find "$root" -path '*/subagents/*' -name '*.jsonl' -mmin "-${AUTO_HOLD:-2}" -exec grep -lF "tasks/$2.md" {} + 2>/dev/null | grep -q .
 }
 
 # ---- stop: called from hook-job with the outcome the transcript gave ----
@@ -70,10 +86,19 @@ auto_red() { # worktree
   [ "$(head -1 "$r/result.txt" 2>/dev/null | cut -d' ' -f2 | tr -d '\r')" = FAIL ]
 }
 
+# Did the last run in this worktree end while it waited in a queue? Then a failed or escalated stop is no failure of the model.
+auto_queued() { # worktree
+  local d; for d in "$1/.warmd/run" "$1"/*/.warmd/run; do [ -f "$d/queued" ] && return 0; done
+  return 1
+}
+
 auto_stop() { # common name worktree outcome
   local common="$1" name="$2" wt="$3" outcome="$4" m tf proj out
   m="$(auto_dir "$common")/paused/$name"
+  # Waiting for a slot is no failure: the task stays open like a handoff, the same tier continues
+  case "$outcome" in failed|escalated) auto_queued "$wt" && { auto_pause "$common" "$name"; echo handoff; return 0; };; esac
   [ "$outcome" = ok ] && auto_red "$wt" && outcome=failed
+  [ "$outcome" = failed ] && auto_queued "$wt" && { auto_pause "$common" "$name"; echo handoff; return 0; }
   case "$outcome" in failed|escalated) ;; *) auto_pause "$common" "$name"; echo "$outcome"; return 0;; esac
   # The same stop twice (hook fired twice): no second escalation
   if [ -n "$(find "$m" -maxdepth 0 -mmin "-$AUTO_DUP" 2>/dev/null)" ]; then echo escalated; return 0; fi
@@ -103,11 +128,16 @@ auto_esc() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "${s//$'\n'
 auto_deny() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$(auto_esc "$1")"; }
 
 # PreToolUse fast path: a builtin time check, python at most once a minute per agent. Prints the deny and returns 0 when the agent must end.
+# After the limit an agent may still hand over what it found and record its end: warmd handoff, note and finish pass.
+auto_allowed() { # hook JSON
+  local re='"command"[[:space:]]*:[[:space:]]*"([^"]*[/\\])?warmd(\.cmd)?[[:space:]]+(handoff|finish|note)([[:space:]]|")'
+  [[ $1 =~ $re ]]
+}
 auto_pre() { # hook JSON
   local in="$1" tp key d now last=0 r name tf tok calls budget pct
   auto_json_tp "$in" || return 1; tp="$REPLY"
   d="$(auto_cache)"; key="${tp##*/}"; key="${key%.jsonl}"
-  [ -f "$d/$key.pending" ] && { auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
   [ -f "$d/$key.done" ] && return 1
   printf -v now '%(%s)T' -1
   [ -f "$d/$key.t" ] && read -r last < "$d/$key.t"
@@ -121,7 +151,7 @@ auto_pre() { # hook JSON
   if [ "$pct" -ge "$AUTO_PCT" ]; then auto_save "$name" "$tf" "$key" "$pct% of the ${budget%000}k budget"
   elif [ "${calls:-0}" -ge "$AUTO_CALLS" ]; then auto_save "$name" "$tf" "$key" "$calls tool calls"
   else return 1; fi
-  [ -f "$d/$key.pending" ] && { auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
   return 1
 }
 
@@ -138,6 +168,33 @@ auto_compact() { # hook JSON on stdin
   return 0
 }
 
+# Engine leftovers never ride along in an automatic commit: Unity's InitTestScene of a run that died, a new test result XML
+# next to ProjectSettings, packages-lock.json without a change to its manifest.json. They leave the index, the files stay.
+auto_unjunk() { # worktree
+  local f dir c k v o outs=""
+  # world_outputs in the project's warmd.conf: generated parts go in with the merge gate only, never in a WIP commit
+  for c in "$1/warmd.conf" "$1"/*/warmd.conf; do
+    [ -f "$c" ] || continue; dir="${c%/warmd.conf}"; dir="${dir#"$1"}"; dir="${dir#/}"
+    while IFS='=' read -r k v || [ -n "$k" ]; do
+      [ "${k//[[:space:]]/}" = world_outputs ] || continue
+      v="${v%$'\r'}"; for o in ${v//,/ }; do outs="$outs ${dir:+$dir/}${o%/}"; done
+    done < "$c"
+  done
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    for o in $outs; do case "$f" in "$o"|"$o"/*) git -C "$1" reset -q -- "$f" 2>/dev/null; continue 2;; esac; done
+    case "$f" in
+      *InitTestScene*.unity|*InitTestScene*.unity.meta) ;;
+      *.xml) dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+        [ -f "$1/$dir/ProjectSettings/ProjectVersion.txt" ] || continue
+        git -C "$1" cat-file -e "HEAD:$f" 2>/dev/null && continue;;   # tracked before: real content
+      *packages-lock.json) git -C "$1" diff --cached --quiet -- "${f%packages-lock.json}manifest.json" 2>/dev/null || continue;;
+      *) continue;;
+    esac
+    git -C "$1" reset -q -- "$f" 2>/dev/null
+  done < <(git -C "$1" diff --cached --name-only 2>/dev/null | tr -d '\r')
+}
+
 # Commit what is there, write the handoff note, keep the deny message for this transcript. Once per transcript.
 auto_save() { # name taskfile key reason
   local name="$1" tf="$2" key="$3" why="$4" wt d out line
@@ -145,11 +202,12 @@ auto_save() { # name taskfile key reason
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 1
   # -A: a new file the agent never added belongs to the work too; .gitignore keeps build output out
   git -C "$wt" add -A 2>/dev/null
+  auto_unjunk "$wt"
   git -C "$wt" diff --cached --quiet 2>/dev/null || git -C "$wt" commit -qm "WIP $name: automatic handoff at $why" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} 2>/dev/null
   out="$(cd "$wt" && bash "$WARMD_HOME/bin/warmd" handoff "$name" "Automatic handoff at $why. The work so far is in the commits below." "Check the commits against Done when and finish what is left." 2>&1)"
   line="$(printf '%s\n' "$out" | grep "^AGENT $name:" | tail -1)"
   if [ -n "$line" ]; then
-    echo "Context at $why: warmd saved your work and wrote the handoff. Stop now, run nothing else, end your answer with this line: $line" > "$d/$key.pending"
+    echo "Context at $why: warmd saved your work and wrote the handoff. Only these still run: warmd handoff $name \"what you found\" \"what is next\" and warmd finish. Then stop and end your answer with this line: $line" > "$d/$key.pending"
   else
     echo "Context at $why and the automatic handoff failed: $(printf '%s' "$out" | tail -1 | cut -c1-160). Commit, then end with ESCALATE: context full" > "$d/$key.pending"
   fi

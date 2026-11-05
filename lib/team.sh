@@ -47,7 +47,7 @@ rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo 
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
-  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$')" ] || return 1
+  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/')" ] || return 1   # a daemon warmd renewed is no work
   git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
   a_has_cache "$p${rel:+/$rel}" || return 1
   [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
@@ -244,9 +244,16 @@ wt_ci_eta() { # worktree
   else echo "run $id, $((el / 60)) min in, no ETA yet"; fi
 }
 
+# A warmd test, check or build of this worktree is running: its own project or one in a subfolder (lib/core.sh run_mark)
+wt_run_active() { # worktree
+  local d; for d in "$1/.warmd" "$1"/*/.warmd; do [ -d "$d/run/active" ] && run_active "$d" >/dev/null && return 0; done
+  return 1
+}
+
 wt_busy() { # worktree
   local wt="$1" f pid
   wt_ci_mark "$wt" >/dev/null && return 0   # polling CI is work, not idle
+  wt_run_active "$wt" && return 0
   for f in "$wt/.warmd/job.lock/pid" "$wt/.warmd/merge.owner"; do
     pid="$(cat "$f" 2>/dev/null)"
     [ -n "$pid" ] && shell_alive "$pid" && return 0
@@ -343,8 +350,12 @@ team_watch() {
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
       name="$(wt_task "$wt")"
-      wt_finished "$common" "$wt" && continue   # its agent stopped and none started since: nothing to wake
-      if auto_paused "$common" "$name" "$wt"; then paused="$paused $name"; continue; fi   # no agent runs there, nothing to wake
+      # Its agent stopped and none started since: nothing to wake. Unless its own warmd run still works there:
+      # an agent that ended its turn waiting for a background test comes back for the result, the batch is not over.
+      if wt_finished "$common" "$wt"; then wt_run_active "$wt" && live=1; continue; fi
+      if auto_paused "$common" "$name" "$wt"; then   # no agent runs there, nothing to wake
+        if wt_run_active "$wt"; then live=1; else paused="$paused $name"; fi; continue
+      fi
       grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
       if reason="$(agent_dead "$wt" "$name")"; then
         echo "DEAD $name: died at start, no commit. Reason: $reason. Fix the cause, then start it again: \"Read $(native_path "$STATE/tasks/$name.md") and do it.\""
@@ -361,6 +372,7 @@ team_watch() {
       fi
     done < "$batch"
     [ $stalled = 1 ] && return 3
+    [ $live = 1 ] && touch "$batch-alive"   # agents work: batch_guard keeps a marker older than 240 minutes
     [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
     [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
     sleep 30
@@ -454,7 +466,19 @@ team_escalate() {
   echo "$next" > "$STATE/tasks/$name.tier"
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
   handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
-  echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.\""
+  local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$f")"
+  echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
+}
+
+# For the prompt of a next agent on a running task: where the branch stands, and that the old agent must be stopped first.
+agent_state() { # worktree [base]
+  local wt="$1" base="${2:-}" br sha ahead dirty
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  br="$(git -C "$wt" branch --show-current 2>/dev/null)"; [ -n "$br" ] || return 0
+  [ -n "$base" ] || base="$(base_branch)"
+  sha="$(git -C "$wt" rev-parse --short HEAD 2>/dev/null)"; ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo '?')"
+  dirty="$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  printf ' State: %s at %s, %s ahead of %s, %s uncommitted. Stop the previous agent of this task first, never two in one worktree.' "$br" "$sha" "$ahead" "$base" "$dirty"
 }
 
 # The last line of every agent: facts from git and the last run, not prose.
@@ -515,7 +539,8 @@ team_merge() {
     [ -z "$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)" ] || { echo "FAIL still unresolved:"; git -C "$GIT_ROOT" diff --name-only --diff-filter=U | head -8; return 1; }
   else
     git -C "$GIT_ROOT" status --porcelain -uno | grep -qE '\.sln[x]?$' && git -C "$GIT_ROOT" checkout -q -- '*.sln*' 2>/dev/null
-    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
+    # The daemon copy warmd renewed (unity_sync) is no one's work in progress: the merge commit takes it along
+    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -v 'Assets/Editor/Warmd/')" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
     git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br"; return 2; }
     out="$(git -C "$GIT_ROOT" merge --no-commit --no-ff "$br" 2>&1)" || {
       echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; return 1; }

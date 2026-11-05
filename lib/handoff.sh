@@ -27,7 +27,13 @@ team_handoff() {
     echo "Next: $next_text"
     echo "Commits since the base:"
     git -C "$GIT_ROOT" log --oneline "$(base_branch)..HEAD" 2>/dev/null | head -8 | cut -c1-72
+    # The record, not the agent's memory: the last green runs of this branch from .warmd/run/runs.log (lib/core.sh run_log).
+    # While the code stays the same warmd answers the same run from its green cache, the next agent need not run it again.
+    local shas g; shas=" $(git -C "$GIT_ROOT" rev-list --abbrev-commit "$(base_branch)..HEAD" 2>/dev/null | tr '\n' ' ') $(git -C "$GIT_ROOT" rev-parse --short HEAD) "
+    g="$(awk -F'\t' -v s="$shas" '$3 == 0 && index(s, " " $2 " ") {print "- " $4 " " $5 ": green at " $2 ", " $1}' "$RUN/runs.log" 2>/dev/null | tail -5)"
+    if [ -n "$g" ]; then echo "Green runs (recorded by warmd; same code answers from the cache):"; echo "$g"
+    else echo "Green runs: none recorded on this branch"; fi
   } >> "$note"
   model="$(tier_model "$tier")"
-  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
+  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.$(agent_state "$GIT_ROOT")\""
 }

@@ -139,5 +139,52 @@ mkdir -p "$TMP/gq"
 for i in 1 2 3; do bash "$TMP/gfxrun.sh" "$HERE" "$TMP/gc2" "$TMP/gq" & done; wait
 expect "graphics queue holds 1 place at a time" '^1$' "$(sort -n "$TMP/gq/peak" | tail -1)"
 expect "all 3 graphics runs happened" '^3$' "$(wc -l < "$TMP/gq/peak" | tr -d ' ')"
+# ---- warmd status: free RAM, Unity editors with their project, the batch per branch; warmd stop ends other editors on this project ----
+. "$HERE/lib/platform.sh"
+U="$TMP/uproj"; mkdir -p "$U/ProjectSettings" "$TMP/fake"; printf 'm_EditorVersion: 6000.0.0f1\n' > "$U/ProjectSettings/ProjectVersion.txt"
+( cd "$U" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf '.warmd\n' > .gitignore && git add -A && git commit -qm init && git worktree add -q -b warmd/side "$TMP/uside" )
+( cd "$TMP/uside" && pwd ) > "$(git -C "$U" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+printf 'for i in $(seq 60); do sleep 1; done\n' > "$TMP/fake/Unity"
+UN="$(native_path "$U")"
+bash "$TMP/fake/Unity" -batchmode -nographics -projectPath "$UN" & f1=$!
+bash "$TMP/fake/Unity" -batchmode -projectPath "${UN}2" & f2=$!
+sleep 2
+out="$(cd "$U" && "$WARMD" status 2>&1)"
+expect "status: free RAM in MB and percent" '^RAM free: [0-9]+ MB of [0-9]+ MB \([0-9]+%\)$' "$out"
+expect "status: a Unity editor with its project" "^Unity pid [0-9]+: $UN \(batchmode\), this project$" "$out"
+expect "status: the batch per branch, last commit and its age" '^batch warmd/side: [0-9a-f]+ [0-9]+ min ago, init$' "$out"
+out="$(cd "$U" && WARMD_STOP_GRACE=1 "$WARMD" stop 2>&1)"
+expect "stop ends another tool's editor on exactly this project" '^OK stopped other Unity pid [0-9]+ on this project \((friendly|hard), batchmode\)$' "$out"
+sleep 1; kill -0 $f1 2>/dev/null && echo "FAIL the editor on this project still runs" && fails=$((fails+1)) || echo "ok   the editor on this project is gone"
+kill -0 $f2 2>/dev/null && echo "ok   an editor on another project path stays" || { echo "FAIL the editor on ${UN}2 was ended"; fails=$((fails+1)); }
+kill $f2 2>/dev/null; wait $f1 $f2 2>/dev/null
+if [ "$OS" = win ]; then
+  bash "$TMP/fake/Unity" -projectPath "$UN" & f3=$!; sleep 2
+  expect "an editor with a window is only asked, it may hold unsaved work" '^WARN Unity pid [0-9]+ has this project open in a window' "$(cd "$U" && "$WARMD" stop 2>&1)"
+  kill -0 $f3 2>/dev/null && echo "ok   the window editor stays open" || { echo "FAIL the window editor was ended without --force"; fails=$((fails+1)); }
+  expect "stop --force ends it" '^OK stopped other Unity pid [0-9]+ on this project \((friendly|hard)\)$' "$(cd "$U" && WARMD_STOP_GRACE=1 "$WARMD" stop --force 2>&1)"
+  kill $f3 2>/dev/null; wait $f3 2>/dev/null
+fi
+
+# ---- another tool's batchmode editor on a batch worktree no longer blocks the start: it is ended, the run goes on ----
+V="$TMP/ubatch"; mkdir -p "$V/ProjectSettings" "$V/Assets/Editor/Warmd"; printf 'm_EditorVersion: 6000.0.0f1\n' > "$V/ProjectSettings/ProjectVersion.txt"; cp "$HERE"/unity/* "$V/Assets/Editor/Warmd/"
+( cd "$V" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf '.warmd\n' > .gitignore && git add -A && git commit -qm init )
+git -C "$V" rev-parse --show-toplevel > "$(git -C "$V" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"   # the form git reports: runner temp paths come in 8.3 and long spellings
+VN="$(native_path "$V")"
+bash "$TMP/fake/Unity" -batchmode -nographics -projectPath "$VN" & f4=$!; sleep 2
+out="$(cd "$V" && WARMD_STOP_GRACE=1 WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"
+expect "a batchmode editor of another tool on a batch worktree is ended" "^\(ended another tool's batchmode Unity pid [0-9]+ on this batch worktree, (friendly|hard)\)$" "$out"
+expect "and the start goes on" '^FAIL Unity 6000.0.0f1 not found' "$out"
+sleep 1; kill -0 $f4 2>/dev/null && { echo "FAIL the blocking editor still runs"; fails=$((fails+1)); } || echo "ok   the blocking editor is gone"
+wait $f4 2>/dev/null
+if [ "$OS" = win ]; then
+  bash "$TMP/fake/Unity" -projectPath "$VN" & f5=$!; sleep 2
+  err="$(cd "$V" && WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1 >/dev/null)"
+  expect "a window editor blocks with a reason on stderr too" '^FAIL another Unity \(pid [0-9]+\) has this project open' "$err"
+  expect "and in result.txt, not counted as red" '^blocked BLOCKED another Unity' "$(head -1 "$V/.warmd/run/result.txt" 2>/dev/null)"
+  kill -0 $f5 2>/dev/null && echo "ok   a window editor is never ended by a start" || { echo "FAIL window editor ended"; fails=$((fails+1)); }
+  kill $f5 2>/dev/null; wait $f5 2>/dev/null
+fi
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails failed"; exit 1; }

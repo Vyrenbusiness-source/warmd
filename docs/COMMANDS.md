@@ -8,11 +8,16 @@ Examples show real output from a small throwaway Node project with one failing t
 
 ### warmd status
 Shows what was detected and what is warm. Use it first in a new project. When the installed copy is behind its origin it adds one line `UPDATE installed <sha> behind origin <sha> by <n> commits, run: warmd update`; `warmd doctor` shows the same line. A background `git fetch` of the warmd clone refreshes this at most every 6 hours, `WARMD_UPDATE_CHECK=0` turns it off.
+It also shows free RAM, in a Unity project every running Unity editor with its project path (warmd daemon, batchmode or window), and while a batch runs one line per branch with its last commit and how old it is.
 ```text
 warmd status
-warmd 0.3.0: web project at <project>
-heavy runs: 0 of 2
-dev server off
+warmd 0.4.11: unity project at <project>
+heavy runs: 1 of 2
+parallel agents: up to 4 (warmd.conf)
+RAM free: 9082 MB of 31913 MB (28%)
+Unity pid 22734: <worktree>/Game (warmd daemon)
+batch warmd/nav: 5b53120c 9 min ago, nav: compass at the helm
+Unity 6000.0.0f1 warm, pid 22734
 ```
 
 ### warmd build
@@ -36,7 +41,7 @@ FAIL 15s test (full log: <project>/.warmd/run/last.log)
 ```
 
 ### warmd check
-Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit.
+Builds, then runs only the tests that reach what you changed through imports (JS and TS, Python, C# with asmdefs, GDScript). It keeps the time of the last full run and of the last selective check and takes the faster path: when the full suite was faster it runs that directly and says so. `WARMD_SELECT=1` forces the selection. In a bash project with `full=ci`, a change that needs the full self-test prints a `PUSH` line instead and leaves the full run to CI. Use it after every edit. In a Unity project check runs PlayMode tests only for the affected test classes, never the whole PlayMode suite: that runs in the merge gate or with `WARMD_FULL=1`. In Unity a filter that names a test file instead of a class (`DamageJobTests` for `DamageJobTests.cs`) runs the classes declared in that file and says so; a filter that matches no test is red. A test that hangs ends the run with `HUNG <test>` and the results before it, at `test_timeout` or at the job timeout. Before every Unity run the daemon copy in `Assets/Editor/Warmd` is compared with the installed warmd and renewed when it differs, a warm editor restarts for it.
 ```text
 warmd check
 OK nothing to compile
@@ -83,7 +88,7 @@ e4aac13 WIP hook: SessionStart batch state, SubagentStop ledger+push, automerge,
 ```
 
 ### warmd stop
-Ends the warm process for real. Only processes warmd started are touched.
+Ends the warm process for real. In a Unity project it then ends every other Unity editor started with exactly this `-projectPath` by another tool, because such an editor blocks the next start: a batchmode editor is asked first and ended hard after `WARMD_STOP_GRACE` seconds (default 15). An editor with a window may hold unsaved work, so it is only asked to close; `warmd stop --force` ends it hard. Each ended editor gets one line. `warmd stop --idle` (used by the agent hooks) keeps the engine while a warmd test, check or build of this project still runs.
 
 ## Agents
 
@@ -159,6 +164,9 @@ Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch
 ### warmd batch-done
 Ends the batch, so the shared checkout opens again.
 
+### warmd batch-resume
+Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Use it when the marker was lost while agents still work.
+
 ### warmd perf
 Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline.
 ```text
@@ -198,7 +206,7 @@ RED run 41
 ## Setup
 
 ### warmd init
-Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
+Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`, between `<!-- warmd ... -->` markers. The session start hook renews that block and the agent definitions in the shared checkout when a newer warmd brings other text, an older block without markers is replaced in place. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
 
 ### warmd doctor
 Checks what is missing.
@@ -208,6 +216,17 @@ detected: web at <project>
 ok git
 ok git repo
 machine: 8 cores, 31 GB RAM
+```
+
+### warmd leak
+Measures whether this machine loses kernel memory per process start: nonpaged and paged kernel pool and free RAM before and after N short process starts (default 500), as KB per start. It waits for a free slot and enough free RAM first, like every heavy run. Windows only, elsewhere it says so and exits 2. `WARMD_LEAK_CMD` sets the program started, `WARMD_LEAK_WARN_KB` (default 4) the growth per start that prints a `LEAK` line.
+```text
+warmd leak 500
+warmd leak: 500 starts of true in 21s
+nonpaged pool +2875 KB (+5.75 KB per start), now 1301 MB
+paged pool    +12 KB (+0.02 KB per start), now 1908 MB
+free RAM      -41 MB, now 5120 MB
+LEAK kernel pool grows by about 5 KB per process start: a driver keeps memory until reboot (poolmon shows which tag)
 ```
 
 ### warmd feedback
@@ -238,7 +257,12 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `full` | `ci`: a bash project's full self-test runs on CI only | none |
 | `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
 | `top_words` | Goal words that route to the top tier (regex) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
-| `idle_min` | Minutes until an idle daemon ends itself | 30 |
+| `daemon_idle` | Minutes until an idle daemon ends itself (`idle_min` is the older name) | 10 |
+| `world_method` | Unity: static method that builds the generated parts of the project. Runs in the warm editor before `test` and `check` whenever its sources changed since its last run, so a merge or a pull never leaves generated parts behind | off |
+| `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |
+| `world_outputs` | What `world_method` writes: not counted as a source change, left out of automatic commits; the merge gate commits it | none |
+| `gfx_tests` | Unity: filter regex of tests that need a graphics device. A matching `warmd test` filter runs with graphics by itself (a headless daemon makes way); any test that fails with a graphics error such as `RenderTexture.Create failed` gets a `HINT needs graphics` line | none |
+| `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the run ends with a `HUNG <test>` line and what finished before it | off |
 | `warm` | Keep a Godot process running | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
 | `floor` | Lowest tier this project accepts: `mid` or `top` | none |

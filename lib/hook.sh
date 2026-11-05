@@ -121,8 +121,8 @@ hook_task_of() { # absolute worktree -> REPLY = its task file
   for i in "${!HOOK_TW[@]}"; do [ "${HOOK_TW[$i]}" = "$1" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }; done
   return 1
 }
-hook_agent_line() { # common dir, task file -> AGENT line to start or continue the task
-  local tf="$2" name tier="" agent model note k v
+hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGENT line to start or continue the task
+  local tf="$2" st="${3:-}" name tier="" agent model note k v
   name="${tf##*/}"; name="${name%.md}"
   { read -r _; read -r tier; } < "$1/warmd-handoff/$name.task" 2>/dev/null
   [ -n "$tier" ] || read -r tier < "${tf%.md}.tier" 2>/dev/null
@@ -133,10 +133,26 @@ hook_agent_line() { # common dir, task file -> AGENT line to start or continue t
   fi
   note="$1/warmd-handoff/$name.md"
   if [ -f "$note" ]; then
-    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.$st\""
   else
-    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf and do it.\""
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf and do it.$st\""
   fi
+}
+
+# Instructions and agent definitions written by an older warmd are renewed in the shared checkout, like the hooks themselves.
+hook_instr() { # shared checkout
+  local f a d x y said=""
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$1/$f" ] && instr_sync "$1/$f" && echo "warmd: the warmd block in $f renewed to the current version, commit it."
+  done
+  for a in "$WARMD_HOME"/agents/warmd-*.md; do
+    d="$1/.claude/agents/${a##*/}"; [ -f "$d" ] || continue
+    x=""; y=""; IFS= read -r -d '' x < "$a"; IFS= read -r -d '' y < "$d"
+    [ "$x" = "$y" ] && continue
+    cp "$a" "$d" && said="$said ${a##*/}"
+  done
+  [ -z "$said" ] || echo "warmd: agent definitions renewed:$said"
+  return 0
 }
 
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
@@ -152,6 +168,7 @@ hook_session() {
   main="$(hook_mainwt "$common")"
   hook_index "$common" "$main"
   hook_abs "$here"; here="$REPLY"; hook_abs "$main"; main="$REPLY"
+  [ "$here" = "$main" ] && hook_instr "$main"
   if [ "$here" != "$main" ] && hook_task_of "$here"; then
     tf="$REPLY"
     echo "warmd: session ${src:-restarted}. Your task and the shared brief again, continue the task."
@@ -164,7 +181,7 @@ hook_session() {
   batch="$common/warmd-batch"; donef="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
   if [ -s "$batch" ]; then
     [ -f "$donef" ] && while IFS='	' read -r wt l; do [ -n "$wt" ] && state[$wt]="$l"; done < "$donef"
-    base="$(git -C "$main" branch --show-current)"
+    base="$(hook_base "$main")"; base="${base%%|*}"; [ -n "$base" ] || base="$(git -C "$main" branch --show-current)"
     HOOK_PROJ="${HOOK_TF[0]%/.warmd/tasks/*}"
     if [ "$src" = compact ]; then echo "warmd: a batch runs (context compacted, agents may still run, start only the ones you do not see)."
     else echo "warmd: a batch runs (session ${src:-restarted}, agents of the old session are gone, start the open ones)."; fi
@@ -176,7 +193,8 @@ hook_session() {
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
         open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
-        hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")")"
+        # The old session's agents are gone after a restart, after a compaction they may still run: the line says to stop them first
+        hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")" " State: ${br:-$wt} at $(git -C "$wt" rev-parse --short HEAD 2>/dev/null), $ahead ahead of $base, $dirty uncommitted. Stop the previous agent of this task first, never two in one worktree.")"
       fi
     done < "$batch"
     echo "$open of $n open. When the last one stops, warmd merges the finished branches by itself."
@@ -230,6 +248,9 @@ ctx = "-"
 if usage:
     last = list(usage.values())[-1]
     ctx = str(sum(int(last.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+import os
+if os.environ.get("WARMD_LASTMSG") and text.strip():
+    open(os.environ["WARMD_LASTMSG"], "w", encoding="utf-8").write(text.strip() + "\n")
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
 print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
@@ -239,7 +260,8 @@ hook_subagent() {
   local in py r name tf tokens calls outcome wt common
   in="$(cat)"
   py="$(hook_py)" || return 0
-  r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
+  local last="${CACHE_ROOT}/lastmsg-$$-$RANDOM.txt"; mkdir -p "$CACHE_ROOT"
+  r="$(printf '%s' "$in" | WARMD_LASTMSG="$last" "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || { rm -f "$last"; return 0; }
   IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
@@ -248,8 +270,18 @@ hook_subagent() {
   fi
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
   common="$(hook_common "$wt")" || return 0
+  hook_lastmsg "$common" "$name" "$last"
   hook_detach "$common/warmd-hook.log" "$wt" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome"
   return 0
+}
+
+# The agent's last message goes into its handoff note: findings it could only write into its answer are not lost
+# with the session. At most 40 lines, the newest message last.
+hook_lastmsg() { # common name file
+  [ -s "$3" ] || { rm -f "$3"; return 0; }
+  mkdir -p "$1/warmd-handoff"
+  { echo "## Last message of the agent, $(date '+%F %T')"; head -n 40 "$3"; } >> "$1/warmd-handoff/$2.md"
+  rm -f "$3"
 }
 
 # hook_detach <log> <dir> <warmd args...>: run warmd so it outlives the session that ran the hook.
@@ -282,6 +314,9 @@ hook_job() {
   here="$(pwd)"; common="$(hook_common)" || return 1
   export WARMD_DETACHED=1
   echo "$(date '+%F %T') $name stopped: $outcome, $tokens tokens, $calls calls (detached via ${WARMD_VIA:-direct})"
+  # An agent ends its turn to wait for its own background run (a Bash call may take 600 s, a queued Unity run longer).
+  # While that run works or waits in a queue, nothing is recorded: no stop, no escalation, the engine stays; the agent comes back.
+  if wt_run_active "$here"; then echo "$(date '+%F %T') $name: its warmd run still works or waits here, no stop recorded"; return 0; fi
   outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null
@@ -295,7 +330,28 @@ hook_job() {
 
 # The agent is gone, its warm engine is not: an idle editor holds gigabytes for 30 minutes while the next agents wait for RAM.
 # A fresh agent on the same task starts it again in a minute; a stuck machine costs far more.
-hook_cool() { echo "$(date '+%F %T') $(bash "$WARMD_HOME/bin/warmd" stop 2>&1 | tail -1)"; }
+# --idle: an agent that ended its turn while its own warmd test runs in the background keeps the engine, the test goes on.
+hook_cool() { echo "$(date '+%F %T') $(bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"; }
+
+# Base branch, full= and project of the shared checkout, the way warmd itself sees them there: base|full|project
+hook_base() { # shared checkout
+  ( unset WARMD_PROJECT; cd "$1" 2>/dev/null && detect_project >/dev/null 2>&1 && printf '%s|%s|%s\n' "$(base_branch)" "${CFG_full:-}" "$PROJECT" )
+}
+# REPLY = the worktree that has <base> checked out. None has it: a clean one is made next to the task worktrees,
+# with the slow caches of the shared checkout's project and its warmd.conf when the branch does not carry one.
+hook_base_wt() { # common dir, shared checkout, base, project of the shared checkout
+  REPLY=""; local p b rel
+  while IFS='|' read -r p b; do [ "$b" = "$3" ] && [ -d "$p" ] && { REPLY="$p"; return 0; }; done \
+    < <(git --git-dir="$1" worktree list --porcelain 2>/dev/null | tr -d '\r' | awk '/^worktree /{p=substr($0,10)} /^branch /{b=$2; sub("refs/heads/","",b); print p"|"b}')
+  p="$(dirname "$2")/.warmd-worktrees/$(basename "$2")/base-${3//\//-}"
+  [ -e "$p" ] && return 1   # a folder there that is no checkout of the base: never overwritten
+  mkdir -p "${p%/*}" && git -C "$2" worktree add -q "$p" "$3" >/dev/null 2>&1 || return 1
+  rel="$(git -C "$4" rev-parse --show-prefix 2>/dev/null)"; rel="${rel%/}"
+  [ -f "$4/warmd.conf" ] && [ ! -f "$p${rel:+/$rel}/warmd.conf" ] && cp "$4/warmd.conf" "$p${rel:+/$rel}/warmd.conf"
+  ( cd "$p" && unset WARMD_PROJECT && detect_project >/dev/null 2>&1 && . "$WARMD_HOME/adapters/$ADAPTER.sh" && { a_seed "$4" "$PROJECT"; seed_links "$4" "$PROJECT"; } ) >/dev/null 2>&1
+  echo "$(date '+%F %T') made $p for $3, no worktree had it checked out"
+  REPLY="$p"
+}
 
 # The last stopped agent of a batch merges: every ok branch one by one through warmd merge, red or conflict rolls back.
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.
@@ -315,25 +371,34 @@ hook_merge() { # common dir
   echo "$pid" > "$lock/pid"; local me="$pid"
   hook_unlock() { local p=""; read -r p 2>/dev/null < "$lock/pid"; [ "$p" = "$me" ] && rm -rf "$lock"; }   # never someone else's lock
   main="$(hook_mainwt "$common")"
+  # The target is the base branch as base_branch sees it, never whatever branch the shared checkout stands on.
+  # A base checked out in another worktree is merged there; without one a clean worktree for it is made.
+  local base full=0 ship="" ob proj tgt cfgfull
+  IFS='|' read -r base cfgfull proj <<< "$(hook_base "$main")"
+  [ -n "$base" ] || { echo "$(date '+%F %T') STOP no base branch found from $main, batch stays open" >> "$log"; hook_unlock; return 0; }
   # full=ci: this machine never runs the full suite, so no local merge gate either; warmd ship merges through CI.
   # Compared with origin too: a stale local base would count work already shipped as new and merge it again.
-  local full=0 ship="" ob; grep -qE '^[[:space:]]*full[[:space:]]*=[[:space:]]*ci[[:space:]]*$' "$main/warmd.conf" 2>/dev/null && full=1
-  git -C "$main" fetch -q origin 2>/dev/null; ob="origin/$(git -C "$main" branch --show-current)"
+  [ "$cfgfull" = ci ] && full=1
+  git -C "$main" fetch -q origin 2>/dev/null; ob="origin/$base"
+  if ! hook_base_wt "$common" "$main" "$base" "$proj" >> "$log" 2>&1; then
+    echo "$(date '+%F %T') STOP no checkout of $base and none could be made, batch stays open. Fix it, then run: warmd hook-merge" >> "$log"; hook_unlock; return 0
+  fi
+  tgt="$REPLY"
   {
-    echo "$(date '+%F %T') batch finished, merging into $(git -C "$main" branch --show-current) in $main"
+    echo "$(date '+%F %T') batch finished, merging into $base in $tgt"
     while read -r wt; do
       [ -n "$wt" ] || continue
       oc="$(grep -F "$wt	" "$done" | tail -1 | cut -f2)"; br="$(git -C "$wt" branch --show-current 2>/dev/null)"
       if [ "$oc" = escalated ]; then echo "WAIT $br escalated, stays in the batch"; keep="$keep$wt"$'\n'; continue; fi
       [ "$oc" = ok ] || { echo "SKIP $br: $oc"; continue; }
-      [ "$(git -C "$main" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
-      git -C "$main" rev-parse -q --verify "$ob" >/dev/null && git -C "$main" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { echo "SKIP $br: already on $ob"; continue; }
+      [ "$(git -C "$tgt" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
+      git -C "$tgt" rev-parse -q --verify "$ob" >/dev/null && git -C "$tgt" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { echo "SKIP $br: already on $ob"; continue; }
       [ $full = 1 ] && { ship="$ship $br"; continue; }
-      out="$(cd "$main" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
-      git -C "$main" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$main" merge --abort 2>/dev/null
+      out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
+      git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$tgt" merge --abort 2>/dev/null
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
-        echo "STOP the shared checkout is not ready, batch stays open. Fix it, then run: warmd hook-merge"
+        echo "STOP the checkout of $base in $tgt is not ready, batch stays open. Fix it, then run: warmd hook-merge"
         hook_unlock; return 0
       fi
       first=0
@@ -342,6 +407,8 @@ hook_merge() { # common dir
       echo "SHIP full=ci, no local merge:$ship"
       auto_queue "$common" "SHIP batch done, full=ci merges through CI: warmd ship$ship"
     fi
+    # The merge gate warmed an engine in the base checkout: it would hold gigabytes and a slot for nobody
+    [ $full = 1 ] || echo "$(date '+%F %T') base checkout: $(cd "$tgt" && bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"
     if [ -n "$keep" ]; then
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else

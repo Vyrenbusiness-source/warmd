@@ -165,6 +165,7 @@ work a a.txt
 stop a "All done.
 DONE warmd/a" > "$TMP/stop.out"; fast "SubagentStop" "$STOP_MS"
 [ "$STOP_RC" = 0 ] && [ ! -s "$TMP/stop.out" ] && ok "SubagentStop prints nothing and exits 0" || no "SubagentStop rc=$STOP_RC out=$(cat "$TMP/stop.out")"
+grep -q '^## Last message of the agent' "$C/warmd-handoff/a.md" 2>/dev/null && grep -q '^All done.$' "$C/warmd-handoff/a.md" && ok "the agent's last message lands in its handoff note" || no "last message: $(cat "$C/warmd-handoff/a.md" 2>&1)"
 waitfor 'grep -qF "$W/a	" "$C/warmd-batch-done" 2>/dev/null' || no "job for a never finished: $(tail -3 "$C/warmd-hook.log")"
 [ "$(row a)" = "$(printf '6384\t2\tok')" ] && ok "ledger sums tokens over all 3 turns, a turn split in 2 lines once, and counts calls" || no "ledger row a: $(row a), want 6384 = 1115 + 2227 + 3042"
 if [ "$OS" = win ]; then grep -q ' a stopped: .*(detached via cim)' "$C/warmd-hook.log" && ok "job started through Win32_Process.Create, outside the session's tree" || no "job not via cim: $(grep ' a stopped' "$C/warmd-hook.log")"; fi
@@ -176,7 +177,7 @@ touch -d "-5 hours" "$C/warmd-batch"
 t0=$(ms); out="$(cd "$R" && printf '{"hook_event_name":"SessionStart","source":"startup"}' | "$WARMD" hook-session)"; fast "SessionStart" $(( $(ms) - t0 ))
 [ -n "$(find "$C/warmd-batch" -mmin -1)" ] && ok "restart with open agents renews an old batch marker" || no "old batch marker not renewed"
 echo "$out" | grep -q 'agents of the old session are gone' && echo "$out" | grep -q '^- warmd/a: done (ok), 1 ahead' && echo "$out" | grep -q '^- warmd/b: open' && ok "restart shows the batch state" || no "batch state: $out"
-echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it.\"" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
+echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it. State: warmd/b at" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
 echo "$out" | grep -q '^3 of 4 open' && ok "open count" || no "open count: $out"
 out="$(cd "$R" && printf '{"source":"compact"}' | "$WARMD" hook-session)"
 echo "$out" | grep -q 'agents may still run' && ok "compact warns that agents may still run" || no "compact batch: $out"
@@ -232,7 +233,7 @@ mkdir "$C/warmd-automerge.lock"
 [ ! -f "$R/c2.txt" ] && [ ! -f "$C/warmd-automerge.log" ] && ok "a held lock means someone else merges" || no "merged under a held lock"
 echo 999999 > "$C/warmd-automerge.lock/pid"; echo dirty >> "$R/gate.sh"
 (cd "$R" && "$WARMD" hook-merge)
-grep -q '^STOP the shared checkout is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "lock of a dead merge taken over; dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
+grep -q '^STOP the checkout of main in .* is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "lock of a dead merge taken over; dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
 git -C "$R" checkout -q -- gate.sh
 (cd "$R" && "$WARMD" hook-merge)
 [ -f "$R/c2.txt" ] && [ ! -f "$C/warmd-batch" ] && ok "retry after the fix merges" || no "retry: $(cat "$C/warmd-automerge.log")"
@@ -243,6 +244,23 @@ printf '{"hooks":{"SessionStart":[{"matcher":"compact","hooks":[{"type":"command
 out="$(cd "$R" && "$WARMD" init)"
 echo "$out" | grep -q '^OK hooks installed' && [ "$(grep -c 'hook-session' "$S2")" = 1 ] && grep -q 'hook-subagent' "$S2" && grep -q 'hook-pre' "$S2" && ! grep -q '/old/bin' "$S2" && ok "warmd init installs all hooks and replaces old ones" || no "init: $out"
 (cd "$R" && "$WARMD" init --no-hooks >/dev/null); [ ! -e "$S2" ] && ok "warmd init --no-hooks removes them" || no "no-hooks left: $(cat "$S2")"
+cd "$TMP" || exit 1
+
+# ---- warmd batch-resume: the lost batch marker comes back from the open tasks, in the form warmd split writes ----
+E="$TMP/resume"; mkdir -p "$E" && cd "$E" && git init -q -b main . && git config user.name t && git config user.email t@example.com || exit 1
+echo '{ "name": "t", "scripts": { "test": "true" } }' > package.json; printf '.warmd\n' > .gitignore
+git add -A && GIT_COMMITTER_DATE="2026-01-01T00:00:00" git commit -qm init --date "2026-01-01T00:00:00"
+printf 'ra | add a | a | ra.txt\nrb | add b | b | rb.txt\nrc | add c | c | rc.txt\n' > "$TMP/rtasks.txt"
+WARMD_NO_PREWARM=1 "$WARMD" split "$TMP/rtasks.txt" > /dev/null
+EC="$(git rev-parse --path-format=absolute --git-common-dir)"; EW="$(dirname "$E")/.warmd-worktrees/resume"
+want="$(grep -v '/rc$' "$EC/warmd-batch")"
+(cd "$EW/ra" && echo a > ra.txt && git add -A && git commit -qm a)
+(cd "$EW/rc" && echo c > rc.txt && git add -A && git commit -qm c) && git merge -q --no-edit warmd/rc && touch -d "-10 min" .warmd/tasks/rc.md
+rm -f "$EC/warmd-batch"
+out="$("$WARMD" batch-resume)"
+[ "$(cat "$EC/warmd-batch" 2>/dev/null)" = "$want" ] && ok "batch-resume writes the open tasks as warmd split wrote them" || no "batch-resume: $out, marker $(cat "$EC/warmd-batch" 2>/dev/null), wanted $want"
+echo "$out" | grep -q '^OK batch marker rebuilt: 2 open: ra rb$' && ok "batch-resume names what it found, the merged task stays out" || no "batch-resume out: $out"
+(cd "$EW/ra" && "$WARMD" status >/dev/null 2>&1) && ok "a worktree of the rebuilt batch passes the batch guard" || no "rebuilt marker locks out its own worktree"
 cd "$TMP" || exit 1
 
 # ---- path forms: an 8.3 short name and the long name are the same worktree ----
@@ -268,6 +286,24 @@ echo "$mlog" | grep -q '^SHIP full=ci, no local merge: warmd/new$' && ok "full=c
 [ ! -f "$M/r/new.txt" ] && [ "$(git -C "$M/r" log -1 --format=%s)" = init ] && ok "full=ci: the shared checkout stays untouched" || no "full=ci merged locally: $(git -C "$M/r" log -1 --format=%s)"
 echo "$mlog" | grep -q '^SKIP warmd/old: already on origin/main$' && ok "a branch already on origin is skipped although the local base is stale" || no "stale base: $mlog"
 grep -q 'SHIP batch done, full=ci merges through CI: warmd ship warmd/new' "$MC/warmd-auto/queue" 2>/dev/null && ok "watch gets the ship line" || no "queue: $(cat "$MC/warmd-auto/queue" 2>/dev/null)"
+
+# ---- automatic merge into the base branch, not into the branch the shared checkout stands on ----
+X="$TMP/basewt"; mkdir -p "$X/r"
+( cd "$X/r" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf 'gate=true\n' > warmd.conf && printf '.warmd\n' > .gitignore \
+  && git add -A && git commit -qm init && git branch dev && git checkout -q -b side && printf 'gate=true\nbase=dev\n' > warmd.conf \
+  && git worktree add -q "$X/dev" dev && for n in t1 t2; do git worktree add -q -b "warmd/$n" "$X/$n" dev; (cd "$X/$n" && echo "$n" > "$n.txt" && git add -A && git commit -qm "$n"); done )
+XC="$(git -C "$X/r" rev-parse --path-format=absolute --git-common-dir)"
+printf '%s\n' "$X/t1" > "$XC/warmd-batch"; printf '%s\tok\n' "$X/t1" > "$XC/warmd-batch-done"
+(cd "$X/r" && "$WARMD" hook-merge)
+xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"
+[ -f "$X/dev/t1.txt" ] && [ "$(git -C "$X/r" log -1 --format=%s dev)" = "Merge warmd/t1" ] && echo "$xlog" | grep -q "merging into dev in .*/dev$" && ok "base checked out in another worktree: merged there" || no "base worktree merge: $xlog"
+[ "$(git -C "$X/r" branch --show-current)" = side ] && [ "$(git -C "$X/r" log -1 --format=%s side)" = init ] && ! echo "$xlog" | grep -q 'only from a checkout' && ok "the branch of the shared checkout stays untouched" || no "shared checkout branch: $(git -C "$X/r" log -1 --format=%s side) $xlog"
+git -C "$X/r" worktree remove --force "$X/dev"; rm -f "$XC/warmd-automerge.log"
+printf '%s\n' "$X/t2" > "$XC/warmd-batch"; printf '%s\tok\n' "$X/t2" > "$XC/warmd-batch-done"
+(cd "$X/r" && "$WARMD" hook-merge)
+xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"; XB="$X/.warmd-worktrees/r/base-dev"
+[ -f "$XB/t2.txt" ] && [ "$(git -C "$XB" branch --show-current)" = dev ] && echo "$xlog" | grep -q '^.* made .*base-dev for dev' && [ ! -f "$XC/warmd-batch" ] && ok "no worktree has the base: a clean one is made and merged into" || no "made base worktree: $xlog"
+[ "$(git -C "$X/r" branch --show-current)" = side ] && [ ! -f "$X/r/t2.txt" ] && ok "shared checkout still untouched" || no "shared checkout touched"
 
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails FAILED"; exit 1; }

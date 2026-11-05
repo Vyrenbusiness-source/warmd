@@ -48,9 +48,10 @@ job_lock() {
   until mkdir "$dir" 2>/dev/null; do
     holder="$(cat "$dir/pid" 2>/dev/null)"
     if [ -n "$holder" ] && ! shell_alive "$holder"; then rm -rf "$dir"; continue; fi
-    [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; }
+    [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; queue_mark; }
     sleep 1; orphan_check
   done
+  [ -z "$said" ] || queue_done
   echo "$$" > "$dir/pid"; JOBLOCK="$dir"
 }
 
@@ -70,7 +71,8 @@ job() {
       if [ -f "$RUN/result.txt" ] && [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f1)" = "$id" ]; then
         head -15 "$RUN/result.txt" | tr -d '\r' | sed '1s/^[^ ]* //'
         # Timeout: the run is still stuck in the engine, the next job needs a fresh daemon
-        if grep -q '^timeout after' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
+        # HUNG: the test runner is still inside a test that never ended (lib unity daemon, test_timeout)
+        if grep -qE '^(timeout after|HUNG )' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
         [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f2)" = OK ]; return
       fi
       if [ $waited -lt 40 ]; then sleep 0.05; else sleep 0.4; fi
@@ -82,7 +84,8 @@ job() {
       fi
       [ $waited -gt $(( (TIMEOUT + 120) * 5 / 2 )) ] && { echo "FAIL wait limit exceeded ($kind, $(secs)s)"; return 1; }
     done
-    if [ -f "$RUN/stop.flag" ]; then echo "FAIL $kind stopped by warmd stop ($(secs)s)"; return 1; fi
+    # 130, not 1: cut off from outside is no red test, auto_red never escalates it
+    if [ -f "$RUN/stop.flag" ]; then echo "FAIL $kind stopped by warmd stop ($(secs)s)"; return 130; fi
     if [ $attempt -ge 2 ]; then echo "FAIL $lost, also after retry ($kind, $(secs)s)"; return 1; fi
     echo "(retry: $lost)"; attempt=2
     a_kill_daemon

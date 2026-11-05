@@ -4,7 +4,7 @@ set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.4.10
+WARMD_VERSION=0.4.11
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/tune.sh"
@@ -41,7 +41,7 @@ Everyday
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
   warmd map [file]             repo map by import rank, or one outline with line numbers
   warmd audit                  what your agents really pay for, biggest first
-  warmd stop                   end the warm process for real
+  warmd stop [--force]         end the warm process for real, and other editors on this project
 
 Agents
   warmd route <goal> [files]   cheapest fitting model tier
@@ -88,6 +88,7 @@ case "$REG_NAMES" in *" $CMD "*) fn="reg_fn_${CMD//-/_}"; "${!fn}" "$@"; exit $?
 detect_project
 # shellcheck source=/dev/null
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
+case "$CMD" in test|check|build|bench|shot|layout|call|package|perf) run_mark;; esac
 
 case "$CMD" in
   status)  common_status; install_behind; a_status;;
@@ -97,7 +98,7 @@ case "$CMD" in
   bench)   run_bench "$@";;
   shot)    merge_guard; a_shot "$@";;
   layout)  merge_guard; layout_run "$@";;
-  stop)    a_stop;;
+  stop)    if [ "${1:-}" = --idle ] && r="$(run_active "$STATE")"; then echo "OK engine kept, warmd ${r#* } runs here (pid ${r%% *})"; else a_stop "$@"; fi;;
   ping)    job ping;;
   package) a_package;;
   call)    a_call "$@";;

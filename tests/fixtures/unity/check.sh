@@ -39,5 +39,44 @@ out="$("$WARMD" build 2>&1)"
 expect "a Library without the package dll hands over to Unity" 'Library lacks 1 referenced assemblies.*Vendor.Pkg.dll.*compiling in Unity' "$out"
 refuse "no false errors without the dll" 'CS0234|CS0246|CS0103' "$out"
 
+# A newer warmd renews the daemon copy in the project before a Unity run, init only made it once
+mkdir -p "$P/Assets/Editor/Warmd"; echo "// old daemon" > "$P/Assets/Editor/Warmd/WarmdDaemon.cs"; cp "$HERE/unity/Warmd.Editor.asmdef" "$P/Assets/Editor/Warmd/"
+out="$(WARMD_UNITY=/nonexistent/Unity "$WARMD" build 2>&1)"
+expect "an old daemon copy is renewed and named" '^\(daemon updated to [0-9.]+: WarmdDaemon.cs\)$' "$out"
+cmp -s "$HERE/unity/WarmdDaemon.cs" "$P/Assets/Editor/Warmd/WarmdDaemon.cs" && echo "ok   the project copy equals the installed daemon" || { echo "FAIL project daemon copy not renewed"; fails=$((fails+1)); }
+refuse "a current copy is left alone" 'daemon updated' "$(WARMD_UNITY=/nonexistent/Unity "$WARMD" build 2>&1)"
+
+# check never runs the whole PlayMode suite outside the merge gate
+pa() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && a_test() { echo "a_test $*"; } && unity_play_all ); }
+out="$(pa)"; expect "check skips the full PlayMode suite" '^\(PlayMode: no affected test class to pick, the full PlayMode suite runs in the merge gate or with WARMD_FULL=1\)$' "$out"
+refuse "no PlayMode run without WARMD_FULL" 'a_test' "$out"
+expect "WARMD_FULL=1 runs it" '^a_test --play$' "$(WARMD_FULL=1 pa)"
+expect "the merge gate runs it" '^a_test --play$' "$(WARMD_IN_MERGE=1 pa)"
+
+# world_method: generated parts are built again before tests whenever their sources changed, never otherwise
+mkdir -p "$P/Assets/WorldSrc" "$P/Assets/Generated"; echo a > "$P/Assets/WorldSrc/map.txt"; (cd "$P" && git add -A && git commit -qm world-src)
+printf 'world_method=Game.World.Build\nworld_sources=Assets/WorldSrc\nworld_outputs=Assets/Generated\n' > "$P/warmd.conf"
+wd() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && a_call() { echo "call $1"; echo x >> "$P/Assets/Generated/out.txt"; } && unity_world ); }
+expect "world_method runs when its sources are new" '^call Game.World.Build$' "$(wd)"
+refuse "and not again while they stay the same, its own output does not count" 'call' "$(wd)"
+echo b >> "$P/Assets/WorldSrc/map.txt"
+expect "a changed source runs it again" '^call Game.World.Build$' "$(wd)"
+rm -f "$P/warmd.conf" "$P/.warmd/world.key"
+
+# A test filter that names a file means the classes in that file; a graphics failure says how to get graphics
+mkdir -p "$P/Assets/Tests"; printf 'public class DamageFlowTests {}\npublic class OtherTests {}\n' > "$P/Assets/Tests/DamageJobTests.cs"
+at() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && CFG_gfx_tests="${GT:-}" && . "$HERE/adapters/unity.sh" \
+  && unity_world() { :; } && daemon_alive() { return 1; } && cached() { echo "cached $1"; shift; echo "$*"; [ -z "${RED:-}" ] || { echo "1 FAIL" > "$RUN/result.txt"; echo "$RED" >> "$RUN/result.txt"; return 1; }; } && a_test "$@" ); }
+out="$(at DamageJobTests)"
+expect "a file name as filter becomes its classes and says so" '^\(filter DamageJobTests is a file, not a class: running its classes DamageFlowTests OtherTests\)$' "$out"
+expect "the daemon gets the class filter" 'filter=\^\(\.\*\\.\)\?\(DamageFlowTests\|OtherTests\)' "$out"
+refuse "a class name stays as it is" 'is a file' "$(at DamageFlowTests)"
+expect "a graphics failure names the fix" '^HINT needs graphics: run it with WARMD_GFX=1' "$(RED='RED Shot: RenderTexture.Create failed' at DamageFlowTests)"
+refuse "other failures get no graphics hint" 'HINT needs graphics' "$(RED='RED X: Expected 1 but was 2' at DamageFlowTests)"
+out="$(GT='Shot' at ShotTests)"
+expect "gfx_tests runs a matching filter with graphics" '^\(gfx_tests: ShotTests runs with graphics\)$' "$out"
+expect "and caches it apart from the headless run" '^cached test\|Edit\|ShotTests\|\|\|gfx1$' "$out"
+rm -rf "$P/Assets/Tests"
+
 [ $fails = 0 ] && echo "unity dotnet stage green" || echo "unity dotnet stage: $fails failed"
 exit $fails
