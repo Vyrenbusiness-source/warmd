@@ -4,6 +4,24 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-11-05
+
+### Changed
+- A run that ends inside the engine start shows its output, the exit code and the log
+- Test: world_outputs check ignores the earlier manifest change
+- Automatic commits leave world_outputs out
+- world_method: generated parts are built again before tests whenever their sources changed
+- The automatic merge stops the engine its gate warmed in the base checkout
+- Agent rules built in: instructions block kept current at session start, 2-line replies, background runs never escalate; AGENT lines carry the branch state and the stop-first rule; automatic commits leave engine leftovers out
+- Stop hook records nothing while the agent's own run works or waits; a queued run is no failure; watch holds AGENT lines while the old agent still works
+- Unity: daemon copy renewed before every run, idle daemon ends after 10 min, a hung test is named with the results before it, check never runs the whole PlayMode suite
+- warmd leak measures kernel pool and free RAM per process start
+- warmd status shows free RAM, Unity editors per project and the batch per branch; warmd stop ends other editors on this project
+- warmd batch-resume rebuilds the batch marker from the open tasks, in the path form split writes
+- warmd watch keeps a long batch alive: the marker is stale only when no agent worked for 240 minutes
+- A stopped agent whose own warmd run goes on keeps its engine, and warmd watch keeps waiting for it
+- Automatic merge goes into the base branch, in its own worktree, never into the shared checkout's branch
+
 ## [0.4.10] - 2026-11-05
 
 ### Changed
@@ -130,7 +148,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.10...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.11...HEAD
+[0.4.11]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.7...v0.4.8

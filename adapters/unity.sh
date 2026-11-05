@@ -25,6 +25,22 @@ a_kill_daemon() {
   rm -f "$RUN/alive.txt" "$RUN/pid.txt"
 }
 
+# Another tool's editor on this project in a worktree of the running batch: when it runs in batchmode (no window, no user
+# at it) it is ended cleanly and the start goes on. A window, or a worktree outside the batch, is never touched here.
+unity_free_batch() {
+  local f pid path flags me n=0
+  f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-batch"
+  [ -n "$GIT_ROOT" ] && [ -f "$f" ] && grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" || return 1
+  me="$(native_path "$PROJECT")"; me="${me%/}"
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] && [ "${path,,}" = "${me,,}" ] || continue
+    case "$flags" in *d*) continue;; *b*) ;; *) return 1;; esac
+    stop_gently "$pid" "${WARMD_STOP_GRACE:-15}" || return 1
+    echo "(ended another tool's batchmode Unity pid $pid on this batch worktree, $STOP_HOW)"; n=$((n+1))
+  done < <(unity_procs)
+  [ $n -gt 0 ] && [ -z "$(foreign_unity)" ]
+}
+
 # warmd init copies the engine side once, a newer warmd brings a newer daemon: before every Unity run the project copy is
 # compared with this install and replaced when it differs. A warm editor restarts, so Unity compiles the new code.
 # Builtins only (read), no process start per run. A tracked copy shows as changed until it is committed; warmd merge takes it along.
@@ -49,7 +65,13 @@ a_start_daemon() {
   unity_sync
   if [ -n "$(a_daemon_procs)" ]; then echo "(daemon not answering, restarting)"; a_kill_daemon; fi
   local other; other="$(foreign_unity)"
-  [ -n "$other" ] && { echo "FAIL another Unity (pid $other) has this project open, nothing touched"; exit 2; }
+  if [ -n "$other" ] && ! unity_free_batch; then
+    # Said on stdout, stderr and in result.txt: an agent that sends the output to a file still sees why the run stopped.
+    # BLOCKED, not FAIL, in result.txt: a blocked start is no red test (lib/auto.sh auto_red), nobody escalates for it.
+    local m="FAIL another Unity (pid $other) has this project open, nothing touched. In a batch worktree a batchmode editor is ended by itself; this one has a window or the worktree is in no batch: close it, or warmd stop --force"
+    echo "$m"; echo "$m" >&2; echo "blocked BLOCKED ${m#FAIL }" > "$RUN/result.txt" 2>/dev/null
+    exit 2
+  fi
   rm -f "$RUN/alive.txt" "$RUN/state.txt"
   local exe gfx=(-nographics); exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
