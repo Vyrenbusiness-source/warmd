@@ -197,6 +197,47 @@ unity_gfx_hint() { # output -> the hint line when a failure looks like missing g
   return 0
 }
 
+# A HUNG test ends the editor (lib/daemon.sh job), the tests after it would never run. So the run goes on: a fresh daemon
+# runs the same filter again without every test that already ran and without the hung one (skip= in the job, the daemon
+# narrows the filter to the rest). Up to hung_resume rounds (warmd.conf, default 10, 0 = stop at the first HUNG).
+# At the end tests.txt and result.txt hold every round as one list, a hung test is an H row.
+unity_test_rounds() { # job test arguments
+  local max="${CFG_hung_resume:-10}" round=0 rc cur why first="" all="$STATE/tests.rounds" skip="$STATE/tests.skip"
+  rm -f "$all" "$skip"
+  while :; do
+    if [ $round = 0 ]; then job test "$@"; else job test "$@" "skip=$(native_path "$skip")"; fi; rc=$?
+    [ $rc != 0 ] && [ "$max" -gt 0 ] && grep -q '^HUNG ' "$RUN/result.txt" 2>/dev/null || break
+    cur=""; { IFS= read -r cur < "$RUN/current.full"; } 2>/dev/null; cur="${cur%$'\r'}"
+    why="$(grep -m1 '^HUNG ' "$RUN/result.txt" | tr -d '\r' | sed 's/^HUNG [^:]*: //')"
+    [ -n "$first" ] || first="$(head -1 "$RUN/result.txt" | cut -d' ' -f1)"
+    { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null >> "$all"
+    printf 'H\t%s\t%s\n' "${cur:-outside any test in round $((round + 1))}" "$why" >> "$all"
+    round=$((round + 1))
+    # Hung outside a test (fixture setup, before the first one), or the same test once more: nothing left to step over
+    [ -n "$cur" ] && ! grep -qxF "$cur" "$skip" 2>/dev/null || break
+    { { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null | cut -f2; echo "$cur"; } >> "$skip"
+    [ $round -le "$max" ] || { echo "(hung_resume: $max rounds reached, the rest stays unrun)"; break; }
+    echo "(goes on after HUNG ${cur##*.}: fresh editor, round $((round + 1)), $(grep -c . "$skip") tests done or hung)"
+  done
+  [ $round = 0 ] && return $rc
+  unity_rounds_list "$rc" "$first"
+}
+
+# Every round in one list: counts, then each hung test, then each red one
+unity_rounds_list() { # rc of the last round, id of the first round
+  local all="$STATE/tests.rounds" p f s h body ok=FAIL
+  grep -q '^HUNG ' "$RUN/result.txt" 2>/dev/null || { tr -d '\r' < "$RUN/tests.txt"; } 2>/dev/null >> "$all"
+  p="$(grep -c $'^P\t' "$all")"; f="$(grep -c $'^F\t' "$all")"; s="$(grep -c $'^S\t' "$all")"; h="$(grep -c $'^H\t' "$all")"
+  body="$(echo "all rounds: $p passed, $f failed, $s skipped, $h hung"
+    awk -F'\t' '$1=="H" { n=split($2, a, "."); print "HUNG " a[n] ": " $3 }' "$all"
+    awk -F'\t' '$1=="F" { n=split($2, a, "."); print "RED " a[n] ": " $3 }' "$all")"
+  [ $((f + h)) = 0 ] && [ "$1" = 0 ] && ok=OK
+  cp "$all" "$RUN/tests.txt"
+  { echo "${2:-r$(now_ms)} $ok $(secs)s test"; echo "$body" | head -14; } > "$RUN/result.txt"
+  echo "$body" | head -14
+  [ $ok = OK ]
+}
+
 a_test() {
   unity_world || return 1
   local filter="" mode="" cat="" speed="" rc
@@ -209,7 +250,7 @@ a_test() {
   fi
   unity_sync
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
-  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
   [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
   return $rc
 }
