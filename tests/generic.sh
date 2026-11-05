@@ -133,6 +133,15 @@ out="$(WARMD_TRANSCRIPTS="$TMP/tr" drain)"
 case "$out" in "AGENT held:"*) ok "the line goes once the old agent is quiet";; *) no "drain after: $out";; esac
 cd "$HERE" || exit 1
 
+# ---- a warmd test that ends inside the engine start never ends silently: reason and log ----
+U="$TMP/usilent"; mkdir -p "$U/ProjectSettings" "$U/Assets/Editor/Warmd"; cd "$U" || exit 1
+printf 'm_EditorVersion: 6000.0.0f1\n' > ProjectSettings/ProjectVersion.txt; cp "$HERE"/unity/* Assets/Editor/Warmd/
+git init -q -b main .; git config user.name t; git config user.email t@example.com; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+out="$(WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"; rc=$?
+[ $rc != 0 ] && echo "$out" | grep -q '^FAIL Unity 6000.0.0f1 not found' && ok "a refusal inside the engine start is shown, exit $rc" || no "silent exit: rc=$rc out=[$out]"
+expect "and closes with exit code and reason" "^FAIL warmd test ended with exit $rc" "$out"
+cd "$HERE" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

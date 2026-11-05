@@ -7,6 +7,17 @@ LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""; RUNMARK=""
 PARENT_PID="$PPID"
 on_exit() {
   local rc=$?
+  # An exit deep inside a cached run (a refusal in the engine start) skipped the cat of its output: say it now, with reason and log
+  if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
+    {   # fd 8 is the caller's stdout, saved by cached(): the exit happened while stdout went to the file
+      cat "$CACHED_OUT"
+      if [ "$rc" != 0 ]; then
+        local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
+        echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
+      fi
+    } >&8 2>/dev/null
+    rm -f "$CACHED_OUT"
+  fi
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
   case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
@@ -189,7 +200,7 @@ cached() {
   f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
   if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
   slot_now
-  tmp="$(mktemp)"; "$@" > "$tmp"; rc=$?; cat "$tmp"
+  tmp="$(mktemp)"; exec 8>&1; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; exec 8>&-; cat "$tmp"
   if [ $rc = 0 ]; then
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
     find "$CACHE_ROOT/green" -type f -mtime +7 -delete 2>/dev/null
