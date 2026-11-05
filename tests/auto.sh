@@ -61,7 +61,7 @@ stop a "Tests stay red.
 ESCALATE: tests red"
 [ "$(tier a)" = mid ] && [ "$(outcome a)" = escalated ] && ok "failed run escalates one tier, ledger says escalated" || no "first failure: tier $(tier a), outcome $(outcome a)"
 out="$("$WARMD" watch --once)"; rc=$?
-[ "$rc" = 3 ] && echo "$out" | grep -qF "AGENT a: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath a) and do it.\"" && ok "watch wakes the session with the next AGENT line" || no "watch after escalation rc=$rc: $out"
+[ "$rc" = 3 ] && echo "$out" | grep -qF "AGENT a: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath a) and do it. State: warmd/a at" && ok "watch wakes the session with the next AGENT line" || no "watch after escalation rc=$rc: $out"
 sha="$(git -C "$W/a" rev-parse --short HEAD)"
 grep -q "^Earlier commits: $sha a a.txt" "$R/.warmd/tasks/a.md" && grep -q '^Earlier attempt failed' "$R/.warmd/tasks/a.md" && ok "the next tier gets the earlier commits as context" || no "task a: $(tail -3 "$R/.warmd/tasks/a.md")"
 grep -q '^Budget: under 3k' "$R/.warmd/tasks/a.md" && [ "$(sed -n 2p "$C/warmd-handoff/a.task")" = mid ] && ok "budget and handoff index follow the new tier" || no "budget or index: $(sed -n 2p "$C/warmd-handoff/a.task")"
@@ -158,6 +158,33 @@ echo "4 test" > "$G/.warmd/run/last.rc"; touch -t 201901010000 "$G/.warmd/run/la
 red "$G" && ok "a newer daemon FAIL still counts" || no "newer result.txt FAIL not seen"
 rm -f "$G/.warmd/run/result.txt"
 ! red "$G" && ok "a refused run (merge running) is not red" || no "refusal counted as red"
+
+# ---- an automatic commit never takes engine leftovers along ----
+J="$TMP/junk"; mkdir -p "$J/Game/ProjectSettings" "$J/Game/Assets" "$J/Game/Packages" && cd "$J" && git init -q -b main . && git config user.name t && git config user.email t@example.com || exit 1
+printf 'm_EditorVersion: 6000.0.0f1\n' > Game/ProjectSettings/ProjectVersion.txt; echo '{}' > Game/Packages/manifest.json; echo '{"a":1}' > Game/Packages/packages-lock.json; echo '<keep/>' > Game/kept.xml
+git add -A && git commit -qm init
+echo 'class A {}' > Game/Assets/A.cs; echo s > Game/Assets/InitTestScene0a1b2c3d.unity; echo m > Game/Assets/InitTestScene0a1b2c3d.unity.meta
+echo '<test-run/>' > Game/editmode.xml; echo '<x/>' > Game/kept.xml; echo '{"a":2}' > Game/Packages/packages-lock.json
+( . "$HERE/lib/platform.sh"; . "$HERE/lib/auto.sh"; git add -A; auto_unjunk "$J" )
+staged="$(git diff --cached --name-only | tr -d '\r' | sort | paste -sd' ' -)"
+[ "$staged" = "Game/Assets/A.cs Game/kept.xml" ] && ok "WIP commit: InitTestScene, test result XML and lock without manifest change stay out, real work goes in" || no "staged: $staged"
+[ -f Game/editmode.xml ] && [ -f Game/Assets/InitTestScene0a1b2c3d.unity ] && ok "the left out files stay on disk" || no "junk files deleted"
+echo '{"b":1}' > Game/Packages/manifest.json; ( . "$HERE/lib/platform.sh"; . "$HERE/lib/auto.sh"; git add -A; auto_unjunk "$J" )
+git diff --cached --name-only | grep -q 'packages-lock.json' && ok "a lock that goes with a manifest change is committed" || no "lock with manifest change dropped"
+
+# ---- the warmd block in CLAUDE.md stays current: init and the session start renew it ----
+cd "$R" || exit 1
+printf '# Project\n\nOwn rules, warmd mentioned here.\n' > CLAUDE.md
+"$WARMD" init >/dev/null 2>&1
+grep -qF '<!-- warmd: kept current by warmd' CLAUDE.md && grep -qF 'at most 2 lines, result first' CLAUDE.md && grep -q '^Own rules, warmd mentioned here.$' CLAUDE.md && ok "init adds the block although the file mentions warmd" || no "init block: $(cat CLAUDE.md)"
+sed -i 's/at most 2 lines, result first/old text/' CLAUDE.md; echo "old" > .claude/agents/warmd-worker.md
+out="$(printf '{"source":"startup"}' | "$WARMD" hook-session)"
+grep -qF 'at most 2 lines, result first' CLAUDE.md && ! grep -q 'old text' CLAUDE.md && [ "$(grep -c 'kept current by warmd' CLAUDE.md)" = 1 ] && echo "$out" | grep -q 'warmd block in CLAUDE.md renewed' && ok "session start renews an outdated block once, in place" || no "session renew: $out $(cat CLAUDE.md)"
+cmp -s .claude/agents/warmd-worker.md "$HERE/agents/warmd-worker.md" && echo "$out" | grep -q 'agent definitions renewed: warmd-worker.md' && ok "session start renews an outdated agent definition" || no "agent def: $out"
+out="$(printf '{"source":"startup"}' | "$WARMD" hook-session)"; echo "$out" | grep -q 'renewed' && no "renewed twice: $out" || ok "a current block is left alone"
+printf '# P\n\n## warmd\n\nUse `warmd` for every build, test and screenshot.\n\n- Short replies: result first, no preamble.\n\n## Other\nkeep\n' > "$TMP/legacy.md"
+( . "$HERE/lib/platform.sh"; WARMD_HOME="$HERE"; . "$HERE/lib/core.sh"; instr_sync "$TMP/legacy.md" )
+! grep -q 'Short replies' "$TMP/legacy.md" && grep -q '^keep$' "$TMP/legacy.md" && [ "$(grep -c '^## warmd$' "$TMP/legacy.md")" = 1 ] && ok "an older unmarked block is replaced, the sections after it stay" || no "legacy: $(cat "$TMP/legacy.md")"
 
 cd /; rm -rf "$TMP" "$(dirname "$R")/.warmd-worktrees" 2>/dev/null
 [ $fails = 0 ] && echo "auto: all ok" || { echo "auto: $fails failed"; exit 1; }

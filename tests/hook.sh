@@ -176,7 +176,7 @@ touch -d "-5 hours" "$C/warmd-batch"
 t0=$(ms); out="$(cd "$R" && printf '{"hook_event_name":"SessionStart","source":"startup"}' | "$WARMD" hook-session)"; fast "SessionStart" $(( $(ms) - t0 ))
 [ -n "$(find "$C/warmd-batch" -mmin -1)" ] && ok "restart with open agents renews an old batch marker" || no "old batch marker not renewed"
 echo "$out" | grep -q 'agents of the old session are gone' && echo "$out" | grep -q '^- warmd/a: done (ok), 1 ahead' && echo "$out" | grep -q '^- warmd/b: open' && ok "restart shows the batch state" || no "batch state: $out"
-echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it.\"" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
+echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it. State: warmd/b at" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
 echo "$out" | grep -q '^3 of 4 open' && ok "open count" || no "open count: $out"
 out="$(cd "$R" && printf '{"source":"compact"}' | "$WARMD" hook-session)"
 echo "$out" | grep -q 'agents may still run' && ok "compact warns that agents may still run" || no "compact batch: $out"
