@@ -29,5 +29,5 @@ team_handoff() {
     git -C "$GIT_ROOT" log --oneline "$(base_branch)..HEAD" 2>/dev/null | head -8 | cut -c1-72
   } >> "$note"
   model="$(tier_model "$tier")"
-  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
+  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.$(agent_state "$GIT_ROOT")\""
 }

@@ -409,14 +409,37 @@ common_audit() {
 
 # Instructions for any agent: short, because this text is loaded on every turn. Claude Code reads agents and CLAUDE.md from the repo root.
 common_init() {
-  local f block="$WARMD_HOME/agents/INSTRUCTIONS.md" done=0 root="${GIT_ROOT:-$PROJECT}"
+  local f done=0 root="${GIT_ROOT:-$PROJECT}"
   mkdir -p "$root/.claude/agents"
   cp "$WARMD_HOME"/agents/warmd-*.md "$root/.claude/agents/"
   for f in CLAUDE.md AGENTS.md; do
     [ -f "$root/$f" ] || continue
-    grep -q 'warmd' "$root/$f" || { printf '\n' >> "$root/$f"; cat "$block" >> "$root/$f"; }
-    done=1
+    instr_sync "$root/$f"; done=1
   done
-  [ $done = 1 ] || cp "$block" "$root/AGENTS.md"
+  [ $done = 1 ] || instr_sync "$root/AGENTS.md"
   echo "OK agent definitions in .claude/agents, instructions in CLAUDE.md or AGENTS.md"
+}
+
+# The warmd block in CLAUDE.md or AGENTS.md stays current: between its markers it is replaced when warmd brings a newer one
+# (warmd init, and the session start hook in the shared checkout). A file without markers gets the block appended, an older
+# unmarked block (a "## warmd" section that starts with "Use `warmd` for every build") is replaced in place.
+INSTR_START='<!-- warmd: kept current by warmd, edits between these lines are replaced -->'
+INSTR_END='<!-- /warmd -->'
+instr_sync() { # file -> 0 when it changed, 1 when it was current
+  local f="$1" blk="$WARMD_HOME/agents/INSTRUCTIONS.md" mode=append
+  [ -f "$blk" ] || return 1
+  if [ -f "$f" ]; then
+    if grep -qxF "$INSTR_START" "$f"; then mode=marked
+    elif grep -qx '## warmd' "$f" && grep -qF 'Use `warmd` for every build' "$f"; then mode=legacy; fi
+  fi
+  awk -v s="$INSTR_START" -v e="$INSTR_END" -v bf="$blk" -v mode="$mode" '
+    BEGIN { while ((getline l < bf) > 0) b = b l "\n"; blk = s "\n" b e }
+    mode == "marked" && $0 == s { skip = 1; print blk; next }
+    mode == "marked" && skip { if ($0 == e) skip = 0; next }
+    mode == "legacy" && !done && $0 == "## warmd" { skip = 1; done = 1; print blk; next }
+    mode == "legacy" && skip { if ($0 ~ /^## / || $0 ~ /^# /) { skip = 0; print ""; print } ; next }
+    { print }
+    END { if (mode == "append") { if (NR > 0) print ""; print blk } }' "$f" 2>/dev/null > "$f.warmd" < /dev/null
+  if [ -f "$f" ] && cmp -s "$f" "$f.warmd"; then rm -f "$f.warmd"; return 1; fi
+  mv -f "$f.warmd" "$f"
 }
