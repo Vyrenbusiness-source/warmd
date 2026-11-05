@@ -163,6 +163,33 @@ auto_compact() { # hook JSON on stdin
   return 0
 }
 
+# Engine leftovers never ride along in an automatic commit: Unity's InitTestScene of a run that died, a new test result XML
+# next to ProjectSettings, packages-lock.json without a change to its manifest.json. They leave the index, the files stay.
+auto_unjunk() { # worktree
+  local f dir c k v o outs=""
+  # world_outputs in the project's warmd.conf: generated parts go in with the merge gate only, never in a WIP commit
+  for c in "$1/warmd.conf" "$1"/*/warmd.conf; do
+    [ -f "$c" ] || continue; dir="${c%/warmd.conf}"; dir="${dir#"$1"}"; dir="${dir#/}"
+    while IFS='=' read -r k v || [ -n "$k" ]; do
+      [ "${k//[[:space:]]/}" = world_outputs ] || continue
+      v="${v%$'\r'}"; for o in ${v//,/ }; do outs="$outs ${dir:+$dir/}${o%/}"; done
+    done < "$c"
+  done
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    for o in $outs; do case "$f" in "$o"|"$o"/*) git -C "$1" reset -q -- "$f" 2>/dev/null; continue 2;; esac; done
+    case "$f" in
+      *InitTestScene*.unity|*InitTestScene*.unity.meta) ;;
+      *.xml) dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+        [ -f "$1/$dir/ProjectSettings/ProjectVersion.txt" ] || continue
+        git -C "$1" cat-file -e "HEAD:$f" 2>/dev/null && continue;;   # tracked before: real content
+      *packages-lock.json) git -C "$1" diff --cached --quiet -- "${f%packages-lock.json}manifest.json" 2>/dev/null || continue;;
+      *) continue;;
+    esac
+    git -C "$1" reset -q -- "$f" 2>/dev/null
+  done < <(git -C "$1" diff --cached --name-only 2>/dev/null | tr -d '\r')
+}
+
 # Commit what is there, write the handoff note, keep the deny message for this transcript. Once per transcript.
 auto_save() { # name taskfile key reason
   local name="$1" tf="$2" key="$3" why="$4" wt d out line
@@ -170,6 +197,7 @@ auto_save() { # name taskfile key reason
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 1
   # -A: a new file the agent never added belongs to the work too; .gitignore keeps build output out
   git -C "$wt" add -A 2>/dev/null
+  auto_unjunk "$wt"
   git -C "$wt" diff --cached --quiet 2>/dev/null || git -C "$wt" commit -qm "WIP $name: automatic handoff at $why" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} 2>/dev/null
   out="$(cd "$wt" && bash "$WARMD_HOME/bin/warmd" handoff "$name" "Automatic handoff at $why. The work so far is in the commits below." "Check the commits against Done when and finish what is left." 2>&1)"
   line="$(printf '%s\n' "$out" | grep "^AGENT $name:" | tail -1)"

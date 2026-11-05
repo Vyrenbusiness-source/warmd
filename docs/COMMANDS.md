@@ -206,7 +206,7 @@ RED run 41
 ## Setup
 
 ### warmd init
-Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
+Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`, between `<!-- warmd ... -->` markers. The session start hook renews that block and the agent definitions in the shared checkout when a newer warmd brings other text, an older block without markers is replaced in place. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
 
 ### warmd doctor
 Checks what is missing.
