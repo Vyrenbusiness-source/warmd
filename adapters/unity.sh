@@ -164,7 +164,28 @@ a_package() {
   return $rc
 }
 
-a_stop() { daemon_stop; }
+# The own daemon first, then every other Unity with exactly this -projectPath (another tool's editor blocks the next start).
+# A batchmode editor is asked to end, then ended hard. An editor with a window may hold unsaved work: asked only, --force ends it hard.
+a_stop() {
+  local rc pid path flags me n=0 force=0; [ "${1:-}" = --force ] && force=1
+  daemon_stop; rc=$?
+  me="$(native_path "$PROJECT")"; me="${me%/}"
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] && [ "${path,,}" = "${me,,}" ] || continue
+    case "$flags" in *d*) continue;; esac   # a warmd daemon: daemon_stop handled it
+    n=$((n+1))
+    if [[ $flags == *b* ]] || [ $force = 1 ]; then
+      if stop_gently "$pid" "${WARMD_STOP_GRACE:-15}"; then echo "OK stopped other Unity pid $pid on this project ($STOP_HOW$([[ $flags == *b* ]] && echo ", batchmode"))"
+      else echo "FAIL other Unity pid $pid on this project still alive after kill"; rc=1; fi
+    else
+      if [ "$OS" = win ]; then taskkill //PID "$pid" >/dev/null 2>&1; else kill -TERM "$pid" 2>/dev/null; fi
+      sleep 3
+      if pid_alive "$pid"; then echo "WARN Unity pid $pid has this project open in a window, maybe unsaved work: left open. Close it, or: warmd stop --force"
+      else echo "OK closed Unity window pid $pid on this project"; fi
+    fi
+  done < <(unity_procs)
+  return $rc
+}
 a_has_cache() { [ -d "$1/Library" ]; }
 a_status() { if daemon_alive; then echo "Unity $UNITY_VER warm, pid $(daemon_pid)"; else echo "Unity $UNITY_VER cold"; fi; }
 a_seed() { # Library is the slow part: a worktree without it reimports everything

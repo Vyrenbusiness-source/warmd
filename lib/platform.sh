@@ -71,3 +71,30 @@ cpu_count() {
   if [ "$OS" = win ] && [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"; return; fi
   getconf _NPROCESSORS_ONLN 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}"
 }
+
+# Unity editors by command line, AssetImportWorkers left out: one line per editor, pid<TAB>projectPath<TAB>flags
+# (b = -batchmode, d = warmd's daemon). Pids are system pids; the path has forward slashes and no trailing slash.
+unity_procs() {
+  if [ "$OS" = win ]; then
+    # shellcheck disable=SC2016  # PowerShell variables, not bash ones
+    printf '%s\n' 'Get-CimInstance Win32_Process | ForEach-Object { $c = $_.CommandLine; if ($c -and $c -notmatch "AssetImportWorker|Get-CimInstance" -and $c -match "[^A-Za-z0-9]Unity(\.exe)?""?\s" -and $c -match "-projectPath\s+(?:""([^""]+)""|(\S+))") { $p = $matches[1]; if (-not $p) { $p = $matches[2] }; $f = ""; if ($c -match "-batchmode") { $f += "b" }; if ($c -match "warmd-daemon") { $f += "d" }; "{0}`t{1}`t{2}" -f $_.ProcessId, $p.Replace("\", "/").TrimEnd("/"), $f } }' \
+      | powershell.exe -NoProfile -NonInteractive -Command - 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+	'
+  else
+    ps -eo pid=,args= 2>/dev/null | grep -E '[/ ]Unity( |$)|Unity\.app' | grep -v -e AssetImportWorker -e grep | while read -r pid args; do
+      p="$(printf '%s' "$args" | sed -nE 's/.*-projectPath +("([^"]+)"|([^ ]+)).*/\2\3/p')"; [ -n "$p" ] || continue
+      f=""; case " $args " in *" -batchmode "*) f=b;; esac; case "$args" in *warmd-daemon*) f="${f}d";; esac
+      printf '%s\t%s\t%s\n' "$pid" "${p%/}" "$f"
+    done
+  fi
+}
+
+# Ask a process to end, then end it hard. 0 when it is gone. Windows: taskkill without /F closes windows politely.
+stop_gently() { # pid grace-seconds
+  local i=0
+  if [ "$OS" = win ]; then taskkill //PID "$1" >/dev/null 2>&1; else kill -TERM "$1" 2>/dev/null; fi
+  while pid_alive "$1" && [ $i -lt "$2" ]; do sleep 1; i=$((i+1)); done
+  pid_alive "$1" || { STOP_HOW=friendly; return 0; }
+  STOP_HOW=hard; kill_tree "$1"; i=0
+  while pid_alive "$1" && [ $i -lt 8 ]; do sleep 1; i=$((i+1)); done
+  ! pid_alive "$1"
+}
