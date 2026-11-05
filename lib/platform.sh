@@ -18,6 +18,10 @@ native_path() {
 }
 # Shell pids work across every session on all systems and need no process listing, which stalls under load on Windows
 shell_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+# .warmd/run/queued: this project's last run waited in a queue (slot, RAM, graphics, job lock). It goes when the wait ends
+# or the next run starts. A run that died while queued leaves it: a wait is no failure of the agent (lib/auto.sh).
+queue_mark() { [ -n "${RUN:-}" ] && [ -d "$RUN" ] && : > "$RUN/queued" 2>/dev/null; return 0; }
+queue_done() { [ -n "${RUN:-}" ] && rm -f "$RUN/queued" 2>/dev/null; return 0; }
 
 pid_alive() {
   [ -n "${1:-}" ] || return 1
