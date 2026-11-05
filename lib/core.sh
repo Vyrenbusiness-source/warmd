@@ -344,6 +344,26 @@ common_status() {
   echo "heavy runs: ${#held[@]} of $(slots_max)"
   [ -n "$(type -t team_agents)" ] || . "$WARMD_HOME/lib/team.sh" 2>/dev/null
   [ -n "$(type -t team_agents)" ] && echo "parallel agents: up to $(team_agents)${CFG_agents:+ (warmd.conf)}"
+  local m avail total; if m="$(tune_mem)"; then read -r avail total <<< "$m"; echo "RAM free: $(( avail / 1048576 )) MB of $(( total / 1048576 )) MB ($(( avail * 100 / total ))%)"; fi
+  # Every Unity editor on the machine with its project: an editor someone else started blocks this project's daemon
+  local pid path flags what n=0
+  while IFS='	' read -r pid path flags; do
+    [ -n "$pid" ] || continue; n=$((n+1))
+    case "$flags" in *d*) what="warmd daemon";; *b*) what=batchmode;; *) what=window;; esac
+    echo "Unity pid $pid: $path ($what)$([ "${path,,}" = "$(native_path "$PROJECT" | tr '[:upper:]' '[:lower:]')" ] && echo ", this project")"
+  done < <([ "$KIND" = unity ] || [ "${WARMD_STATUS_UNITY:-0}" = 1 ] && unity_procs)
+  [ "$KIND" = unity ] && [ $n = 0 ] && echo "Unity editors: none running"
+  # The running batch: per branch its last commit and how old it is
+  local b wt line now; b="$([ -n "$GIT_ROOT" ] && git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-batch"
+  if [ -s "$b" ]; then
+    now="$(date +%s)"
+    while IFS= read -r wt; do
+      wt="${wt%$'\r'}"; [ -n "$wt" ] || continue
+      line="$(git -C "$wt" log -1 --format='%h %ct %s' 2>/dev/null)" || { echo "batch $wt: folder missing"; continue; }
+      read -r sha ct subj <<< "$line"
+      echo "batch $(git -C "$wt" branch --show-current 2>/dev/null): $sha $(( (now - ct) / 60 )) min ago, $(printf '%s' "$subj" | cut -c1-50)"
+    done < "$b"
+  fi
 }
 
 common_doctor() {
