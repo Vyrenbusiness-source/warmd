@@ -253,10 +253,12 @@ cached() {
     SLOT_DEFER=0
     if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)"; then
       f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")"
-      [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; return 0; }
+      [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; CACHE_HIT=1; return 0; }
     fi
     slot_take_now
   fi
+  # A hit in cached_base counts too, for the closing line of warmd check
+  if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)" && [ -f "$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")" ]; then CACHE_HIT=1; fi
   cached_base "$@"
 }
 

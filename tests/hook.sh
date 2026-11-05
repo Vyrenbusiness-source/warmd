@@ -165,6 +165,7 @@ work a a.txt
 stop a "All done.
 DONE warmd/a" > "$TMP/stop.out"; fast "SubagentStop" "$STOP_MS"
 [ "$STOP_RC" = 0 ] && [ ! -s "$TMP/stop.out" ] && ok "SubagentStop prints nothing and exits 0" || no "SubagentStop rc=$STOP_RC out=$(cat "$TMP/stop.out")"
+grep -q '^## Last message of the agent' "$C/warmd-handoff/a.md" 2>/dev/null && grep -q '^All done.$' "$C/warmd-handoff/a.md" && ok "the agent's last message lands in its handoff note" || no "last message: $(cat "$C/warmd-handoff/a.md" 2>&1)"
 waitfor 'grep -qF "$W/a	" "$C/warmd-batch-done" 2>/dev/null' || no "job for a never finished: $(tail -3 "$C/warmd-hook.log")"
 [ "$(row a)" = "$(printf '6384\t2\tok')" ] && ok "ledger sums tokens over all 3 turns, a turn split in 2 lines once, and counts calls" || no "ledger row a: $(row a), want 6384 = 1115 + 2227 + 3042"
 if [ "$OS" = win ]; then grep -q ' a stopped: .*(detached via cim)' "$C/warmd-hook.log" && ok "job started through Win32_Process.Create, outside the session's tree" || no "job not via cim: $(grep ' a stopped' "$C/warmd-hook.log")"; fi
@@ -176,7 +177,7 @@ touch -d "-5 hours" "$C/warmd-batch"
 t0=$(ms); out="$(cd "$R" && printf '{"hook_event_name":"SessionStart","source":"startup"}' | "$WARMD" hook-session)"; fast "SessionStart" $(( $(ms) - t0 ))
 [ -n "$(find "$C/warmd-batch" -mmin -1)" ] && ok "restart with open agents renews an old batch marker" || no "old batch marker not renewed"
 echo "$out" | grep -q 'agents of the old session are gone' && echo "$out" | grep -q '^- warmd/a: done (ok), 1 ahead' && echo "$out" | grep -q '^- warmd/b: open' && ok "restart shows the batch state" || no "batch state: $out"
-echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it.\"" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
+echo "$out" | grep -qF "AGENT b: subagent_type=warmd-worker model=sonnet-x prompt=\"Read $(taskpath b) and do it. State: warmd/b at" && ! echo "$out" | grep -q 'AGENT a:' && ok "restart gives AGENT lines for the open tasks only" || no "AGENT lines: $out"
 echo "$out" | grep -q '^3 of 4 open' && ok "open count" || no "open count: $out"
 out="$(cd "$R" && printf '{"source":"compact"}' | "$WARMD" hook-session)"
 echo "$out" | grep -q 'agents may still run' && ok "compact warns that agents may still run" || no "compact batch: $out"

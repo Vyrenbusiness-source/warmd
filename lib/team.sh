@@ -466,7 +466,19 @@ team_escalate() {
   echo "$next" > "$STATE/tasks/$name.tier"
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
   handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
-  echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.\""
+  local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$f")"
+  echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
+}
+
+# For the prompt of a next agent on a running task: where the branch stands, and that the old agent must be stopped first.
+agent_state() { # worktree [base]
+  local wt="$1" base="${2:-}" br sha ahead dirty
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  br="$(git -C "$wt" branch --show-current 2>/dev/null)"; [ -n "$br" ] || return 0
+  [ -n "$base" ] || base="$(base_branch)"
+  sha="$(git -C "$wt" rev-parse --short HEAD 2>/dev/null)"; ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo '?')"
+  dirty="$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  printf ' State: %s at %s, %s ahead of %s, %s uncommitted. Stop the previous agent of this task first, never two in one worktree.' "$br" "$sha" "$ahead" "$base" "$dirty"
 }
 
 # The last line of every agent: facts from git and the last run, not prose.

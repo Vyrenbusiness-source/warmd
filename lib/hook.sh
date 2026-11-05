@@ -121,8 +121,8 @@ hook_task_of() { # absolute worktree -> REPLY = its task file
   for i in "${!HOOK_TW[@]}"; do [ "${HOOK_TW[$i]}" = "$1" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }; done
   return 1
 }
-hook_agent_line() { # common dir, task file -> AGENT line to start or continue the task
-  local tf="$2" name tier="" agent model note k v
+hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGENT line to start or continue the task
+  local tf="$2" st="${3:-}" name tier="" agent model note k v
   name="${tf##*/}"; name="${name%.md}"
   { read -r _; read -r tier; } < "$1/warmd-handoff/$name.task" 2>/dev/null
   [ -n "$tier" ] || read -r tier < "${tf%.md}.tier" 2>/dev/null
@@ -133,10 +133,26 @@ hook_agent_line() { # common dir, task file -> AGENT line to start or continue t
   fi
   note="$1/warmd-handoff/$name.md"
   if [ -f "$note" ]; then
-    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.\""
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf, then $(native_path "$note"), and continue from there. Do not redo finished work.$st\""
   else
-    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf and do it.\""
+    echo "AGENT $name: subagent_type=$agent model=$model prompt=\"Read $tf and do it.$st\""
   fi
+}
+
+# Instructions and agent definitions written by an older warmd are renewed in the shared checkout, like the hooks themselves.
+hook_instr() { # shared checkout
+  local f a d x y said=""
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$1/$f" ] && instr_sync "$1/$f" && echo "warmd: the warmd block in $f renewed to the current version, commit it."
+  done
+  for a in "$WARMD_HOME"/agents/warmd-*.md; do
+    d="$1/.claude/agents/${a##*/}"; [ -f "$d" ] || continue
+    x=""; y=""; IFS= read -r -d '' x < "$a"; IFS= read -r -d '' y < "$d"
+    [ "$x" = "$y" ] && continue
+    cp "$a" "$d" && said="$said ${a##*/}"
+  done
+  [ -z "$said" ] || echo "warmd: agent definitions renewed:$said"
+  return 0
 }
 
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
@@ -152,6 +168,7 @@ hook_session() {
   main="$(hook_mainwt "$common")"
   hook_index "$common" "$main"
   hook_abs "$here"; here="$REPLY"; hook_abs "$main"; main="$REPLY"
+  [ "$here" = "$main" ] && hook_instr "$main"
   if [ "$here" != "$main" ] && hook_task_of "$here"; then
     tf="$REPLY"
     echo "warmd: session ${src:-restarted}. Your task and the shared brief again, continue the task."
@@ -176,7 +193,8 @@ hook_session() {
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
         open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
-        hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")")"
+        # The old session's agents are gone after a restart, after a compaction they may still run: the line says to stop them first
+        hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")" " State: ${br:-$wt} at $(git -C "$wt" rev-parse --short HEAD 2>/dev/null), $ahead ahead of $base, $dirty uncommitted. Stop the previous agent of this task first, never two in one worktree.")"
       fi
     done < "$batch"
     echo "$open of $n open. When the last one stops, warmd merges the finished branches by itself."
@@ -230,6 +248,9 @@ ctx = "-"
 if usage:
     last = list(usage.values())[-1]
     ctx = str(sum(int(last.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")))
+import os
+if os.environ.get("WARMD_LASTMSG") and text.strip():
+    open(os.environ["WARMD_LASTMSG"], "w", encoding="utf-8").write(text.strip() + "\n")
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
 print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
@@ -239,7 +260,8 @@ hook_subagent() {
   local in py r name tf tokens calls outcome wt common
   in="$(cat)"
   py="$(hook_py)" || return 0
-  r="$(printf '%s' "$in" | "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
+  local last="${CACHE_ROOT}/lastmsg-$$-$RANDOM.txt"; mkdir -p "$CACHE_ROOT"
+  r="$(printf '%s' "$in" | WARMD_LASTMSG="$last" "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || { rm -f "$last"; return 0; }
   IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
@@ -248,8 +270,18 @@ hook_subagent() {
   fi
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
   common="$(hook_common "$wt")" || return 0
+  hook_lastmsg "$common" "$name" "$last"
   hook_detach "$common/warmd-hook.log" "$wt" hook-job "$name" "$wt" "$tokens" "$calls" "$outcome"
   return 0
+}
+
+# The agent's last message goes into its handoff note: findings it could only write into its answer are not lost
+# with the session. At most 40 lines, the newest message last.
+hook_lastmsg() { # common name file
+  [ -s "$3" ] || { rm -f "$3"; return 0; }
+  mkdir -p "$1/warmd-handoff"
+  { echo "## Last message of the agent, $(date '+%F %T')"; head -n 40 "$3"; } >> "$1/warmd-handoff/$2.md"
+  rm -f "$3"
 }
 
 # hook_detach <log> <dir> <warmd args...>: run warmd so it outlives the session that ran the hook.

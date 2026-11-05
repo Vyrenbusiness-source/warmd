@@ -247,14 +247,23 @@ changed_files() {
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
   # Unity leaves Assets/InitTestScene<guid>.unity behind when a PlayMode run dies: generated, never a change.
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' \
-    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$' | sort -u
+    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$|(^|/)__pycache__/|\.py[co]$|(^|/)\.DS_Store$|(^|/)Thumbs\.db$|(^|/)desktop\.ini$|\.sw[op]$|~$' | sort -u   # caches and editor droppings are no change
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
 # shellcheck disable=SC2120  # check calls it without a filter on purpose: that is the full suite
-run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; run_log test "$*" "$rc"; return $rc; }
+# Every test and check leaves a line in .warmd/run/runs.log: time, commit, exit code, command, filter. warmd handoff copies the
+# green ones of the current commit into the note, so a successor trusts the record instead of the last agent's memory.
+run_log() { # command args rc
+  [ -n "${RUN:-}" ] && [ -d "$RUN" ] || return 0
+  local sha; sha="$(git -C "$PROJECT" rev-parse --short HEAD 2>/dev/null)" || sha=-
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %T')" "$sha" "$3" "$1" "${2:-all}" >> "$RUN/runs.log" 2>/dev/null
+  [ "$(wc -l < "$RUN/runs.log" 2>/dev/null)" -gt 200 ] 2>/dev/null && { tail -n 100 "$RUN/runs.log" > "$RUN/runs.log.tmp" && mv -f "$RUN/runs.log.tmp" "$RUN/runs.log"; }
+  return 0
+}
 
 # Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
 # (full.ms) was faster than the last selective check (check.ms), check runs the full suite instead and stays under it.
@@ -266,11 +275,22 @@ run_check() {
     echo "(running all tests: the full suite took ${full}ms, build plus selection ${chk}ms)"
     run_tests; return
   fi
-  t="$(now_ms)"
-  a_build || return 1
+  t="$(now_ms)"; : > "$RUN/check.start" 2>/dev/null; CACHE_HIT=0
+  a_build || { echo "FAIL $(secs)s check: build red"; return 1; }
   a_check; rc=$?
+  run_log check "affected" "$rc"
   echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
+  check_line "$rc"
   return $rc
+}
+# The last line of every check, also on a cache hit or with no test touched: green has to be visible to be believed.
+check_line() { # rc
+  local sum=""
+  if [ "$1" != 0 ]; then echo "FAIL $(secs)s check: exit $1, cause above"; return; fi
+  [ "$RUN/result.txt" -nt "$RUN/check.start" ] && sum="$(sed -n 2p "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-80)"
+  [ -z "$sum" ] && [ "$RUN/last.log" -nt "$RUN/check.start" ] && sum="tests green"
+  [ "${CACHE_HIT:-0}" = 1 ] && sum="${sum:+$sum, }green from the cache"
+  echo "OK $(secs)s check: compiled, ${sum:-no tests affected}"
 }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
@@ -409,14 +429,37 @@ common_audit() {
 
 # Instructions for any agent: short, because this text is loaded on every turn. Claude Code reads agents and CLAUDE.md from the repo root.
 common_init() {
-  local f block="$WARMD_HOME/agents/INSTRUCTIONS.md" done=0 root="${GIT_ROOT:-$PROJECT}"
+  local f done=0 root="${GIT_ROOT:-$PROJECT}"
   mkdir -p "$root/.claude/agents"
   cp "$WARMD_HOME"/agents/warmd-*.md "$root/.claude/agents/"
   for f in CLAUDE.md AGENTS.md; do
     [ -f "$root/$f" ] || continue
-    grep -q 'warmd' "$root/$f" || { printf '\n' >> "$root/$f"; cat "$block" >> "$root/$f"; }
-    done=1
+    instr_sync "$root/$f"; done=1
   done
-  [ $done = 1 ] || cp "$block" "$root/AGENTS.md"
+  [ $done = 1 ] || instr_sync "$root/AGENTS.md"
   echo "OK agent definitions in .claude/agents, instructions in CLAUDE.md or AGENTS.md"
+}
+
+# The warmd block in CLAUDE.md or AGENTS.md stays current: between its markers it is replaced when warmd brings a newer one
+# (warmd init, and the session start hook in the shared checkout). A file without markers gets the block appended, an older
+# unmarked block (a "## warmd" section that starts with "Use `warmd` for every build") is replaced in place.
+INSTR_START='<!-- warmd: kept current by warmd, edits between these lines are replaced -->'
+INSTR_END='<!-- /warmd -->'
+instr_sync() { # file -> 0 when it changed, 1 when it was current
+  local f="$1" blk="$WARMD_HOME/agents/INSTRUCTIONS.md" mode=append
+  [ -f "$blk" ] || return 1
+  if [ -f "$f" ]; then
+    if grep -qxF "$INSTR_START" "$f"; then mode=marked
+    elif grep -qx '## warmd' "$f" && grep -qF 'Use `warmd` for every build' "$f"; then mode=legacy; fi
+  fi
+  awk -v s="$INSTR_START" -v e="$INSTR_END" -v bf="$blk" -v mode="$mode" '
+    BEGIN { while ((getline l < bf) > 0) b = b l "\n"; blk = s "\n" b e }
+    mode == "marked" && $0 == s { skip = 1; print blk; next }
+    mode == "marked" && skip { if ($0 == e) skip = 0; next }
+    mode == "legacy" && !done && $0 == "## warmd" { skip = 1; done = 1; print blk; next }
+    mode == "legacy" && skip { if ($0 ~ /^## / || $0 ~ /^# /) { skip = 0; print ""; print } ; next }
+    { print }
+    END { if (mode == "append") { if (NR > 0) print ""; print blk } }' "$f" 2>/dev/null > "$f.warmd" < /dev/null
+  if [ -f "$f" ] && cmp -s "$f" "$f.warmd"; then rm -f "$f.warmd"; return 1; fi
+  mv -f "$f.warmd" "$f"
 }
