@@ -42,7 +42,7 @@ namespace Warmd
             {
                 SessionState.SetBool("warmd_init", true);
                 SessionState.SetString(LastJobKey, NowMs().ToString());
-                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt", "current.ms" }) if (File.Exists(F(f))) File.Delete(F(f));
+                foreach (var f in new[] { "state.txt", "job.txt", "result.txt", "errors.txt", "tests.txt", "current.txt", "current.full", "current.ms" }) if (File.Exists(F(f))) File.Delete(F(f));
             }
             if (Application.isBatchMode)
             {
@@ -277,9 +277,7 @@ namespace Warmd
         static void StartTests(Dictionary<string, string> state)
         {
             File.Delete(F("tests.txt"));
-            File.Delete(F("current.txt")); File.Delete(F("current.ms"));
-            state["phase"] = "testing";
-            Write("state.txt", state);
+            File.Delete(F("current.txt")); File.Delete(F("current.full")); File.Delete(F("current.ms"));
             var filter = new Filter { testMode = Get(state, "mode", "Edit") == "Play" ? TestMode.PlayMode : TestMode.EditMode };
             string name = Get(state, "filter");
             if (name != "") filter.groupNames = new[] { name };
@@ -288,7 +286,34 @@ namespace Warmd
             // Only the project's own tests: embedded or linked packages (an HDRP copy in Packages/) bring their own test
             // assemblies, whose failures say nothing about the project. packages=1 in the job runs them too.
             if (Get(state, "packages") != "1") filter.assemblyNames = ProjectAssemblies();
+            // skip=<file>: full test names that already ran or hung in an earlier round (warmd goes on after a HUNG).
+            // The same filter runs again, narrowed to every other test: testNames joins the other fields with AND.
+            string skipFile = Get(state, "skip");
+            if (skipFile != "" && File.Exists(skipFile))
+            {
+                var skip = new HashSet<string>(File.ReadAllLines(skipFile).Select(l => l.Trim()).Where(l => l != ""));
+                state["phase"] = "test-list";
+                Write("state.txt", state);
+                api.RetrieveTestList(filter.testMode, root =>
+                {
+                    var rest = Leaves(root).Select(t => t.FullName).Where(n => !skip.Contains(n)).Distinct().ToArray();
+                    if (rest.Length == 0) { Finish(state, true, new[] { "0 passed, 0 failed, 0 skipped (no test left after the skip list)" }); return; }
+                    filter.testNames = rest;
+                    state["phase"] = "testing";
+                    Write("state.txt", state);
+                    api.Execute(new ExecutionSettings(filter));
+                });
+                return;
+            }
+            state["phase"] = "testing";
+            Write("state.txt", state);
             api.Execute(new ExecutionSettings(filter));
+        }
+
+        static IEnumerable<ITestAdaptor> Leaves(ITestAdaptor t)
+        {
+            if (!t.HasChildren) return t.IsSuite ? Enumerable.Empty<ITestAdaptor>() : new[] { t };
+            return t.Children.SelectMany(Leaves);
         }
 
         static string[] ProjectAssemblies()
@@ -311,6 +336,7 @@ namespace Warmd
             {
                 if (test.HasChildren) return;
                 File.WriteAllText(F("current.txt"), test.Name);
+                File.WriteAllText(F("current.full"), test.FullName);   // warmd steps over a hung test by this name
                 File.WriteAllText(F("current.ms"), NowMs().ToString());   // a file: entering PlayMode reloads the domain, statics are gone
             }
 
@@ -320,6 +346,7 @@ namespace Warmd
                 // A suite is never a test, also an empty one: a filter that matches nothing left the root suite as "1 passed".
                 bool suite = result.Test.IsSuite || result.HasChildren;
                 if (!suite && File.Exists(F("current.ms"))) File.Delete(F("current.ms"));
+                if (!suite && File.Exists(F("current.full"))) File.Delete(F("current.full"));   // a hang between tests names no test
                 bool suiteFail = suite && state.StartsWith("Failed") && !state.Contains("Child");
                 if (suite && !suiteFail) return;
                 string tag = state.StartsWith("Failed") ? "F" : state.StartsWith("Skipped") || state.StartsWith("Ignored") || state.StartsWith("Inconclusive") ? "S" : "P";
@@ -337,7 +364,8 @@ namespace Warmd
                 var lines = new List<string> { $"{rows.Count(p => p[0] == "P")} passed, {failed.Count} failed, {rows.Count(p => p[0] == "S")} skipped" };
                 lines.AddRange(failed.Take(MaxLines - 2).Select(p => "RED " + p[1].Split('.').Last() + ": " + p[2]));
                 if (failed.Count > MaxLines - 2) lines.Add("... " + (failed.Count - MaxLines + 2) + " more red");
-                if (rows.Count == 0) { failed.Add(null); lines[0] = "0 tests ran (filter matches nothing?)"; }
+                if (rows.Count == 0 && Get(state, "skip") != "") lines[0] = "0 passed, 0 failed, 0 skipped (no test left after the skip list)";
+                else if (rows.Count == 0) { failed.Add(null); lines[0] = "0 tests ran (filter matches nothing?)"; }
                 Finish(state, failed.Count == 0, lines);
             }
 
