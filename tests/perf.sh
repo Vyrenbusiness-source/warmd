@@ -76,5 +76,19 @@ git checkout -q -b feat2; printf 'sleep 1.5
 expect "merge refuses the slowdown" '^FAIL merge feat2: .*perf regression: cmd_ms' "$("$WARMD" merge feat2)"
 grep -q '^sleep 1.5' work.sh && no "merge left the slow change" || ok "merge rolled back"
 
+# warmd leak: kernel pool and free RAM around N process starts, Windows only
+. "$HERE/lib/platform.sh"
+out="$(WARMD_NO_RAM_WAIT=1 "$WARMD" leak 5 2>&1)"; rc=$?
+if [ "$OS" = win ]; then
+  expect "leak names the starts" '^warmd leak: 5 starts of ' "$out"
+  expect "leak: nonpaged pool per start" '^nonpaged pool [+-][0-9]+ KB \([+-][0-9]+\.[0-9]{2} KB per start\), now [0-9]+ MB$' "$out"
+  expect "leak: paged pool per start" '^paged pool +[+-][0-9]+ KB \([+-][0-9]+\.[0-9]{2} KB per start\)' "$out"
+  expect "leak: free RAM" '^free RAM +[+-][0-9]+ MB, now [0-9]+ MB$' "$out"
+  expect "leak ends with a verdict" '^(OK no kernel pool growth|LEAK kernel pool grows)' "$(echo "$out" | tail -1)"
+else
+  [ $rc = 2 ] && echo "$out" | grep -q '^FAIL warmd leak measures the Windows kernel pool' && ok "leak outside Windows says so" || no "leak outside Windows: $out"
+fi
+expect "leak with a bad count is usage" '^warmd leak \[N\]' "$("$WARMD" leak abc 2>&1)"
+
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
 [ $fails = 0 ] && echo "all perf tests passed" || { echo "$fails failed"; exit 1; }

@@ -218,6 +218,17 @@ ok git repo
 machine: 8 cores, 31 GB RAM
 ```
 
+### warmd leak
+Measures whether this machine loses kernel memory per process start: nonpaged and paged kernel pool and free RAM before and after N short process starts (default 500), as KB per start. It waits for a free slot and enough free RAM first, like every heavy run. Windows only, elsewhere it says so and exits 2. `WARMD_LEAK_CMD` sets the program started, `WARMD_LEAK_WARN_KB` (default 4) the growth per start that prints a `LEAK` line.
+```text
+warmd leak 500
+warmd leak: 500 starts of true in 21s
+nonpaged pool +2875 KB (+5.75 KB per start), now 1301 MB
+paged pool    +12 KB (+0.02 KB per start), now 1908 MB
+free RAM      -41 MB, now 5120 MB
+LEAK kernel pool grows by about 5 KB per process start: a driver keeps memory until reboot (poolmon shows which tag)
+```
+
 ### warmd feedback
 Prints a prefilled GitHub issue with your bench numbers. Nothing is sent.
 
