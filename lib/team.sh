@@ -47,7 +47,7 @@ rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo 
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
-  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$')" ] || return 1
+  [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/')" ] || return 1   # a daemon warmd renewed is no work
   git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
   a_has_cache "$p${rel:+/$rel}" || return 1
   [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
@@ -515,7 +515,8 @@ team_merge() {
     [ -z "$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)" ] || { echo "FAIL still unresolved:"; git -C "$GIT_ROOT" diff --name-only --diff-filter=U | head -8; return 1; }
   else
     git -C "$GIT_ROOT" status --porcelain -uno | grep -qE '\.sln[x]?$' && git -C "$GIT_ROOT" checkout -q -- '*.sln*' 2>/dev/null
-    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
+    # The daemon copy warmd renewed (unity_sync) is no one's work in progress: the merge commit takes it along
+    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -v 'Assets/Editor/Warmd/')" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
     git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br"; return 2; }
     out="$(git -C "$GIT_ROOT" merge --no-commit --no-ff "$br" 2>&1)" || {
       echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160; return 1; }

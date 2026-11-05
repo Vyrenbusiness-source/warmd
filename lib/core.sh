@@ -94,7 +94,7 @@ detect_project() {
   load_config
 }
 
-CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=30
+CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG_slots=""; CFG_idle_min=10
 CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_package_args=""; CFG_shot_method=""
 CFG_floor=""; CFG_full=""; CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
