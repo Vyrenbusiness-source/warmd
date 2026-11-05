@@ -76,6 +76,7 @@ a_start_daemon() {
   local exe gfx=(-nographics); exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
   [ "${WARMD_GFX:-0}" = 1 ] && { gfx=(); gfx_take; gfx+=($(tune_unity_gpu_flag)); }
+  [ "${WARMD_GFX:-0}" = 1 ] && echo 1 > "$RUN/gfx.txt" || echo 0 > "$RUN/gfx.txt"   # gfx_tests: a headless daemon makes way
   # Each worktree gets a stable port block, so parallel daemons never collide and no agent has to think about it
   if [ -n "$CFG_port_env" ]; then
     export "$CFG_port_env=$(( 7830 + 10 * ( $(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1) % 160 ) ))"
@@ -173,14 +174,44 @@ unity_world() {
   echo "$key" > "$STATE/world.key"
 }
 
+# A filter that names no test class but a test file (DamageJobTests.cs holding class DamageFlowTests) means that file:
+# it becomes the classes declared in it, and says so. A filter that is a class name, or any regex, stays as it is.
+unity_filter_file() { # filter -> REPLY = filter to run
+  REPLY="$1"; UF_GREP=""
+  [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+  grep -rqE "class +$1([^A-Za-z0-9_]|$)" "$PROJECT/Assets" --include='*.cs' 2>/dev/null && return 0
+  local f cls; f="$(find "$PROJECT/Assets" -name "$1.cs" -not -path '*/Library/*' 2>/dev/null | head -1)"
+  [ -n "$f" ] || return 0
+  cls="$(grep -ohE 'class +[A-Za-z_][A-Za-z0-9_]*' "$f" | awk '{print $2}' | sort -u | paste -sd'|' -)"
+  [ -n "$cls" ] || return 0
+  echo "(filter $1 is a file, not a class: running its classes ${cls//|/ })"
+  REPLY="^(.*\.)?($cls)(\.|$)"; UF_GREP="class +($cls)"
+}
+
+# A test that needs a graphics device fails in the headless daemon. gfx_tests=<filter regex> in warmd.conf runs matching
+# filters with graphics (WARMD_GFX=1, a headless daemon makes way); any other graphics failure gets a line that says so.
+UNITY_GFX_ERR='RenderTexture\.Create failed|[Nn]o graphics device|graphics device is null|GraphicsDeviceType\.Null|Kernel .* not found|Shader.* not supported on this GPU|-nographics'
+unity_gfx_hint() { # output -> the hint line when a failure looks like missing graphics
+  [ "${WARMD_GFX:-0}" = 1 ] && return 0
+  printf '%s\n' "$1" | grep -qE "$UNITY_GFX_ERR" && echo "HINT needs graphics: run it with WARMD_GFX=1, or set gfx_tests=<filter> in warmd.conf so warmd does it by itself"
+  return 0
+}
+
 a_test() {
   unity_world || return 1
-  local filter="" mode="" cat="" speed=""
+  local filter="" mode="" cat="" speed="" rc
   while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; *) filter="$1";; esac; shift; done
-  [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "$filter" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "$filter" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
+  [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
+  [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
+  if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
+    echo "(gfx_tests: $filter runs with graphics)"; export WARMD_GFX=1
+    if daemon_alive && [ "$(cat "$RUN/gfx.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
+  fi
   unity_sync
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
-  cached "test|$mode|$filter|$cat|$speed" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}" job test "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
+  return $rc
 }
 
 # The whole PlayMode suite runs long (minutes per test is common): warmd check runs it only in the merge gate or with WARMD_FULL=1

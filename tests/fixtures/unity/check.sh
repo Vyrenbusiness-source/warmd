@@ -63,5 +63,20 @@ echo b >> "$P/Assets/WorldSrc/map.txt"
 expect "a changed source runs it again" '^call Game.World.Build$' "$(wd)"
 rm -f "$P/warmd.conf" "$P/.warmd/world.key"
 
+# A test filter that names a file means the classes in that file; a graphics failure says how to get graphics
+mkdir -p "$P/Assets/Tests"; printf 'public class DamageFlowTests {}\npublic class OtherTests {}\n' > "$P/Assets/Tests/DamageJobTests.cs"
+at() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && CFG_gfx_tests="${GT:-}" && . "$HERE/adapters/unity.sh" \
+  && unity_world() { :; } && daemon_alive() { return 1; } && cached() { echo "cached $1"; shift; echo "$*"; [ -z "${RED:-}" ] || { echo "1 FAIL" > "$RUN/result.txt"; echo "$RED" >> "$RUN/result.txt"; return 1; }; } && a_test "$@" ); }
+out="$(at DamageJobTests)"
+expect "a file name as filter becomes its classes and says so" '^\(filter DamageJobTests is a file, not a class: running its classes DamageFlowTests OtherTests\)$' "$out"
+expect "the daemon gets the class filter" 'filter=\^\(\.\*\\.\)\?\(DamageFlowTests\|OtherTests\)' "$out"
+refuse "a class name stays as it is" 'is a file' "$(at DamageFlowTests)"
+expect "a graphics failure names the fix" '^HINT needs graphics: run it with WARMD_GFX=1' "$(RED='RED Shot: RenderTexture.Create failed' at DamageFlowTests)"
+refuse "other failures get no graphics hint" 'HINT needs graphics' "$(RED='RED X: Expected 1 but was 2' at DamageFlowTests)"
+out="$(GT='Shot' at ShotTests)"
+expect "gfx_tests runs a matching filter with graphics" '^\(gfx_tests: ShotTests runs with graphics\)$' "$out"
+expect "and caches it apart from the headless run" '^cached test\|Edit\|ShotTests\|\|\|gfx1$' "$out"
+rm -rf "$P/Assets/Tests"
+
 [ $fails = 0 ] && echo "unity dotnet stage green" || echo "unity dotnet stage: $fails failed"
 exit $fails
