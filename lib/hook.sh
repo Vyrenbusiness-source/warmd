@@ -50,6 +50,15 @@ hook_pre() {
   auto_agent_start "$in" && return 0   # a new agent on a task: its pause marker goes
   auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
   cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
+  # find from / under Git Bash walks /proc and holds a handle to every process it passes: hundreds of thousands of
+  # zombie processes, gigabytes of kernel memory until reboot. Search a project folder instead.
+  if [ "${OS:-}" = win ] || [ "${WARMD_TEST_WIN:-0}" = 1 ]; then
+    if printf '%s' "$cmd" | grep -qE '(^|[;&|( ])find[[:space:]]+(/|/proc)([[:space:]]|$)'; then
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: find / walks /proc under Git Bash and leaks a handle per process until reboot. Search the project or worktree folder instead."}}
+'
+      return 0
+    fi
+  fi
   hook_wrappable "$cmd" || return 0
   self="$(hook_self)"
   # no permissionDecision on purpose: the user's own permission rules stay in charge of the rewritten command
