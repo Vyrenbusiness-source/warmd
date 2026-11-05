@@ -31,7 +31,8 @@ batch_guard() {
   local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$f" ] || return 0
   [ -n "$(find "$f" -mmin +240 2>/dev/null)" ] && { rm -f "$f"; return 0; }
-  grep -qxF "$GIT_ROOT" "$f" && return 0
+  # Both spellings of the same folder pass (/c/x and C:/x), a marker written by hand or by a Windows tool must not lock out its own worktrees.
+  grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" && return 0
   echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
 }
 
