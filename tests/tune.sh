@@ -166,5 +166,25 @@ if [ "$OS" = win ]; then
   kill $f3 2>/dev/null; wait $f3 2>/dev/null
 fi
 
+# ---- another tool's batchmode editor on a batch worktree no longer blocks the start: it is ended, the run goes on ----
+V="$TMP/ubatch"; mkdir -p "$V/ProjectSettings" "$V/Assets/Editor/Warmd"; printf 'm_EditorVersion: 6000.0.0f1\n' > "$V/ProjectSettings/ProjectVersion.txt"; cp "$HERE"/unity/* "$V/Assets/Editor/Warmd/"
+( cd "$V" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf '.warmd\n' > .gitignore && git add -A && git commit -qm init )
+( cd "$V" && pwd ) > "$(git -C "$V" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+VN="$(native_path "$V")"
+bash "$TMP/fake/Unity" -batchmode -nographics -projectPath "$VN" & f4=$!; sleep 2
+out="$(cd "$V" && WARMD_STOP_GRACE=1 WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"
+expect "a batchmode editor of another tool on a batch worktree is ended" "^\(ended another tool's batchmode Unity pid [0-9]+ on this batch worktree, (friendly|hard)\)$" "$out"
+expect "and the start goes on" '^FAIL Unity 6000.0.0f1 not found' "$out"
+sleep 1; kill -0 $f4 2>/dev/null && { echo "FAIL the blocking editor still runs"; fails=$((fails+1)); } || echo "ok   the blocking editor is gone"
+wait $f4 2>/dev/null
+if [ "$OS" = win ]; then
+  bash "$TMP/fake/Unity" -projectPath "$VN" & f5=$!; sleep 2
+  err="$(cd "$V" && WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1 >/dev/null)"
+  expect "a window editor blocks with a reason on stderr too" '^FAIL another Unity \(pid [0-9]+\) has this project open' "$err"
+  expect "and in result.txt, not counted as red" '^blocked BLOCKED another Unity' "$(head -1 "$V/.warmd/run/result.txt" 2>/dev/null)"
+  kill -0 $f5 2>/dev/null && echo "ok   a window editor is never ended by a start" || { echo "FAIL window editor ended"; fails=$((fails+1)); }
+  kill $f5 2>/dev/null; wait $f5 2>/dev/null
+fi
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails failed"; exit 1; }
