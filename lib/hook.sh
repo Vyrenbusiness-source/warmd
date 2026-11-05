@@ -371,6 +371,8 @@ hook_merge() { # common dir
       echo "SHIP full=ci, no local merge:$ship"
       auto_queue "$common" "SHIP batch done, full=ci merges through CI: warmd ship$ship"
     fi
+    # The merge gate warmed an engine in the base checkout: it would hold gigabytes and a slot for nobody
+    [ $full = 1 ] || echo "$(date '+%F %T') base checkout: $(cd "$tgt" && bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"
     if [ -n "$keep" ]; then
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else
