@@ -110,7 +110,7 @@ unity_window_prep() {
 # Like wait_ready, and a modal dialog of the new editor ends the start at once with its title, text and buttons
 unity_wait_window() { # seconds
   local i=0 d
-  [ "$OS" = win ] && unity_dialog_watch "$1" &
+  [ "$OS" = win ] && unity_dialog_watch "$1" >/dev/null 2>&1 &   # never holds the caller's output pipe open
   while :; do
     sleep 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then break; fi
