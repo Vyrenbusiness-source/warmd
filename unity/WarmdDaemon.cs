@@ -267,7 +267,8 @@ namespace Warmd
 
         static string[] ProjectAssemblies()
         {
-            return CompilationPipeline.GetAssemblies(AssembliesType.Editor).Concat(CompilationPipeline.GetAssemblies(AssembliesType.PlayerWithoutTestAssemblies))
+            // Player holds the PlayMode test assemblies (no platform limit), without it a --play filter matched no test.
+            return CompilationPipeline.GetAssemblies(AssembliesType.Editor).Concat(CompilationPipeline.GetAssemblies(AssembliesType.Player))
                 .Select(a => a.name).Distinct()
                 .Where(n =>
                 {
@@ -285,8 +286,10 @@ namespace Warmd
             public void TestFinished(ITestResultAdaptor result)
             {
                 string state = result.ResultState ?? "";
-                bool suiteFail = result.HasChildren && state.StartsWith("Failed") && !state.Contains("Child");
-                if (result.HasChildren && !suiteFail) return;
+                // A suite is never a test, also an empty one: a filter that matches nothing left the root suite as "1 passed".
+                bool suite = result.Test.IsSuite || result.HasChildren;
+                bool suiteFail = suite && state.StartsWith("Failed") && !state.Contains("Child");
+                if (suite && !suiteFail) return;
                 string tag = state.StartsWith("Failed") ? "F" : state.StartsWith("Skipped") || state.StartsWith("Ignored") || state.StartsWith("Inconclusive") ? "S" : "P";
                 var at = Regex.Match(result.StackTrace ?? "", @"([A-Za-z0-9_.]+\.cs):(?:line )?(\d+)");   // the assert in the test: spares a log search
                 string message = (at.Success ? at.Groups[1].Value + ":" + at.Groups[2].Value + " " : "") + Short(result.Message, 140);
