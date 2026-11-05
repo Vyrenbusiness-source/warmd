@@ -91,11 +91,12 @@ wt_reuse() { # name
 wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
-  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; echo "$wt"; return 0; fi
-  wt_reuse "$name" && return 0
+  rel="$(rel_project)"; src="$PROJECT"
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if wt="$(wt_reuse "$name")"; then seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  wt="$(worktree_dir)/$name"
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
-  rel="$(rel_project)"; src="$PROJECT"
   a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1
   seed_links "$src" "$wt${rel:+/$rel}"
   echo "$wt"
@@ -184,9 +185,13 @@ team_note() {
 }
 
 # seed_links in warmd.conf: untracked folders a worktree needs, linked instead of copied
+# Every link also goes into info/exclude: git sees a junction as a plain folder, so git add -A (the handoff WIP commit) took
+# thousands of package files into a task branch, and its revert deleted them from the worktree.
 seed_links() { # from to
-  local item
+  local item ex rel; ex="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir)/info/exclude"; rel="$(rel_project)"
   for item in ${CFG_seed_links//,/ }; do
+    mkdir -p "${ex%/*}"
+    grep -qxF "/${rel:+$rel/}$item/" "$ex" 2>/dev/null || echo "/${rel:+$rel/}$item/" >> "$ex"
     [ -e "$1/$item" ] && [ ! -e "$2/$item" ] || continue
     if [ "$OS" = win ]; then powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(native_path "$2/$item")' -Target '$(native_path "$1/$item")'" >/dev/null 2>&1
     else ln -s "$1/$item" "$2/$item"; fi

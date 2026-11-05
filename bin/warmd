@@ -4,7 +4,7 @@ set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.4.7
+WARMD_VERSION=0.4.8
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/tune.sh"
@@ -81,6 +81,8 @@ case "${1:-status}" in
 esac
 
 CMD="${1:-status}"; [ $# -gt 0 ] && shift
+# "warmd <cmd> --help" prints that command's usage lines, never runs it with --help as an argument.
+case "${1:-}" in -h|--help) usage | grep -E "^ *warmd $CMD( |$)" || usage; exit 0;; esac
 case "$CMD $*" in run\ *|hook-*|init\ *--hooks*|init\ *--no-hooks*) . "$WARMD_HOME/lib/hook.sh"; hook_main "$CMD" "$@"; exit $?;; esac
 case "$REG_NAMES" in *" $CMD "*) fn="reg_fn_${CMD//-/_}"; "${!fn}" "$@"; exit $?;; esac
 detect_project
