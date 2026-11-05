@@ -232,7 +232,7 @@ mkdir "$C/warmd-automerge.lock"
 [ ! -f "$R/c2.txt" ] && [ ! -f "$C/warmd-automerge.log" ] && ok "a held lock means someone else merges" || no "merged under a held lock"
 echo 999999 > "$C/warmd-automerge.lock/pid"; echo dirty >> "$R/gate.sh"
 (cd "$R" && "$WARMD" hook-merge)
-grep -q '^STOP the shared checkout is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "lock of a dead merge taken over; dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
+grep -q '^STOP the checkout of main in .* is not ready' "$C/warmd-automerge.log" && [ -s "$C/warmd-batch" ] && [ ! -d "$C/warmd-automerge.lock" ] && ok "lock of a dead merge taken over; dirty shared checkout: batch stays, lock freed" || no "dirty checkout: $(cat "$C/warmd-automerge.log")"
 git -C "$R" checkout -q -- gate.sh
 (cd "$R" && "$WARMD" hook-merge)
 [ -f "$R/c2.txt" ] && [ ! -f "$C/warmd-batch" ] && ok "retry after the fix merges" || no "retry: $(cat "$C/warmd-automerge.log")"
@@ -268,6 +268,24 @@ echo "$mlog" | grep -q '^SHIP full=ci, no local merge: warmd/new$' && ok "full=c
 [ ! -f "$M/r/new.txt" ] && [ "$(git -C "$M/r" log -1 --format=%s)" = init ] && ok "full=ci: the shared checkout stays untouched" || no "full=ci merged locally: $(git -C "$M/r" log -1 --format=%s)"
 echo "$mlog" | grep -q '^SKIP warmd/old: already on origin/main$' && ok "a branch already on origin is skipped although the local base is stale" || no "stale base: $mlog"
 grep -q 'SHIP batch done, full=ci merges through CI: warmd ship warmd/new' "$MC/warmd-auto/queue" 2>/dev/null && ok "watch gets the ship line" || no "queue: $(cat "$MC/warmd-auto/queue" 2>/dev/null)"
+
+# ---- automatic merge into the base branch, not into the branch the shared checkout stands on ----
+X="$TMP/basewt"; mkdir -p "$X/r"
+( cd "$X/r" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf 'gate=true\n' > warmd.conf && printf '.warmd\n' > .gitignore \
+  && git add -A && git commit -qm init && git branch dev && git checkout -q -b side && printf 'gate=true\nbase=dev\n' > warmd.conf \
+  && git worktree add -q "$X/dev" dev && for n in t1 t2; do git worktree add -q -b "warmd/$n" "$X/$n" dev; (cd "$X/$n" && echo "$n" > "$n.txt" && git add -A && git commit -qm "$n"); done )
+XC="$(git -C "$X/r" rev-parse --path-format=absolute --git-common-dir)"
+printf '%s\n' "$X/t1" > "$XC/warmd-batch"; printf '%s\tok\n' "$X/t1" > "$XC/warmd-batch-done"
+(cd "$X/r" && "$WARMD" hook-merge)
+xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"
+[ -f "$X/dev/t1.txt" ] && [ "$(git -C "$X/r" log -1 --format=%s dev)" = "Merge warmd/t1" ] && echo "$xlog" | grep -q "merging into dev in .*/dev$" && ok "base checked out in another worktree: merged there" || no "base worktree merge: $xlog"
+[ "$(git -C "$X/r" branch --show-current)" = side ] && [ "$(git -C "$X/r" log -1 --format=%s side)" = init ] && ! echo "$xlog" | grep -q 'only from a checkout' && ok "the branch of the shared checkout stays untouched" || no "shared checkout branch: $(git -C "$X/r" log -1 --format=%s side) $xlog"
+git -C "$X/r" worktree remove --force "$X/dev"; rm -f "$XC/warmd-automerge.log"
+printf '%s\n' "$X/t2" > "$XC/warmd-batch"; printf '%s\tok\n' "$X/t2" > "$XC/warmd-batch-done"
+(cd "$X/r" && "$WARMD" hook-merge)
+xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"; XB="$X/.warmd-worktrees/r/base-dev"
+[ -f "$XB/t2.txt" ] && [ "$(git -C "$XB" branch --show-current)" = dev ] && echo "$xlog" | grep -q '^.* made .*base-dev for dev' && [ ! -f "$XC/warmd-batch" ] && ok "no worktree has the base: a clean one is made and merged into" || no "made base worktree: $xlog"
+[ "$(git -C "$X/r" branch --show-current)" = side ] && [ ! -f "$X/r/t2.txt" ] && ok "shared checkout still untouched" || no "shared checkout touched"
 
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails FAILED"; exit 1; }
