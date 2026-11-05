@@ -190,5 +190,12 @@ printf '# P\n\n## warmd\n\nUse `warmd` for every build, test and screenshot.\n\n
 ( . "$HERE/lib/platform.sh"; WARMD_HOME="$HERE"; . "$HERE/lib/core.sh"; instr_sync "$TMP/legacy.md" )
 ! grep -q 'Short replies' "$TMP/legacy.md" && grep -q '^keep$' "$TMP/legacy.md" && [ "$(grep -c '^## warmd$' "$TMP/legacy.md")" = 1 ] && ok "an older unmarked block is replaced, the sections after it stay" || no "legacy: $(cat "$TMP/legacy.md")"
 
+# ---- a handoff carries the green runs from warmd's own record, not from the agent's memory ----
+cd "$R" || exit 1
+printf 'hh | add hh | hh.txt exists | hh.txt\n' > "$TMP/hh.txt"; WARMD_NO_PREWARM=1 WARMD_BASE=1 "$WARMD" split "$TMP/hh.txt" > /dev/null 2>&1
+( cd "$W/hh" && echo hh > hh.txt && git add hh.txt && git commit -qm hh && WARMD_NOCACHE=1 "$WARMD" test >/dev/null 2>&1; "$WARMD" handoff hh "hh written" "nothing" >/dev/null 2>&1 )
+sha="$(git -C "$W/hh" rev-parse --short HEAD)"
+grep -q "^- test all: green at $sha, " "$C/warmd-handoff/hh.md" 2>/dev/null && ok "handoff note lists the green run with commit and time" || no "handoff note: $(cat "$C/warmd-handoff/hh.md" 2>/dev/null)"
+
 cd /; rm -rf "$TMP" "$(dirname "$R")/.warmd-worktrees" 2>/dev/null
 [ $fails = 0 ] && echo "auto: all ok" || { echo "auto: $fails failed"; exit 1; }

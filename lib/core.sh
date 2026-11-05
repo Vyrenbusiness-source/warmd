@@ -213,7 +213,16 @@ changed_files() {
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
 # shellcheck disable=SC2120  # check calls it without a filter on purpose: that is the full suite
-run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; run_log test "$*" "$rc"; return $rc; }
+# Every test and check leaves a line in .warmd/run/runs.log: time, commit, exit code, command, filter. warmd handoff copies the
+# green ones of the current commit into the note, so a successor trusts the record instead of the last agent's memory.
+run_log() { # command args rc
+  [ -n "${RUN:-}" ] && [ -d "$RUN" ] || return 0
+  local sha; sha="$(git -C "$PROJECT" rev-parse --short HEAD 2>/dev/null)" || sha=-
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %T')" "$sha" "$3" "$1" "${2:-all}" >> "$RUN/runs.log" 2>/dev/null
+  [ "$(wc -l < "$RUN/runs.log" 2>/dev/null)" -gt 200 ] 2>/dev/null && { tail -n 100 "$RUN/runs.log" > "$RUN/runs.log.tmp" && mv -f "$RUN/runs.log.tmp" "$RUN/runs.log"; }
+  return 0
+}
 
 # Build, then only the affected tests. On a small suite that costs more than the plain run: when the last full suite
 # (full.ms) was faster than the last selective check (check.ms), check runs the full suite instead and stays under it.
@@ -228,6 +237,7 @@ run_check() {
   t="$(now_ms)"
   a_build || return 1
   a_check; rc=$?
+  run_log check "affected" "$rc"
   echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
   return $rc
 }
