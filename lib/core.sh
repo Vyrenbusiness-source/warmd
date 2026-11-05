@@ -206,7 +206,7 @@ changed_files() {
   mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
   # Unity leaves Assets/InitTestScene<guid>.unity behind when a PlayMode run dies: generated, never a change.
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' \
-    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$' | sort -u
+    | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$|(^|/)__pycache__/|\.py[co]$|(^|/)\.DS_Store$|(^|/)Thumbs\.db$|(^|/)desktop\.ini$|\.sw[op]$|~$' | sort -u   # caches and editor droppings are no change
 }
 
 # Names of changed source files, as an alternation: lib/foo_bar.ts -> foo_bar. Partial files (Ship.Net.cs) count as Ship.
@@ -234,12 +234,22 @@ run_check() {
     echo "(running all tests: the full suite took ${full}ms, build plus selection ${chk}ms)"
     run_tests; return
   fi
-  t="$(now_ms)"
-  a_build || return 1
+  t="$(now_ms)"; : > "$RUN/check.start" 2>/dev/null; CACHE_HIT=0
+  a_build || { echo "FAIL $(secs)s check: build red"; return 1; }
   a_check; rc=$?
   run_log check "affected" "$rc"
   echo $(( $(now_ms) - t )) > "$STATE/check.ms" 2>/dev/null
+  check_line "$rc"
   return $rc
+}
+# The last line of every check, also on a cache hit or with no test touched: green has to be visible to be believed.
+check_line() { # rc
+  local sum=""
+  if [ "$1" != 0 ]; then echo "FAIL $(secs)s check: exit $1, cause above"; return; fi
+  [ "$RUN/result.txt" -nt "$RUN/check.start" ] && sum="$(sed -n 2p "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-80)"
+  [ -z "$sum" ] && [ "$RUN/last.log" -nt "$RUN/check.start" ] && sum="tests green"
+  [ "${CACHE_HIT:-0}" = 1 ] && sum="${sum:+$sum, }green from the cache"
+  echo "OK $(secs)s check: compiled, ${sum:-no tests affected}"
 }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.

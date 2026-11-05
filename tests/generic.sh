@@ -64,9 +64,19 @@ change lib/notest.sh
 out="$("$WARMD" check 2>&1)"
 expect "a lib file without its own test falls back to the full suite" '^run$' "$(ran)"
 expect "the reason is named" 'lib/notest.sh has no tests/notest.sh' "$out"
+expect "a check that ran tests ends with one result line" '^OK [0-9]+s check: compiled, tests green$' "$(echo "$out" | tail -1)"
+expect "a cache hit ends with a result line too" '^OK [0-9]+s check: compiled, .*green from the cache$' "$(WARMD_NOCACHE=0 "$WARMD" check 2>&1 | tail -1)"
 change warmd.conf
 out="$("$WARMD" check 2>&1)"
 expect "a change no test belongs to runs nothing" '^none$' "$(ran)"
+expect "a check with no test touched still ends with a result line" '^OK [0-9]+s check: compiled, no tests affected$' "$(echo "$out" | tail -1)"
+# caches and editor droppings never count as a change
+refuse() { if echo "$3" | grep -qE "$2"; then no "$1: $(echo "$3" | grep -E "$2" | head -2)"; else ok "$1"; fi; }
+git checkout -qB "w$RANDOM"; mkdir -p Art/__pycache__; : > Art/__pycache__/x.cpython-312.pyc; : > .DS_Store; rm -f ran.txt
+out="$("$WARMD" check 2>&1)"; expect "pycache and .DS_Store start no test" '^none$' "$(ran)"
+refuse "pycache and .DS_Store are no change" 'pycache|DS_Store|running all' "$out"
+rm -rf Art .DS_Store
+
 
 # ---- small suite: when the full run is cheaper than build plus selection, check runs the full suite ----
 S="$TMP/small"; mkdir -p "$S/src" "$S/tests"; cd "$S" || exit 1
