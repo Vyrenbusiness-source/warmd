@@ -25,6 +25,10 @@ printf 'class_name Fresh\nextends RefCounted\n\nstatic func one() -> int:\n\tret
 printf 'extends WarmdTest\n\nfunc test_fresh() -> void:\n\tassert_eq(Fresh.one(), 1)\n' > test/test_fresh.gd
 expect "a new class_name works without a manual restart" '2 passed, 0 failed' "$("$WARMD" test)"
 rm fresh.gd test/test_fresh.gd
+mkdir raw; touch raw/.gdignore; printf 'func broken(:
+' > raw/vendor.gd
+expect "a .gdignore folder is skipped" 'scripts parse' "$("$WARMD" build)"
+rm -rf raw
 printf 'func broken(:\n' > bad.gd
 expect "parse error is found" 'bad.gd does not parse' "$("$WARMD" build)"
 rm bad.gd

@@ -5,6 +5,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [Unreleased]
 
 ### Fixed
+- Godot: `warmd build` skips folders holding `.gdignore`, as Godot does, so raw asset packs with their own scripts no longer turn the build red
 - Godot: `warmd` finds an engine binary kept next to `project.godot` (`Godot*.exe`, `Godot*.x86_64`), also from a worktree via the main checkout, so `WARMD_GODOT` is no longer needed there
 - Godot: a project without WarmdTest, GUT or gdUnit4 runs its own SceneTree runners (`tests/run_*.gd`, exit code counts) instead of reporting "0 tests ran"
 
