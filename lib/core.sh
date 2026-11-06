@@ -73,7 +73,7 @@ batch_guard() {
   fi
   # Both spellings of the same folder pass (/c/x and C:/x), a marker written by hand or by a Windows tool must not lock out its own worktrees.
   grep -qxF -e "$GIT_ROOT" -e "$(native_path "$GIT_ROOT")" "$f" && return 0
-  echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
+  echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file: start every Bash call with cd \"<worktree>\" &&, the shell goes back here after each call. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
 }
 
 # Changes during a merge end up in the merge. Only the merge's own checks may run here, everyone else gets a clear refusal.

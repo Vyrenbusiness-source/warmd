@@ -211,7 +211,7 @@ write_task() { # name tier goal done files wt
   mkdir -p "$STATE/tasks"; f="$STATE/tasks/$name.md"
   port=$(( 7830 + $(ls "$STATE/tasks" | wc -l) * 10 ))
   {
-    echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there. Port block: $port."
+    echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there: start each Bash call with cd \"$(native_path "$wt")\" &&, the shell goes back to the main checkout after every call. Port block: $port."
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
@@ -525,6 +525,7 @@ agent_state() { # worktree [base]
 # The last line of every agent: facts from git and the last run, not prose.
 team_finish() {
   need_git
+  batch_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   local br sha ahead dirty up last base
   br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
   # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
