@@ -21,6 +21,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 - `warmd test --window` runs with graphics in batchmode (the `WARMD_GFX=1` path) with the hang detector on: a visible editor hung in a real run, `HUNG` never fired and the editor stayed open until the agent ended it. `WARMD_WINDOW_REAL=1` still opens the window; why the window editor's hang detector stays silent is open
 
+- `warmd finish` refuses the base checkout (nothing recorded, nothing pushed, the base branch is never pushed by it) and points to the task worktree; a warmd run the agent left behind in its worktree is ended and its slot freed at once
+
 ### Added
 - Prewarm at session start: the engine of every open task worktree starts in the background through the normal queue (slots, RAM wait), like after `warmd split`
 - RAM short: before a run waits for RAM, the engine daemon of another worktree that is idle longest (alive, idle, no job, no run) is stopped; `ram_stop_idle=0` switches it off

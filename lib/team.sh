@@ -525,14 +525,38 @@ agent_state() { # worktree [base]
 # The last line of every agent: facts from git and the last run, not prose.
 team_finish() {
   need_git
+  local br sha ahead dirty up last base
+  br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
+  # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
+  if [ -z "$br" ] || [ "$br" = "$base" ]; then
+    echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
+    return 2
+  fi
   ledger_finish "$@" || return $?
-  local br sha ahead dirty up last
-  br="$(git -C "$GIT_ROOT" branch --show-current)"; sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
+  finish_stop_runs
+  sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
   dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
+}
+
+# The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
+# freed at once (a killed shell may not run its exit trap), and the engine stopped so the test stops too.
+finish_stop_runs() {
+  local f pid w c d p n=0
+  for f in "$STATE"/run/active/*; do
+    [ -f "$f" ] || continue
+    pid="${f##*/}"; [ "$pid" = "$$" ] && continue
+    shell_alive "$pid" || { rm -f "$f"; continue; }
+    w=""; c=""; read -r w c < "$f" 2>/dev/null
+    kill "$pid" 2>/dev/null; rm -f "$f"; n=$((n + 1))
+    for d in "$CACHE_ROOT"/slots/*/; do p=""; read -r p < "$d/pid" 2>/dev/null; [ "$p" = "$pid" ] && rm -rf "${d%/}"; done
+    echo "(stopped warmd ${c:-run} pid $pid that was still running here, its slot is free)"
+  done
+  [ $n = 0 ] || a_stop >/dev/null 2>&1
+  return 0
 }
 
 team_board() {

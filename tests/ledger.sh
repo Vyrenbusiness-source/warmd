@@ -35,6 +35,17 @@ expect "report has top tokens" '^top +1 +1 +0 +3000 ' "$out"
 expect "report names the waste" 'escalation wasted: 1000 tokens in 1 attempts' "$out"
 expect "bad number is refused" 'FAIL' "$("$WARMD" finish --tokens abc)"
 
+# The agent ends while its background test still runs: finish ends that run and frees its slot at once
+sleep 60 & bgp=$!
+mkdir -p .warmd/run/active "$TMP/cache/warmd/slots/2"; echo "- test" > ".warmd/run/active/$bgp"; echo "$bgp" > "$TMP/cache/warmd/slots/2/pid"
+out="$("$WARMD" finish --tokens 3000 --calls 20)"
+expect "finish stops a run the agent left behind" "^\(stopped warmd test pid $bgp that was still running here, its slot is free\)$" "$out"
+kill -0 "$bgp" 2>/dev/null && no "the left run still lives" || ok "the left run is gone"
+[ -d "$TMP/cache/warmd/slots/2" ] && no "its slot is still held" || ok "its slot is free"
+git checkout -q main
+expect "finish refuses the base checkout" '^FAIL warmd finish runs in the base checkout \(main\), nothing recorded, nothing pushed' "$("$WARMD" finish)"
+git checkout -q warmd/a
+
 # routing: one escalated mid task is not enough, two are
 git checkout -q main
 expect "one failure keeps mid" '^mid ' "$("$WARMD" route 'fix a bug' src/y.js)"
