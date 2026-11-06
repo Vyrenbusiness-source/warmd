@@ -225,7 +225,8 @@ prewarm() { # worktree
 # A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
 # it ends, and so wakes the session, as soon as an agent has been idle for <minutes> (default 5) or the batch is over.
 # An agent counts as active when a file or a commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it.
-# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued automatic lines (lib/auto.sh) end it the same way.
+# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued AGENT lines (lib/auto.sh) end it the same way;
+# an ESCALATE or SHIP line only a human can act on ends it with exit 4 and an OPEN line while the batch runs. Exit 0 only when no batch runs.
 # A paused task (its agent stopped, or warmd watch --pause <name>) never alarms until its worktree moves again.
 
 # Does a warmd run or any other process work inside this worktree right now?
@@ -330,6 +331,17 @@ agent_dead() { # worktree name -> reason
   grep -oiE '(API Error|credit balance|billing|usage limit|rate.?limit|overloaded|authentication_error|invalid.?api.?key)[^"\]{0,80}' "$f" | head -1 | grep .
 }
 
+# watch_drain <common> <batch>: the queued lines for the session. 3 when one starts an agent (AGENT), 4 when only a human
+# can act (ESCALATE, SHIP): the batch is not over then, and a closing line says so, because exit 0 means "batch over"
+# and a watch piped through tail loses its exit code. 1 when nothing was queued.
+watch_drain() {
+  local out; out="$(auto_drain "$1")" || return 1
+  printf '%s\n' "$out"
+  case $'\n'"$out" in *$'\n'"AGENT "*) return 3;; esac
+  [ -f "$2" ] && echo "OPEN batch still runs, the line above needs you; start warmd watch again"
+  return 4
+}
+
 team_watch() {
   need_git
   local once=0 limit=5 batch wt age name stalled reason
@@ -341,10 +353,10 @@ team_watch() {
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-5}"
   batch="$common/warmd-batch"
-  auto_drain "$common" && return 3
+  watch_drain "$common" "$batch"; case $? in 3) return 3;; 4) return 4;; esac
   [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
   while :; do
-    auto_drain "$common" && return 3   # an automatic escalation waits for the session to start the next agent
+    watch_drain "$common" "$batch"; case $? in 3) return 3;; 4) return 4;; esac   # an automatic escalation waits for the session to start the next agent
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
     stalled=0; live=0; paused=""
     while IFS= read -r wt; do

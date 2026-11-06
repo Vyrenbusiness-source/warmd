@@ -4,6 +4,16 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- An engine that exits while warmd waits for it to start (compiler errors end a batchmode Unity with return code 1) ends the wait at once: the heavy slot is freed, the unique `error CS` lines of the engine log (at most 10) and a closing `FAIL` follow, exit 1. Was up to 600 s of "daemon not ready" with the slot held and nobody alive. Checked with the kill builtin on Linux and macOS, one tasklist every 5 s on Windows (`WARMD_SPAWN_POLL`)
+- `warmd build`, `check` and `test` always close with an `OK` or `FAIL` line, also after an exit deep inside the run: an agent that pipes through `tail` loses the exit code, never the verdict
+- Past the context limit an agent can still save: `git add`, `commit` and `push`, a `cd` before them and `| tail` behind them pass with `warmd handoff`, `note` and `finish`; every part of a chain has to be one of these
+- The automatic WIP commit leaves warmd's own `Assets/Editor/Warmd` and the `.sln`, `.slnx` and `.csproj` files Unity writes out of the task branch
+- `warmd watch` ends with exit 4 and an `OPEN batch still runs` line for an `ESCALATE` or `SHIP` line, exit 0 only when no batch runs; a fresh agent on the task drops its old `ESCALATE` line
+
+### Added
+- `package_dir` in warmd.conf: one player folder, refreshed after every finished batch (world step, then `warmd package`), overwritten in place; a player that runs from it is waited for
+
 ## [0.4.16] - 2026-11-06
 
 ### Changed

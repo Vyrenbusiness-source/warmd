@@ -40,6 +40,11 @@ auto_agent_start() { # hook JSON -> 0 when it was an Agent call
     name="${p##*/}"; name="${name%.md}"; root="${p%/.warmd/tasks/*}"
     common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
     [ -e "$common/warmd-auto/paused/$name" ] && rm -f "$common/warmd-auto/paused/$name"   # auto_dir without a subshell
+    # a fresh agent on a task that went to a human: the old ESCALATE line no longer stands
+    if [ -s "$common/warmd-auto/queue" ]; then
+      local ql qk=""; while IFS= read -r ql || [ -n "$ql" ]; do [[ $ql == "ESCALATE $name:"* ]] || qk="$qk$ql"$'\n'; done < "$common/warmd-auto/queue"
+      printf '%s' "$qk" > "$common/warmd-auto/queue"
+    fi
     # the task runs again (escalation, handoff, restart): its worktree is no longer finished for warmd watch
     local wt=""; first=""; { IFS= read -r first < "$p"; } 2>/dev/null; [[ $first =~ $cdre ]] && wt="${BASH_REMATCH[1]}"
     if [ -n "$wt" ] && [ -f "$common/warmd-batch-done" ]; then
@@ -141,10 +146,32 @@ auto_transcript() { # transcript -> REPLY = the TSV line of HOOK_PY_TRANSCRIPT, 
 }
 
 # PreToolUse fast path: a builtin time check, python at most once a minute per agent. Prints the deny and returns 0 when the agent must end.
-# After the limit an agent may still hand over what it found and record its end: warmd handoff, note and finish pass.
+# After the limit an agent may still save and hand over what it found and record its end: warmd handoff, note and finish,
+# git add, commit and push pass, also after a cd and with tail or head behind a pipe. Every part of the command has to be
+# one of these: "git commit -m x && warmd test" stays blocked. Builtins only, the command is split outside of quotes.
 auto_allowed() { # hook JSON
-  local re='"command"[[:space:]]*:[[:space:]]*"([^"]*[/\\])?warmd(\.cmd)?[[:space:]]+(handoff|finish|note)([[:space:]]|")'
-  [[ $1 =~ $re ]]
+  local re='"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)"' cmd seg="" c q="" i n bs='\'
+  [[ $1 =~ $re ]] || return 1
+  cmd="${BASH_REMATCH[1]}"; cmd="${cmd//"$bs"n/;}"; cmd="${cmd//"$bs$bs"/$bs}"; cmd="${cmd//"$bs"\"/\"}"
+  n=${#cmd}
+  for (( i = 0; i <= n; i++ )); do
+    c="${cmd:i:1}"
+    if [ $i -lt $n ] && { [ -n "$q" ] || [[ $c != [\;\&\|] ]] || { [ "$c" = '&' ] && [[ ${cmd:i-1:1} == '>' || ${cmd:i+1:1} == '>' ]]; }; }; then   # 2>&1 and &> are no separators
+      if [ -z "$q" ] && [[ $c == [\"\'] ]]; then q="$c"; elif [ "$c" = "$q" ]; then q=""; fi
+      seg="$seg$c"; continue
+    fi
+    auto_allowed_part "$seg" || return 1; seg=""
+  done
+  return 0
+}
+auto_allowed_part() { # one command of a chain
+  local s="$1" w='[^[:space:]]+'
+  while [[ $s == [[:space:]]* ]]; do s="${s#?}"; done
+  while [[ $s =~ ^[A-Za-z_][A-Za-z0-9_]*=$w[[:space:]]+(.*)$ ]]; do s="${BASH_REMATCH[1]}"; done   # VAR=x before the command
+  [ -z "${s//[[:space:]]/}" ] && return 0   # the empty part between && or after the last ;
+  [[ $s =~ ^([^[:space:]]*[/\\])?warmd(\.cmd)?[[:space:]]+(handoff|finish|note)([[:space:]]|$) ]] && return 0
+  [[ $s =~ ^git([[:space:]]+-C[[:space:]]+$w)?[[:space:]]+(add|commit|push)([[:space:]]|$) ]] && return 0
+  [[ $s =~ ^(cd|tail|head|echo|true)([[:space:]]|$) ]]
 }
 auto_pre() { # hook JSON
   local in="$1" tp key d now last=0 r name tf tok calls budget="" pct line bre='^Budget: under ([0-9]*)k'
@@ -183,7 +210,8 @@ auto_compact() { # hook JSON on stdin
 }
 
 # Engine leftovers never ride along in an automatic commit: Unity's InitTestScene of a run that died, a new test result XML
-# next to ProjectSettings, packages-lock.json without a change to its manifest.json. They leave the index, the files stay.
+# next to ProjectSettings, packages-lock.json without a change to its manifest.json, warmd's own Assets/Editor/Warmd and the
+# .sln, .slnx and .csproj files Unity writes into a project root. They leave the index, the files stay.
 auto_unjunk() { # worktree
   local f dir c k v o outs=""
   # world_outputs in the project's warmd.conf: generated parts go in with the merge gate only, never in a WIP commit
@@ -203,6 +231,10 @@ auto_unjunk() { # worktree
         [ -f "$1/$dir/ProjectSettings/ProjectVersion.txt" ] || continue
         git -C "$1" cat-file -e "HEAD:$f" 2>/dev/null && continue;;   # tracked before: real content
       *packages-lock.json) git -C "$1" diff --cached --quiet -- "${f%packages-lock.json}manifest.json" 2>/dev/null || continue;;
+      # warmd's own daemon (warmd init and every run copy it) and the solution files Unity writes: never a task's work
+      Assets/Editor/Warmd/*|*/Assets/Editor/Warmd/*) dir="${f%Assets/Editor/Warmd/*}"; [ -f "$1/${dir}ProjectSettings/ProjectVersion.txt" ] || continue;;
+      *.sln|*.slnx|*.csproj) dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+        [ -f "$1/$dir/ProjectSettings/ProjectVersion.txt" ] || continue;;
       *) continue;;
     esac
     git -C "$1" reset -q -- "$f" 2>/dev/null
@@ -221,7 +253,7 @@ auto_save() { # name taskfile key reason
   out="$(cd "$wt" && bash "$WARMD_HOME/bin/warmd" handoff "$name" "Automatic handoff at $why. The work so far is in the commits below." "Check the commits against Done when and finish what is left." 2>&1)"
   line="$(printf '%s\n' "$out" | grep "^AGENT $name:" | tail -1)"
   if [ -n "$line" ]; then
-    echo "Context at $why: warmd saved your work and wrote the handoff. Only these still run: warmd handoff $name \"what you found\" \"what is next\" and warmd finish. Then stop and end your answer with this line: $line" > "$d/$key.pending"
+    echo "Context at $why: warmd saved your work and wrote the handoff. Only these still run: git add, commit and push, warmd handoff $name \"what you found\" \"what is next\" and warmd finish. Then stop and end your answer with this line: $line" > "$d/$key.pending"
   else
     echo "Context at $why and the automatic handoff failed: $(printf '%s' "$out" | tail -1 | cut -c1-160). Commit, then end with ESCALATE: context full" > "$d/$key.pending"
   fi

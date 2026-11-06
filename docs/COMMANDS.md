@@ -154,7 +154,7 @@ fix-total                  warmd/fix-total            0m      0      0
 ```
 
 ### warmd watch
-Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued escalations end it the same way. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again.
+Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again.
 ```text
 warmd watch --once
 OK no batch running
@@ -238,7 +238,7 @@ Prints a prefilled GitHub issue with your bench numbers. Nothing is sent.
 Fetches the newest version, only when you run it.
 
 ### warmd package
-Builds a player with your own method (Unity), see `package_method` below.
+Builds a player with your own method (Unity), see `package_method` below. With `package_dir` the player has one fixed folder: the world step (`world_method`) runs first, the method gets the folder as `-warmdPackageDir <path>` and in `WARMD_PACKAGE_DIR` and overwrites what is there, and warmd checks that it wrote there. A player that still runs from the folder is waited for with one `WAIT` line, without holding a heavy slot, and nothing is written elsewhere instead. After every automatic merge at the end of a batch warmd runs `warmd package` on the merged base by itself, so there is always exactly one current player.
 
 ## Configuration
 
@@ -272,6 +272,8 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `top_paths` | Paths that need the top tier (regex) | none |
 | `shot_method` | Unity capture method | none |
 | `package_method`, `package_args` | Unity player build for `warmd package` | none |
+| `package_dir` | The one player folder, relative to the project or absolute; set it and every finished batch refreshes the player there | none |
+| `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
 | `gate` | Shell command `warmd merge` runs instead of `check` | none |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
 | `port_env` | Env variable that gets a stable port per worktree | none |
