@@ -6,7 +6,14 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 - `warmd perf` no longer fails an unchanged web app on a busy machine: the load time is the median of at least 5 loads after a discarded warm-up, and a reference page measured in the same browser takes out what a slower machine adds. Old baselines without the reference compare as before
-- The Claude Code plugin manifest says 0.4.22 like `bin/warmd`, and the docs test fails when the two differ again. `warmd ship --release` moves both
+- The docs test fails when the version in `.claude-plugin/plugin.json` differs from `bin/warmd`; `warmd ship --release` moves both
+- `warmd test` on a `node --test` project names the failing test, its file:line, the message and actual/expected (spec and TAP reporter), instead of a keyword filter that dropped the test name and the actual value
+
+## [0.4.23] - 2026-11-06
+
+### Fixed
+- `warmd split`: only tasks still in the batch own files; a merged or pruned task no longer blocks a new task on the same files with "already owned in this batch"
+- `warmd split` no longer hands one worktree to two agents: a reused worktree forgets the "finished" mark of its previous task, so a later split in the same batch does not prune it as free
 
 ## [0.4.22] - 2026-11-06
 
@@ -248,7 +255,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.22...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.23...HEAD
+[0.4.23]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.22...v0.4.23
 [0.4.22]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.21...v0.4.22
 [0.4.21]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.20...v0.4.21
 [0.4.20]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.19...v0.4.20
