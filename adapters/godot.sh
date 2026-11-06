@@ -8,7 +8,34 @@ godot_exe() {
     if [ -x "$c" ]; then echo "$c"; return 0; fi
     command -v "$c" >/dev/null 2>&1 && { command -v "$c"; return 0; }
   done
+  # An engine binary kept next to project.godot (gitignored): look in the project and, for a worktree, in the main checkout
+  local d main
+  main="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  main="${main%/.git}"
+  for d in "$PROJECT" ${main:+"$main"}; do
+    for c in "$d"/Godot*console*.exe "$d"/Godot*.exe "$d"/Godot*.x86_64 "$d"/godot*.x86_64; do
+      [ -f "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
+    done
+  done
   return 1
+}
+
+# Projects without GUT, gdUnit4 or WarmdTest often keep their own runners: tests/run_*.gd that extend SceneTree and quit(1) on failure
+godot_runners() {
+  local f
+  for f in "$PROJECT"/tests/run_*.gd "$PROJECT"/test/run_*.gd; do
+    [ -f "$f" ] && grep -q '^extends SceneTree' "$f" && echo "$f"
+  done
+}
+run_runners() {
+  local exe="$1" f rc=0 n=0; shift
+  for f in "$@"; do
+    n=$((n + 1))
+    echo "== ${f#"$PROJECT"/}"
+    timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" || { echo "FAIL runner ${f#"$PROJECT"/}"; rc=1; }
+  done
+  [ $rc = 0 ] && echo "$n runners passed"
+  return $rc
 }
 project_rx() { native_path "$PROJECT" | sed 's/[]().+*?^$|\\[]/\\&/g'; }
 a_daemon_procs() { procs "daemon\.gd.*warmd-daemon.*$(project_rx)|$(project_rx).*daemon\.gd" 'powershell'; }
@@ -86,6 +113,18 @@ a_test() {
     return
   fi
   refresh_classes
+  if ! grep -rqs --include='*.gd' -e 'extends WarmdTest' -e 'extends "res://addons/warmd/warmd_test.gd"' "$PROJECT" --exclude-dir=.godot --exclude-dir=addons; then
+    local -a runners=()
+    mapfile -t runners < <(godot_runners)
+    if [ ${#runners[@]} -gt 0 ]; then
+      local exe pick=() r; exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
+      # A filter picks runners by name; one that names none (warmd check passes changed file names) runs the whole set, runners are suites
+      for r in "${runners[@]}"; do [ -n "$filter" ] && [[ "${r##*/}" =~ $filter ]] && pick+=("$r"); done
+      [ ${#pick[@]} -gt 0 ] || pick=("${runners[@]}")
+      slot_take; cached "runners|${pick[*]##*/}" run_bounded test run_runners "$exe" "${pick[@]}"
+      return
+    fi
+  fi
   cached "test|$filter" run_job test "filter=$filter"
 }
 
