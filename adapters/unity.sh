@@ -114,6 +114,7 @@ unity_wait_window() { # seconds
   while :; do
     nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then break; fi
+    spawn_gone "$i" && spawn_fail
     if [ -s "$RUN/dialog.txt" ]; then
       d="$(tr -d '\r' < "$RUN/dialog.txt" | head -1 | cut -c1-300)"
       a_kill_daemon
@@ -347,7 +348,7 @@ a_test() {
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
   cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
   [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
-  if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; fi
+  if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; [ $rc = 0 ] && echo "OK $(secs)s test"; fi
   return $rc
 }
 

@@ -11,13 +11,15 @@ on_exit() {
   if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
     {   # stderr: stdout still goes to the file here. No saved stdout fd: a daemon started inside would inherit it and hold the caller's pipe open
       cat "$CACHED_OUT"
-      if [ "$rc" != 0 ]; then
+      if [ "$rc" != 0 ] && [ "${END_SAID:-0}" != 1 ]; then
         local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
         echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
       fi
     } >&2
-    rm -f "$CACHED_OUT"
+    rm -f "$CACHED_OUT"; END_SAID=1
   fi
+  # build, check and test always close with OK or FAIL: an agent that pipes through tail loses the exit code, never the verdict
+  case "${CMD:-}" in build|check|test) [ "$rc" != 0 ] && [ "${END_SAID:-0}" != 1 ] && echo "FAIL $(secs)s ${CMD}: exit $rc, cause above";; esac
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
   case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
@@ -287,6 +289,7 @@ run_check() {
 # The last line of every check, also on a cache hit or with no test touched: green has to be visible to be believed.
 check_line() { # rc
   local sum=""
+  END_SAID=1
   if [ "$1" != 0 ]; then echo "FAIL $(secs)s check: exit $1, cause above"; return; fi
   [ "$RUN/result.txt" -nt "$RUN/check.start" ] && sum="$(sed -n 2p "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-80)"
   [ -z "$sum" ] && [ "$RUN/last.log" -nt "$RUN/check.start" ] && sum="tests green"

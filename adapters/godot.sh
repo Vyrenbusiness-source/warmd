@@ -22,11 +22,11 @@ a_kill_daemon() {
 a_start_daemon() {
   local exe; exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; exit 2; }
   [ -n "$(a_daemon_procs)" ] && { echo "(daemon not answering, restarting)"; a_kill_daemon; }
-  rm -f "$RUN/alive.txt" "$RUN/state.txt"
+  rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/spawn.pid"
   export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
   # First start on a fresh checkout has to build the import cache
   [ -d "$PROJECT/.godot" ] || "$exe" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
-  spawn "$RUN/warmd-daemon.log" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")"
+  SPAWN_PID="$RUN/spawn.pid" spawn "$RUN/warmd-daemon.log" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")"
   wait_ready 120
 }
 

@@ -132,6 +132,26 @@ rm -f "$TMP/order"; out="$(wt ShotTests --play)"
 expect "without it the key stays as before" '^cached test\|Play\|ShotTests\|\|\|gfx0 window=0$' "$out"
 refuse "and nothing is closed" 'daemon_stop|window editor closed' "$out$(cat "$TMP/order" 2>/dev/null)"
 
+# An editor that exits during the start (compiler errors, return code 1) ends the wait at once: slot freed, unique
+# error CS lines, FAIL as the closing line, exit 1. No 600 s wait with nobody alive.
+dead() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/lib/daemon.sh" && . "$HERE/adapters/unity.sh" \
+  && mkdir -p "$RUN" "$TMP/slots/1" && SLOT="$TMP/slots/1" && rm -f "$RUN/alive.txt" && WARMD_SPAWN_POLL=1 wait_ready 30 ); echo "rc=$?"; }
+{ echo "Assets/A.cs(3,5): error CS0103: The name 'x' does not exist in the current context"; echo "Assets/A.cs(3,5): error CS0103: The name 'x' does not exist in the current context"
+  echo "  Assets/B.cs(9,1): error CS1002: ; expected"; echo "Scripts have compiler errors."; echo "Exiting without the bug reporter. Application will terminate with return code 1"; } > "$P/.warmd/run/warmd-daemon.log"
+echo 999999 > "$P/.warmd/run/spawn.pid"
+mkdir -p "$TMP/slots/1"; t0=$SECONDS; out="$(dead)"
+expect "a gone editor ends the wait at once" '^rc=1$' "$out"
+[ $((SECONDS - t0)) -le 10 ] && echo "ok   within seconds, not after the timeout" || { echo "FAIL the wait took $((SECONDS - t0))s"; fails=$((fails+1)); }
+[ -d "$TMP/slots/1" ] && { echo "FAIL the slot is still held"; fails=$((fails+1)); } || echo "ok   and frees its slot"
+expect "every compiler error once" '^2$' "$(echo "$out" | grep -c 'error CS')"
+expect "trimmed" "^Assets/B.cs\(9,1\): error CS1002" "$out"
+expect "FAIL closes the output" '^FAIL [0-9]+s engine exited before it was ready \(pid 999999\), compiler errors above, slot freed, log: ' "$(echo "$out" | grep -v '^rc=' | tail -1)"
+rm -f "$P/.warmd/run/spawn.pid"; echo 1 > "$P/.warmd/run/alive.txt"
+out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/lib/daemon.sh" && . "$HERE/adapters/unity.sh" \
+  && daemon_alive() { :; } && wait_ready 5 ); echo "rc=$?")"
+expect "a ready editor still goes on" '^rc=0$' "$out"
+rm -f "$P/.warmd/run/alive.txt" "$P/.warmd/run/warmd-daemon.log"
+
 if [ "$OS" = win ]; then
   # spawn hands back the system pid of the new process
   ( . "$HERE/lib/platform.sh"; SPAWN_PID="$TMP/sp.pid" spawn "$TMP/sp.log" "$(cygpath -u "$COMSPEC")" /c exit 0 )
