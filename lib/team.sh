@@ -435,6 +435,16 @@ wt_finished() { # common worktree
   return 1
 }
 
+batch_done_forget() { # common worktree
+  [ -f "$1/warmd-batch-done" ] || return 0
+  local w d keep=""; wt_norm_r "$2"; w="$REPLY"
+  while IFS= read -r d || [ -n "$d" ]; do
+    [ -n "$d" ] || continue
+    wt_norm_r "${d%%$'\t'*}"; [ "$REPLY" = "$w" ] || keep="$keep$d"$'\n'
+  done < "$1/warmd-batch-done"
+  printf '%s' "$keep" > "$1/warmd-batch-done"
+}
+
 # When the next split appends to the batch, finished tasks whose work is merged (clean, nothing ahead of the base) leave it.
 # A finished task with unmerged work stays: the automatic merge after the last agent still needs it.
 batch_prune() { # common
@@ -491,6 +501,9 @@ team_split() {
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     if [ -n "$files" ] && [ "$files" != none ]; then
       grep -qxF "$(cd "$wt" && pwd)" "$batch" || ( cd "$wt" && pwd ) >> "$batch"
+      # A reused worktree may still carry the "finished" line of its previous task: the new task is not finished,
+      # or the next split prunes it as free and hands the same worktree to a second agent.
+      batch_done_forget "${batch%/warmd-batch}" "$wt"
       prewarm "$wt"
     fi
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
