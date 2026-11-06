@@ -31,20 +31,24 @@ auto_paused() { # common name worktree
 # Waiting for the worktree to move is not enough, a fresh agent that still reads counts as paused and warmd watch ends.
 auto_agent_start() { # hook JSON -> 0 when it was an Agent call
   [[ $1 =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]] || return 1
-  local p name root common
-  while IFS= read -r p; do
-    p="$(printf '%s' "$p" | tr -s '\\' '/')"
+  # Every Agent call passes here: the task paths are cut out with builtins (grep -o and tr were two process starts each call).
+  # Only a call that names a task file asks git for its common dir.
+  local p name root common rest="$1" bs='\' first line re='[^" '$'\n'']*\.warmd[\\/]+tasks[\\/]+[A-Za-z0-9_.-]+\.md' cdre='.*cd "([^"]*)"'
+  while [[ $rest =~ $re ]]; do
+    p="${BASH_REMATCH[0]}"; rest="${rest#*"$p"}"
+    p="${p//"$bs"//}"; while [[ $p == *//* ]]; do p="${p//\/\//\/}"; done
     name="${p##*/}"; name="${name%.md}"; root="${p%/.warmd/tasks/*}"
     common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
-    rm -f "$(auto_dir "$common")/paused/$name"
+    [ -e "$common/warmd-auto/paused/$name" ] && rm -f "$common/warmd-auto/paused/$name"   # auto_dir without a subshell
     # the task runs again (escalation, handoff, restart): its worktree is no longer finished for warmd watch
-    local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$p" 2>/dev/null)"
+    local wt=""; first=""; { IFS= read -r first < "$p"; } 2>/dev/null; [[ $first =~ $cdre ]] && wt="${BASH_REMATCH[1]}"
     if [ -n "$wt" ] && [ -f "$common/warmd-batch-done" ]; then
+      declare -F wt_norm >/dev/null || . "$WARMD_HOME/lib/team.sh"
       local w d keep=""; w="$(wt_norm "$wt")"
       while IFS= read -r d; do [ "$(wt_norm "${d%%$'\t'*}")" = "$w" ] || keep="$keep$d"$'\n'; done < "$common/warmd-batch-done"
       printf '%s' "$keep" > "$common/warmd-batch-done"
     fi
-  done < <(printf '%s' "$1" | grep -oE '[^" ]*\.warmd[\\/]+tasks[\\/]+[A-Za-z0-9_.-]+\.md')
+  done
   return 0
 }
 
@@ -124,8 +128,17 @@ auto_json_tp() { # hook JSON -> REPLY = the agent's own transcript (subagent fil
   [ -f "$tp" ] || return 1
   REPLY="$tp"
 }
-auto_esc() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "${s//$'\n'/ }"; }
-auto_deny() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$(auto_esc "$1")"; }
+auto_esc() { auto_esc_r "$1"; printf '%s' "$REPLY"; }
+auto_esc_r() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; REPLY="${s//$'\n'/ }"; }
+auto_deny() { auto_esc_r "$1"; printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REPLY"; }
+# REPLY = the file's text without its trailing newlines, like "$(cat file)" but without a process start
+auto_slurp() { REPLY=""; { IFS= read -r -d '' REPLY < "$1"; } 2>/dev/null; while [[ $REPLY == *$'\n' ]]; do REPLY="${REPLY%$'\n'}"; done; }
+# The context check every AUTO_EVERY seconds: the transcript goes to python, one subshell and one python start
+auto_transcript() { # transcript -> REPLY = the TSV line of HOOK_PY_TRANSCRIPT, 1 when it found no warmd task
+  local py r; hook_py_r || return 1; py="$REPLY"; auto_esc_r "$1"
+  r="$("$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null <<< "{\"agent_transcript_path\":\"$REPLY\"}")" || { REPLY=""; return 1; }
+  REPLY="$r"
+}
 
 # PreToolUse fast path: a builtin time check, python at most once a minute per agent. Prints the deny and returns 0 when the agent must end.
 # After the limit an agent may still hand over what it found and record its end: warmd handoff, note and finish pass.
@@ -134,34 +147,35 @@ auto_allowed() { # hook JSON
   [[ $1 =~ $re ]]
 }
 auto_pre() { # hook JSON
-  local in="$1" tp key d now last=0 r name tf tok calls budget pct
+  local in="$1" tp key d now last=0 r name tf tok calls budget="" pct line bre='^Budget: under ([0-9]*)k'
   auto_json_tp "$in" || return 1; tp="$REPLY"
-  d="$(auto_cache)"; key="${tp##*/}"; key="${key%.jsonl}"
-  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  d="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/auto"; key="${tp##*/}"; key="${key%.jsonl}"   # auto_cache without a subshell
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_slurp "$d/$key.pending"; auto_deny "$REPLY"; return 0; }
   [ -f "$d/$key.done" ] && return 1
   printf -v now '%(%s)T' -1
   [ -f "$d/$key.t" ] && read -r last < "$d/$key.t"
   [ $(( now - ${last:-0} )) -ge "$AUTO_EVERY" ] || return 1
-  mkdir -p "$d" && echo "$now" > "$d/$key.t"
-  r="$(printf '{"agent_transcript_path":"%s"}' "$(auto_esc "$tp")" | "$(hook_py)" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 1
+  { [ -d "$d" ] || mkdir -p "$d"; } && echo "$now" > "$d/$key.t"
+  auto_transcript "$tp" || return 1; r="$REPLY"
   IFS='	' read -r name tf _ calls _ tok <<< "$r"   # tok: context fill of the last turn, not the cost over all turns
   [ -f "$tf" ] || return 1
-  budget="$(sed -n 's/^Budget: under \([0-9]*\)k.*/\1/p' "$tf")"; budget=$(( ${budget:-0} * 1000 ))
+  while IFS= read -r line || [ -n "$line" ]; do [[ $line =~ $bre ]] && { budget="${BASH_REMATCH[1]}"; break; }; done < "$tf"
+  budget=$(( ${budget:-0} * 1000 ))
   [ "$budget" -gt 0 ] && [ "$tok" != - ] && pct=$(( tok * 100 / budget )) || pct=0
   if [ "$pct" -ge "$AUTO_PCT" ]; then auto_save "$name" "$tf" "$key" "$pct% of the ${budget%000}k budget"
   elif [ "${calls:-0}" -ge "$AUTO_CALLS" ]; then auto_save "$name" "$tf" "$key" "$calls tool calls"
   else return 1; fi
-  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_deny "$(cat "$d/$key.pending")"; return 0; }
+  [ -f "$d/$key.pending" ] && { auto_allowed "$in" && return 1; auto_slurp "$d/$key.pending"; auto_deny "$REPLY"; return 0; }
   return 1
 }
 
 # PreCompact: the context is full. Save now, the agent's next Bash call gets the deny.
 auto_compact() { # hook JSON on stdin
-  local in r name tf key; in="$(cat)"
+  local in="" r name tf key; IFS= read -r -d '' in || true
   auto_json_tp "$in" || return 0
   key="${REPLY##*/}"; key="${key%.jsonl}"
-  [ -f "$(auto_cache)/$key.done" ] && return 0
-  r="$(printf '{"agent_transcript_path":"%s"}' "$(auto_esc "$REPLY")" | "$(hook_py)" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || return 0
+  [ -f "${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/auto/$key.done" ] && return 0
+  auto_transcript "$REPLY" || return 0; r="$REPLY"
   IFS='	' read -r name tf _ <<< "$r"
   [ -f "$tf" ] || return 0
   auto_save "$name" "$tf" "$key" "compaction" >/dev/null
@@ -198,7 +212,7 @@ auto_unjunk() { # worktree
 # Commit what is there, write the handoff note, keep the deny message for this transcript. Once per transcript.
 auto_save() { # name taskfile key reason
   local name="$1" tf="$2" key="$3" why="$4" wt d out line
-  d="$(auto_cache)"; mkdir -p "$d"; : > "$d/$key.done"
+  d="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/auto"; [ -d "$d" ] || mkdir -p "$d"; : > "$d/$key.done"
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 1
   # -A: a new file the agent never added belongs to the work too; .gitignore keeps build output out
   git -C "$wt" add -A 2>/dev/null

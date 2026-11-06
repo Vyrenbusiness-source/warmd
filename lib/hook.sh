@@ -28,45 +28,57 @@ hook_main() { # command args...
   esac
 }
 
-hook_json_command() { # stdin hook JSON -> decoded command on stdout, return 1 when not decodable
-  local raw
-  raw="$(tr -d '\n\r' | sed -n 's/.*"tool_name" *: *"Bash".*"command" *: *"\(\([^"\\]\|\\.\)*\)".*/\1/p')"
+# ---- PreToolUse: every tool call of every agent runs this. Builtins only: no subshell, no pipe, no program. Some Windows
+# machines keep kernel memory for every process start until reboot, and a fork costs 10 to 30 ms there. ----
+hook_json_command() { # hook JSON -> REPLY = decoded command, return 1 when not decodable
+  REPLY=""; local s="${1//[$'\n\r']/}" raw o1=$'\001' bs='\' q='"' re='"tool_name" *: *"Bash".*"command" *: *"(([^"\\]|\\.)*)"'
+  [[ $s =~ $re ]] || return 1
+  raw="${BASH_REMATCH[1]}"
   [ -n "$raw" ] || return 1
-  raw="$(printf '%s' "$raw" | sed 's/\\\\/\x01/g; s/\\"/"/g; s/\x01/\\/g')"
+  raw=${raw//"$bs$bs"/$o1}; raw=${raw//"$bs$q"/$q}; raw=${raw//$o1/$bs}
   case "$raw" in *\\*) return 1;; esac   # \n, \t, \u: not touched
-  printf '%s' "$raw"
+  REPLY="$raw"
 }
 
 hook_wrappable() { # command -> 0 when it is one simple known command
   local c="$1"
   case "$c" in *[\|\&\;\<\>\$\`\(\)\{\}\*\?\\\"\'~]*|*$'\n'*|warmd\ *|*/warmd\ *) return 1;; esac
   case "$c" in *--watch*|*" -w"|*" -w "*|*--serve*|*" dev"*|*" start"*) return 1;; esac
-  printf '%s' "$c" | grep -qE "$HOOK_KNOWN"
+  [[ $c =~ $HOOK_KNOWN ]]
 }
 
 hook_pre() {
-  local in cmd self
-  in="$(cat)"
+  local in="" cmd re='(^|[;&|( ])find[[:space:]]+(/|/proc)([[:space:]]|$)'
+  IFS= read -r -d '' in || true
   auto_agent_start "$in" && return 0   # a new agent on a task: its pause marker goes
   auto_pre "$in" && return 0   # context full: lib/auto.sh saved the work, the agent ends with its AGENT line
-  cmd="$(printf '%s' "$in" | hook_json_command)" || return 0
+  hook_json_command "$in" || return 0; cmd="$REPLY"
   # find from / under Git Bash walks /proc and holds a handle to every process it passes: hundreds of thousands of
   # zombie processes, gigabytes of kernel memory until reboot. Search a project folder instead.
   if [ "${OS:-}" = win ] || [ "${WARMD_TEST_WIN:-0}" = 1 ]; then
-    if printf '%s' "$cmd" | grep -qE '(^|[;&|( ])find[[:space:]]+(/|/proc)([[:space:]]|$)'; then
+    if [[ $cmd =~ $re ]]; then
       printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: find / walks /proc under Git Bash and leaks a handle per process until reboot. Search the project or worktree folder instead."}}
 '
       return 0
     fi
   fi
   hook_wrappable "$cmd" || return 0
-  self="$(hook_self)"
+  hook_self_r
   # no permissionDecision on purpose: the user's own permission rules stay in charge of the rewritten command
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"%s run -- %s"}}}\n' "$self" "$cmd"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"%s run -- %s"}}}\n' "$REPLY" "$cmd"
 }
 
-hook_self() { # how the hook calls warmd: the name when it is on PATH, else the absolute path
-  if command -v warmd >/dev/null 2>&1 && [ "$(command -v warmd)" = "$WARMD_HOME/bin/warmd" ]; then echo warmd; else echo "$WARMD_HOME/bin/warmd"; fi
+hook_self() { hook_self_r; echo "$REPLY"; }
+hook_self_r() { # REPLY = how the hook calls warmd: the name when PATH finds this warmd first, else the absolute path. command -v by hand, no subshell
+  local d dirs f=""; REPLY="$WARMD_HOME/bin/warmd"
+  IFS=: read -r -a dirs <<< "$PATH"
+  for d in "${dirs[@]}"; do
+    [ -n "$d" ] || d=.
+    if [ -f "$d/warmd" ] && [ -x "$d/warmd" ]; then f="$d/warmd"; break; fi
+    if [ "${OS:-}" = win ] && [ -f "$d/warmd.exe" ] && [ -x "$d/warmd.exe" ]; then f="$d/warmd.exe"; break; fi
+  done
+  [ "$f" = "$WARMD_HOME/bin/warmd" ] && REPLY=warmd
+  return 0
 }
 
 # warmd run -- <cmd>: run anything, print a short result, keep the raw log
@@ -266,15 +278,15 @@ print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 
 # SubagentStop: parse, then hand everything slow (ledger, push, merge) to a detached job and return at once.
 hook_subagent() {
-  local in py r name tf tokens calls outcome wt common
-  in="$(cat)"
-  py="$(hook_py)" || return 0
-  local last="${CACHE_ROOT}/lastmsg-$$-$RANDOM.txt"; mkdir -p "$CACHE_ROOT"
-  r="$(printf '%s' "$in" | WARMD_LASTMSG="$last" "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null)" || { rm -f "$last"; return 0; }
+  local in="" py r name tf tokens calls outcome wt common
+  IFS= read -r -d '' in || true
+  hook_py_r || return 0; py="$REPLY"
+  local last="${CACHE_ROOT}/lastmsg-$$-$RANDOM.txt"; [ -d "$CACHE_ROOT" ] || mkdir -p "$CACHE_ROOT"
+  r="$(WARMD_LASTMSG="$last" "$py" -c "$HOOK_PY_TRANSCRIPT" 2>/dev/null <<< "$in")" || { [ -e "$last" ] && rm -f "$last"; return 0; }
   IFS='	' read -r name tf tokens calls outcome _ <<< "$r"
   [ -n "$name" ] || return 0
   if [ ! -f "$tf" ]; then   # path with spaces or relative in the prompt: the task index knows it
-    common="$(hook_common)" && tf="$(sed -n 1p "$common/warmd-handoff/$name.task" 2>/dev/null)"
+    tf=""; common="$(hook_common)" && { IFS= read -r tf < "$common/warmd-handoff/$name.task"; } 2>/dev/null
     [ -f "$tf" ] || return 0
   fi
   hook_task_wt "$tf" && wt="$REPLY" && [ -d "$wt" ] || return 0
@@ -287,9 +299,12 @@ hook_subagent() {
 # The agent's last message goes into its handoff note: findings it could only write into its answer are not lost
 # with the session. At most 40 lines, the newest message last.
 hook_lastmsg() { # common name file
-  [ -s "$3" ] || { rm -f "$3"; return 0; }
-  mkdir -p "$1/warmd-handoff"
-  { echo "## Last message of the agent, $(date '+%F %T')"; head -n 40 "$3"; } >> "$1/warmd-handoff/$2.md"
+  [ -s "$3" ] || { [ -e "$3" ] && rm -f "$3"; return 0; }
+  [ -d "$1/warmd-handoff" ] || mkdir -p "$1/warmd-handoff"
+  local now l n=0; printf -v now '%(%F %T)T' -1
+  { echo "## Last message of the agent, $now"
+    while [ $n -lt 40 ] && IFS= read -r l; do printf '%s\n' "$l"; n=$((n+1)); done < "$3"
+  } >> "$1/warmd-handoff/$2.md"
   rm -f "$3"
 }
 
@@ -298,9 +313,10 @@ hook_lastmsg() { # common name file
 # Win32_Process.Create starts it from the WMI service instead: no parent, no job, own hidden console. The environment does
 # not come along, so a small script carries it. The launcher itself runs in the background: the hook returns at once.
 hook_detach() {
-  local log="$1" dir="$2" sh a v bash; shift 2
-  if [ "${OS:-}" = win ] && [ -z "${WARMD_NO_CIM:-}" ] && bash="$(cygpath -w /usr/bin/bash.exe 2>/dev/null)" && [ -f "$bash" ]; then
+  local log="$1" dir="$2" sh a v bash nsh ndir; shift 2
+  if [ "${OS:-}" = win ] && [ -z "${WARMD_NO_CIM:-}" ] && hook_winbash && bash="$REPLY"; then
     sh="${log%/*}/warmd-job-$$-$RANDOM.sh"
+    hook_native "$sh"; nsh="$REPLY"; hook_native "$dir"; ndir="$REPLY"
     {
       echo 'trap '"'"'rm -f "$0"'"'"' EXIT'
       for v in PATH HOME XDG_CACHE_HOME WARMD_HOME TMPDIR TEMP TMP CLAUDE_PROJECT_DIR; do [ -n "${!v+x}" ] && printf 'export %s=%q\n' "$v" "${!v}"; done
@@ -309,11 +325,29 @@ hook_detach() {
       printf ' >> %q 2>&1 < /dev/null\n' "$log"
     } > "$sh"
     # CIM refused (policy, no WMI): the old nohup path, better than nothing
-    ( powershell.exe -NoProfile -NonInteractive -Command "\$s = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; \$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='\"$bash\" \"$(native_path "$sh")\"'; CurrentDirectory='$(native_path "$dir")'; ProcessStartupInformation=\$s}; exit \$r.ReturnValue" > /dev/null 2>&1 < /dev/null \
+    ( powershell.exe -NoProfile -NonInteractive -Command "\$s = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; \$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='\"$bash\" \"$nsh\"'; CurrentDirectory='$ndir'; ProcessStartupInformation=\$s}; exit \$r.ReturnValue" > /dev/null 2>&1 < /dev/null \
         || { rm -f "$sh"; cd "$dir" && WARMD_DETACHED=1 WARMD_VIA=nohup exec nohup bash "$WARMD_HOME/bin/warmd" "$@" >> "$log" 2>&1 < /dev/null; } & )
     return 0
   fi
   ( cd "$dir" && WARMD_DETACHED=1 WARMD_VIA=nohup nohup bash "$WARMD_HOME/bin/warmd" "$@" >> "$log" 2>&1 < /dev/null & )
+}
+# native_path into REPLY, no subshell; only a path outside a drive (/tmp, /usr) still asks cygpath
+hook_native() {
+  case "$1" in
+    /[a-zA-Z]/*) local d="${1:1:1}"; REPLY="${d^^}:${1:2}";;
+    [a-zA-Z]:*) local b='\'; REPLY="${1//"$b"//}";;
+    *) REPLY="$(native_path "$1")";;
+  esac
+}
+# REPLY = Windows path of the bash that runs the detached job. cygpath once, then from the cache while the file is there.
+hook_winbash() {
+  REPLY=""; local f="$CACHE_ROOT/winbash" b=""
+  { read -r b < "$f"; } 2>/dev/null
+  if [ -z "$b" ] || [ ! -f "$b" ]; then
+    b="$(cygpath -w /usr/bin/bash.exe 2>/dev/null)" && [ -f "$b" ] || return 1
+    { [ -d "$CACHE_ROOT" ] || mkdir -p "$CACHE_ROOT"; printf '%s\n' "$b" > "$f"; } 2>/dev/null
+  fi
+  REPLY="$b"
 }
 
 # hook-job <name> <worktree> <tokens> <calls> <outcome>: detached. Ledger and push through warmd finish, then the batch check.
@@ -429,7 +463,19 @@ hook_merge() { # common dir
 
 hook_settings() { echo "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/settings.local.json"; }
 
-hook_py() { local p; for p in python3 python; do "$p" -c 'import json' >/dev/null 2>&1 && { echo "$p"; return 0; }; done; return 1; }
+hook_py() { hook_py_r || return 1; echo "$REPLY"; }
+# REPLY = a python that imports json. The name that worked stays in the cache: the probe starts python, the hooks need it
+# at every agent stop and every minute per agent, and a python start is several process objects on Windows.
+hook_py_r() {
+  REPLY=""; local p="" f="$CACHE_ROOT/python"
+  { read -r p < "$f"; } 2>/dev/null
+  [ -n "$p" ] && hash "$p" 2>/dev/null && { REPLY="$p"; return 0; }
+  for p in python3 python; do
+    "$p" -c 'import json' >/dev/null 2>&1 || continue
+    REPLY="$p"; { [ -d "$CACHE_ROOT" ] || mkdir -p "$CACHE_ROOT"; echo "$p" > "$f"; } 2>/dev/null; return 0
+  done
+  return 1
+}
 
 # mode add|remove, settings file, hook command prefix
 hook_edit() {

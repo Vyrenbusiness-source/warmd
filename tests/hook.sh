@@ -104,6 +104,27 @@ echo "$out" | grep -q '"permissionDecision":"deny"' && ok "find / is refused" ||
 out="$(pre_json '"find . -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
 echo "$out" | grep -q 'deny' && no "project find refused: $out" || ok "find . passes"
 
+# ---- PreToolUse starts no program: every tool call of every agent runs it, and some Windows machines keep kernel memory
+# for every process start until reboot. PATH points nowhere, so any external call fails and shows on stderr. ----
+NP="$XDG_CACHE_HOME/warmd/auto"; mkdir -p "$NP"; printf -v now '%(%s)T' -1
+: > "$TMP/np.jsonl"; echo "$now" > "$NP/np.t"   # context checked a moment ago: no python in this call
+: > "$TMP/np2.jsonl"; echo "Context at 99 tool calls: end with this line: AGENT x: go" > "$NP/np2.pending"
+np_json() { printf '{"session_id":"s","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":%s,"tool_use_id":"t"}' "$TMP/$1.jsonl" "$2" "$3"; }
+nopath() { PATH=/nonexistent WARMD_TEST_WIN=1 "$BASH" "$WARMD" hook-pre 2> "$TMP/np.err"; }
+nperr() { [ ! -s "$TMP/np.err" ] || { echo "     stderr: $(head -3 "$TMP/np.err")"; return 1; }; }
+out="$(np_json np Bash '{"command":"npm test","description":"x"}' | nopath)"; got="$(updated "$out" 2>/dev/null)"
+case "$got" in *" run -- npm test") nperr && ok "no program start: known command wrapped" || no "wrapped, but a program was started";; *) no "no-PATH wrap: $out $(cat "$TMP/np.err")";; esac
+out="$(np_json np Bash '{"command":"git status","description":"x"}' | nopath)"
+[ -z "$out" ] && nperr && ok "no program start: other command left alone" || no "no-PATH plain command: $out $(cat "$TMP/np.err")"
+out="$(np_json np Bash '{"command":"find / -name x.png"}' | nopath)"
+echo "$out" | grep -q '"permissionDecision":"deny"' && nperr && ok "no program start: find / refused" || no "no-PATH find /: $out $(cat "$TMP/np.err")"
+out="$(np_json np Agent '{"subagent_type":"warmd-worker","prompt":"Find where foo is defined"}' | nopath)"; rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] && nperr && ok "no program start: Agent call passes" || no "no-PATH Agent call rc=$rc: $out $(cat "$TMP/np.err")"
+out="$(np_json np2 Bash '{"command":"ls"}' | nopath)"
+echo "$out" | grep -q '"permissionDecision":"deny".*99 tool calls: end with this line: AGENT x: go"' && nperr && ok "no program start: full context refused with its AGENT line" || no "no-PATH pending deny: $out $(cat "$TMP/np.err")"
+out="$(np_json np2 Bash '{"command":"warmd finish"}' | nopath)"
+[ -z "$out" ] && nperr && ok "no program start: warmd finish passes after the limit" || no "no-PATH finish: $out $(cat "$TMP/np.err")"
+
 # ---- SessionStart compact: task and brief come back ----
 M="$TMP/main"; mkdir -p "$M/.warmd/tasks"; cd "$M" && git init -q -b main . && git config user.name t && git config user.email t@example.com && git commit -q --allow-empty -m i || exit 1
 git worktree add -q "$TMP/wt" -b w1 && git worktree add -q "$TMP/wt2" -b w2

@@ -3,8 +3,23 @@
 set -u
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
-WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
-WARMD_VERSION=0.4.15
+# WARMD_HOME without a process start: hooks run this for every tool call of every agent, and some Windows machines keep
+# kernel memory for every process start until reboot. A clean absolute path is cut in bash, anything else goes through cd.
+WARMD_HOME="${SELF//\\//}"
+case "${OSTYPE:-}" in msys*) [[ $WARMD_HOME == [A-Za-z]:/* ]] && { _d="${WARMD_HOME:0:1}"; WARMD_HOME="/${_d,,}${WARMD_HOME:2}"; };; esac
+if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $WARMD_HOME != */../* && $WARMD_HOME != */. && $WARMD_HOME != */.. ]] && [ -d "${WARMD_HOME%/*}" ]; then
+  WARMD_HOME="${WARMD_HOME%/*}"; WARMD_HOME="${WARMD_HOME%/*}"
+else
+  WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
+fi
+WARMD_VERSION=0.4.16
+# A hook loads only what it needs: no other lib, no grep over lib/. PreToolUse (every tool call), SubagentStop and PreCompact.
+case "${1:-}" in
+  hook-pre|hook-subagent|hook-compact)
+    CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
+    . "$WARMD_HOME/lib/platform.sh"; . "$WARMD_HOME/lib/auto.sh"; . "$WARMD_HOME/lib/hook.sh"
+    hook_main "$@"; exit $?;;
+esac
 . "$WARMD_HOME/lib/platform.sh"
 . "$WARMD_HOME/lib/core.sh"
 . "$WARMD_HOME/lib/tune.sh"
