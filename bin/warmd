@@ -12,7 +12,7 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.17
+WARMD_VERSION=0.4.18
 # A hook loads only what it needs: no other lib, no grep over lib/. PreToolUse (every tool call), SubagentStop and PreCompact.
 case "${1:-}" in
   hook-pre|hook-subagent|hook-compact)

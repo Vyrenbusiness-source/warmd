@@ -11,6 +11,7 @@ handoff_register() { # name taskfile tier
 # warmd handoff <name> "<what is done>" "<what is next>"
 team_handoff() {
   need_git
+  shared_guard   # the main checkout during a batch: the handoff belongs to the task's worktree
   local name="${1:-}" done_text="${2:-}" next_text="${3:-}" dir task tier note round model
   [ -n "$name" ] && [ -n "$done_text" ] && [ -n "$next_text" ] || { echo "warmd handoff <name> \"what is done\" \"what is next\""; return 2; }
   dir="$(handoff_dir)"

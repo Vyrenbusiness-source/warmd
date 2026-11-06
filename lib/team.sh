@@ -211,7 +211,7 @@ write_task() { # name tier goal done files wt
   mkdir -p "$STATE/tasks"; f="$STATE/tasks/$name.md"
   port=$(( 7830 + $(ls "$STATE/tasks" | wc -l) * 10 ))
   {
-    echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there. Port block: $port."
+    echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there: start each Bash call with cd \"$(native_path "$wt")\" &&, the shell goes back to the main checkout after every call. Port block: $port."
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
@@ -532,6 +532,7 @@ team_finish() {
     echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
     return 2
   fi
+  shared_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   ledger_finish "$@" || return $?
   finish_stop_runs
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
