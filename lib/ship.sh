@@ -132,6 +132,10 @@ ship_bump() { # vX.Y.Z
   if [ -f bin/warmd ] && grep -q '^WARMD_VERSION=' bin/warmd; then
     sed -i "s/^WARMD_VERSION=.*/WARMD_VERSION=$v/" bin/warmd; git add bin/warmd
   fi
+  # The Claude Code plugin pins its users to this version, it moves with bin/warmd
+  if [ -f .claude-plugin/plugin.json ] && grep -q '^  "version": ' .claude-plugin/plugin.json; then
+    sed -i "s/^  \"version\": \"[^\"]*\"/  \"version\": \"$v\"/" .claude-plugin/plugin.json; git add .claude-plugin/plugin.json
+  fi
   if [ -f CHANGELOG.md ] && grep -q '^## \[Unreleased\]' CHANGELOG.md && ! grep -qF "## [$v]" CHANGELOG.md; then
     prev="$(sed -nE 's/^\[Unreleased\]: .*compare\/(v[0-9][0-9.]*)\.\.\.HEAD.*/\1/p' CHANGELOG.md)"
     # Nothing written under Unreleased: the release still says what it brings, from the commit subjects since the last tag.
@@ -151,6 +155,17 @@ ship_bump() { # vX.Y.Z
   git diff --cached --quiet && return 0
   git commit -qm "release v$v" || { echo "FAIL commit release v$v"; return 1; }
   echo "ok   version $v in bin/warmd and CHANGELOG.md"
+}
+
+# Release notes for people who read the release page: the CHANGELOG section of the version, written for readers.
+# Without one, the commit subjects since the last tag, without release and WIP commits. Then a compare link.
+ship_notes() { # vX.Y.Z ref [last tag]
+  local v="${1#v}" notes url
+  notes="$(git show "$2:CHANGELOG.md" 2>/dev/null | awk -v h="## [$v]" 'index($0, h) == 1 { on=1; next } on && /^## \[/ { exit } on' | sed -e '/./,$!d')"
+  [ -n "$notes" ] || notes="$(git log --no-merges --format='- %s' ${3:+"$3.."}"$2" | grep -vE '^- (release v|WIP)')"
+  url="$(gh repo view --json url --jq .url 2>/dev/null)"
+  [ -n "$url" ] && [ -n "$3" ] && notes="$notes"$'\n\n'"**Full changelog**: $url/compare/$3...$1"
+  printf '%s\n' "$notes"
 }
 
 # Origin URLs in one form: https, ssh and a trailing .git name the same repo
@@ -259,7 +274,7 @@ ship_run() {
     git fetch -q origin
     local last notes
     last="$(git describe --tags --abbrev=0 "origin/$base" 2>/dev/null)"
-    notes="$(git log --no-merges --format='- %s' ${last:+"$last.."}"origin/$base")"
+    notes="$(ship_notes "$release" "origin/$base" "$last")"
     gh release create "$release" --target "$base" --title "$release" --notes "$notes" >/dev/null 2>&1 || { echo "FAIL gh release create $release"; return 1; }
     echo "ok   release $release"
     ship_install "$base"

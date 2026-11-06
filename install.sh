@@ -5,8 +5,8 @@
 set -eu
 DIR="${WARMD_DIR_INSTALL:-$HOME/.warmd}"
 BIN="${WARMD_BIN:-$HOME/.local/bin}"
-REPO="${WARMD_REPO:-https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents.git}"
-STAR="https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents"
+REPO="${WARMD_REPO:-https://github.com/Vyrenbusiness-source/warmd.git}"
+STAR="https://github.com/Vyrenbusiness-source/warmd"
 case "${OSTYPE:-$(uname -s)}" in msys*|cygwin*|mingw*|MINGW*|MSYS*|CYGWIN*) WIN=1;; *) WIN=0;; esac
 command -v git >/dev/null 2>&1 || {
   if [ "$WIN" = 1 ]; then echo "FAIL git missing. Fix: winget install --id Git.Git -e, then open Git Bash and run this again"

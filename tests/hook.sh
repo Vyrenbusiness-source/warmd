@@ -36,6 +36,24 @@ out="$(printf '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{
 [ -z "$out" ] && ok "left alone: other tool" || no "touched other tool: $out"
 printf 'not json at all' | "$WARMD" hook-pre >/dev/null; [ $? = 0 ] && ok "garbage input exits 0" || no "garbage input fails"
 
+# ---- Claude Code plugin: its hooks pass --plugin, step aside when warmd init hooks are in the project settings ----
+PJ="$TMP/plugproj"; mkdir -p "$PJ/.claude"
+got="$(updated "$(pre_json "$(jstr "npm test")" | CLAUDE_PROJECT_DIR="$PJ" "$WARMD" hook-pre --plugin)" 2>/dev/null)"
+case "$got" in *" run -- npm test") ok "plugin hook wraps without init hooks";; *) no "plugin hook did not wrap: $got";; esac
+printf '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"warmd hook-pre"}]}]}}\n' > "$PJ/.claude/settings.local.json"
+out="$(pre_json "$(jstr "npm test")" | CLAUDE_PROJECT_DIR="$PJ" "$WARMD" hook-pre --plugin)"
+[ -z "$out" ] && ok "plugin hook steps aside when init hooks exist" || no "plugin hook ran twice: $out"
+out="$(printf '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PJ" "$WARMD" hook-session --plugin)"
+[ -z "$out" ] && ok "plugin session hook steps aside too" || no "plugin session hook ran twice: $out"
+rm -f "$PJ/.claude/settings.local.json"
+out="$(cd "$PJ" && printf '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PJ" "$WARMD" hook-session --plugin)"
+echo "$out" | grep -q 'agents are warmd:warmd-worker' && echo "$out" | grep -qF 'Use `warmd` for every build' && ok "plugin session hook brings the instructions" || no "plugin session instructions: $out"
+printf '## warmd\n\nUse `warmd` for every build, test and screenshot.\n' > "$PJ/CLAUDE.md"
+out="$(cd "$PJ" && printf '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PJ" "$WARMD" hook-session --plugin)"
+[ -z "$out" ] && ok "no instructions when CLAUDE.md has the block" || no "instructions repeated: $out"
+out="$(WARMD_PLUGIN=1 "$WARMD" route "fix the footer")"
+case "$out" in *"agent=warmd:warmd-"*) ok "plugin agents are namespaced";; *) no "plugin agent name: $out";; esac
+
 # ---- warmd run: short output, exit code, raw log ----
 for r in vitest pytest cargo go dotnet; do
   f="$FIX/$r.log"
