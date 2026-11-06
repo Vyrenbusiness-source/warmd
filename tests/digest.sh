@@ -23,7 +23,7 @@ check() {
   local pct=$(( (raw - new) * 100 / raw )) oldpct=$(( (raw - old) * 100 / raw ))
   printf '     %-7s raw %5d B  old filter %4d B (%2d%%)  digest %4d B (%2d%%)\n' "$r" "$raw" "$old" "$oldpct" "$new" "$pct"
   [ "$pct" -ge 80 ] && ok "$r saves at least 80%" || no "$r saves only $pct%"
-  [ "$r" = "$(digest_runner "$f")" ] && ok "$r detected" || no "$r detected as '$(digest_runner "$f")'"
+  [ "${r%%-*}" = "$(digest_runner "$f")" ] && ok "$r detected" || no "$r detected as '$(digest_runner "$f")'"
 }
 
 check vitest "applies discount" "src/total.test.ts:14" "95" "90"
@@ -32,6 +32,8 @@ check pytest "test_applies_discount" "assert 90 == 95" "tests/test_total.py:14"
 check cargo  "total::tests::applies_discount" "src/total.rs:31" "left: 90" "right: 95"
 check go     "TestAppliesDiscount" "total_test.go:14" "= 90, want 95"
 check dotnet "Shop.Tests.TotalTests.AppliesDiscount" "Expected: 95" "Actual:   90" "TotalTests.cs:line 14"
+check node   "FAIL coupon(50)" "test\coupon.test.js:5:3" "50 !== 45" "actual: 50" "expected: 45"
+check node-tap "FAIL coupon(50)" "coupon.test.js:5:3" "50 !== 45" "actual: 50" "expected: 45"
 
 # unknown log: no digest, caller falls back
 printf 'some build said boom\n' > "$FIX/../.unknown.tmp"

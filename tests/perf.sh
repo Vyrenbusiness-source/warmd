@@ -31,7 +31,14 @@ expect "detected as web" "web project" "$("$WARMD" status)"
 expect "no baseline is refused" '^FAIL perf: no baseline' "$("$WARMD" perf)"
 out="$("$WARMD" perf --save)"; expect "baseline saved" '^OK [0-9]+s perf baseline saved: .*load_ms10 [0-9]+ .*size_bytes [0-9]+' "$out"
 [ -f warmd.perf ] && ok "baseline lives in the repo" || no "warmd.perf missing"
-expect "equal result passes" '^OK [0-9]+s perf within 5%' "$("$WARMD" perf)"
+expect "baseline holds the machine reference" '^load_ref_ms10 [0-9]+$' "$(cat warmd.perf)"
+r="$("$WARMD" perf)"; echo "     baseline: $(tr '\n' ' ' < warmd.perf) now: $r"
+expect "equal result passes" '^OK [0-9]+s perf within 5%' "$r"
+# A machine that is slower now slows the reference page as much: that part is no regression of the product
+cp warmd.perf "$TMP/perf.keep"
+awk '$1 ~ /^load_(ref_)?ms10$/ { $2 -= 3000 } { print }' "$TMP/perf.keep" > warmd.perf
+expect "slower machine is no regression" '^OK ' "$("$WARMD" perf)"
+cp "$TMP/perf.keep" warmd.perf
 
 write_app 100 4000
 expect "bigger bundle is refused" '^FAIL perf regression: size_bytes' "$("$WARMD" perf)"
