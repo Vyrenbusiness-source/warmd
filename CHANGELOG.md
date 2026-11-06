@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- An agent's shell goes back to the main checkout after every Bash call when its worktree lies outside the session's folders, so `warmd finish` and `handoff` acted on the main checkout. The task file now says to start every Bash call with `cd "<worktree>" &&`, and `finish` and `handoff` refuse the shared checkout while a batch runs, like test, check and build; a worktree of an older batch still ends and hands off its own task
+
 ## [0.4.17] - 2026-11-06
 
 ### Fixed

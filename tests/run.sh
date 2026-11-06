@@ -255,6 +255,7 @@ expect "the note holds done and next" 'Next: write tests' "$(cat "$note")"
 expect "the note lists the commits" 'wip' "$(cat "$note")"
 (cd "$wtf" && "$WARMD" handoff footer a b && "$WARMD" handoff footer c d) > /dev/null
 expect "a fourth handoff asks for a split instead" 'handed off 3 times' "$(cd "$wtf" && "$WARMD" handoff footer e f)"
+expect "handoff in the shared checkout during a batch is refused" '^FAIL a batch runs, this is the shared checkout' "$("$WARMD" handoff footer g h)"
 expect "finish refuses the base checkout and pushes nothing" '^FAIL warmd finish runs in the base checkout \(main\), nothing recorded, nothing pushed' "$("$WARMD" finish)"
 expect "finish reports facts in one line" '^DONE warmd/footer [0-9a-f]+' "$(cd "$wtf" && "$WARMD" finish)"
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"
