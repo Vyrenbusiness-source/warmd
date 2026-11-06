@@ -18,11 +18,12 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 </tr>
 </table>
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
+```text
+/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents
+/plugin install warmd@warmd
 ```
 
-<sub>Git Bash. PowerShell: see [Install](#install). Then `warmd init` once in your project, your agent does the rest.</sub>
+<sub>Inside Claude Code, then restart it. Codex, Cursor or your own terminal: see [Install](#install).</sub>
 
 [Install](#install) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
@@ -87,7 +88,14 @@ Task time is equal within the spread in both areas: the gain on small projects i
 
 ## Install
 
-Git Bash:
+Claude Code, as a plugin. It brings the hooks, the agent definitions and the `warmd` command for the agent, nothing to run in your project:
+
+```text
+/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents
+/plugin install warmd@warmd
+```
+
+For Codex, Cursor or your own terminal, install the command. Git Bash:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
@@ -100,6 +108,7 @@ irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-fa
 ```
 
 Then run `warmd init` once in your project. warmd detects the stack from its files, there is nothing to configure.
+With the plugin, `warmd init` is optional: it adds the block to `CLAUDE.md` and the agent definitions to the project, the plugin's hooks step aside for the ones it writes.
 
 | Stack | Kept warm | Tests |
 |---|---|---|

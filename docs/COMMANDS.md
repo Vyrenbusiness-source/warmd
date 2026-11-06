@@ -207,6 +207,9 @@ RED run 41
 
 ## Setup
 
+### Claude Code plugin
+`/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents`, then `/plugin install warmd@warmd`. From a shell: `claude plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents` and `claude plugin install warmd@warmd [--scope project|local]`. The plugin brings the four hooks (`hooks/hooks.json`), the agents `warmd:warmd-worker`, `warmd:warmd-scout` and `warmd:warmd-merge`, and puts `warmd` on the PATH of the agent's Bash tool. A project without the warmd block in `CLAUDE.md` or `AGENTS.md` gets the block as session context at every start, nothing is written to the project. `warmd split` and `warmd route` name the namespaced agents. A project whose `.claude/settings.local.json` already holds hooks from `warmd init` keeps those, the plugin's hooks then do nothing, so no hook runs twice. `warmd init` under the plugin writes no hooks. `warmd ship --release` moves the version in `.claude-plugin/plugin.json` with `bin/warmd`, `/plugin update warmd@warmd` fetches it. The plugin's `warmd` is not on your own terminal's PATH: install the command for that.
+
 ### warmd init
 Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`, between `<!-- warmd ... -->` markers. The session start hook renews that block and the agent definitions in the shared checkout when a newer warmd brings other text, an older block without markers is replaced in place. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
 

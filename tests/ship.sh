@@ -57,6 +57,7 @@ case "$CMD" in
   status)  a_status;;
 esac
 EOF
+mkdir .claude-plugin; printf '{\n  "name": "warmd",\n  "version": "0.1.0"\n}\n' > .claude-plugin/plugin.json
 printf '# Changelog\n\n## [Unreleased]\n\n### Added\n- alpha and beta\n\n## [0.1.0] - 2026-11-01\n\n[Unreleased]: https://github.com/o/r/compare/v0.1.0...HEAD\n[0.1.0]: https://github.com/o/r/releases/tag/v0.1.0\n' > CHANGELOG.md
 echo base > README; git add -A; git commit -qm base; git tag v0.1.0; git push -q origin main --tags
 
@@ -95,6 +96,7 @@ expect "no blocking gh run watch" '^$' "$(grep 'run watch' "$FAKE/log")"
 main_warmd="$(git --git-dir="$TMP/remote.git" show main:bin/warmd)"
 expect "release bumps bin/warmd" '^WARMD_VERSION=0.2.0$' "$main_warmd"
 echo "$main_warmd" > "$TMP/released"
+expect "release bumps the plugin version" '^  "version": "0.2.0"$' "$(git --git-dir="$TMP/remote.git" show main:.claude-plugin/plugin.json)"
 expect "warmd --version after a fake release" '^warmd 0.2.0$' "$(bash "$TMP/released" --version)"
 cl="$(git --git-dir="$TMP/remote.git" show main:CHANGELOG.md)"
 expect "changelog section moved" "^## \[0.2.0\] - $(date +%Y-%m-%d)$" "$cl"

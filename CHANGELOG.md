@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- Claude Code plugin: `/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents`, then `/plugin install warmd@warmd`. It brings the hooks, the agents as `warmd:warmd-worker`, `warmd:warmd-scout` and `warmd:warmd-merge`, `warmd` on the agent's PATH and the instructions as session context. Its hooks step aside in a project that has `warmd init` hooks. CI checks it with `claude plugin validate`
+
 ## [0.4.18] - 2026-11-06
 
 ### Fixed

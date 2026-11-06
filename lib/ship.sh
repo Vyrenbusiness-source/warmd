@@ -132,6 +132,10 @@ ship_bump() { # vX.Y.Z
   if [ -f bin/warmd ] && grep -q '^WARMD_VERSION=' bin/warmd; then
     sed -i "s/^WARMD_VERSION=.*/WARMD_VERSION=$v/" bin/warmd; git add bin/warmd
   fi
+  # The Claude Code plugin pins its users to this version, it moves with bin/warmd
+  if [ -f .claude-plugin/plugin.json ] && grep -q '^  "version": ' .claude-plugin/plugin.json; then
+    sed -i "s/^  \"version\": \"[^\"]*\"/  \"version\": \"$v\"/" .claude-plugin/plugin.json; git add .claude-plugin/plugin.json
+  fi
   if [ -f CHANGELOG.md ] && grep -q '^## \[Unreleased\]' CHANGELOG.md && ! grep -qF "## [$v]" CHANGELOG.md; then
     prev="$(sed -nE 's/^\[Unreleased\]: .*compare\/(v[0-9][0-9.]*)\.\.\.HEAD.*/\1/p' CHANGELOG.md)"
     # Nothing written under Unreleased: the release still says what it brings, from the commit subjects since the last tag.
