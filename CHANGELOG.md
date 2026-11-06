@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.21] - 2026-11-06
+
 ### Fixed
 - `warmd ship` takes a fresh integration branch when another worktree already holds `warmd-ship`, instead of failing with "cannot branch from origin/main"
 - Godot: `warmd build` skips folders holding `.gdignore`, as Godot does, so raw asset packs with their own scripts no longer turn the build red
@@ -233,7 +235,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.20...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.21...HEAD
+[0.4.21]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.20...v0.4.21
 [0.4.20]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.19...v0.4.20
 [0.4.19]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.18...v0.4.19
 [0.4.18]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.17...v0.4.18
