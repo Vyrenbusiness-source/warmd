@@ -262,7 +262,8 @@ slot_port() {
 changed_files() {
   [ -n "$GIT_ROOT" ] || return 0
   local base mb; base="$(base_branch)"
-  mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
+  # warmd merge of several branches commits each one: its gate compares with the commit before the first (WARMD_DIFF_BASE)
+  if [ -n "${WARMD_DIFF_BASE:-}" ]; then mb="$WARMD_DIFF_BASE"; else mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"; fi
   # Unity leaves Assets/InitTestScene<guid>.unity behind when a PlayMode run dies: generated, never a change.
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' \
     | grep -vE '(^|/)InitTestScene[0-9a-fA-F-]+\.unity(\.meta)?$|(^|/)__pycache__/|\.py[co]$|(^|/)\.DS_Store$|(^|/)Thumbs\.db$|(^|/)desktop\.ini$|\.sw[op]$|~$' | sort -u   # caches and editor droppings are no change
@@ -318,6 +319,16 @@ package_out() {
   REPLY="${CFG_package_dir:-}"; [ -n "$REPLY" ] || return 1
   case "$REPLY" in /*|[A-Za-z]:*) ;; *) REPLY="$PROJECT/$REPLY";; esac
   REPLY="${REPLY%/}"; return 0
+}
+# package_state: 0 when a merge is followed by a player build, PACKAGE_DIR = its folder. 1 otherwise, REPLY = why (empty
+# for an adapter without players). Without package_dir no player is ever built: merge and doctor say so instead of nothing.
+package_state() {
+  REPLY=""; PACKAGE_DIR=""
+  [ "$ADAPTER" = unity ] || return 1
+  package_out || { REPLY="WARN no package_dir in warmd.conf: no player is built after a merge. Set package_dir=<folder> and package_method=Namespace.Class.Method"; return 1; }
+  PACKAGE_DIR="$REPLY"; REPLY=""
+  [ -n "$CFG_package_method" ] || { REPLY="WARN package_dir is set, package_method is not: no player is built after a merge. Set package_method=Namespace.Class.Method in warmd.conf"; return 1; }
+  return 0
 }
 # package_busy <dir>: REPLY = the program in <dir> that runs right now. A running program cannot be opened for writing
 # (Windows: sharing violation, Linux: text file busy), so the check is one builtin open per file, no process list.
