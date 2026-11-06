@@ -124,11 +124,14 @@ wt() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/
   && unity_world() { :; } && unity_sync() { :; } && daemon_alive() { :; } && daemon_stop() { echo "daemon_stop window=${WARMD_WINDOW:-0}" >> "$TMP/order"; } \
   && cached() { echo "cached $1 window=${WARMD_WINDOW:-0}" | tee -a "$TMP/order"; } && a_test "$@" ); }
 echo 0 > "$P/.warmd/run/window.txt"; rm -f "$TMP/order"
-out="$(wt ShotTests --play --window)"
+out="$(WARMD_WINDOW_REAL=1 wt ShotTests --play --window)"
 expect "the window run has a cache key of its own" '^cached test\|Play\|ShotTests\|\|\|gfx0\|window window=1$' "$out"
 expect "a headless daemon makes way first, the window closes after" '^daemon_stop window=1,cached .*,daemon_stop window=1$' "$(paste -sd, "$TMP/order")"
 expect "and says so" '^\(window editor closed\)$' "$out"
-expect "WARMD_WINDOW=1 does the same" '^cached test\|Play\|ShotTests\|\|\|gfx0\|window window=1$' "$(WARMD_WINDOW=1 wt ShotTests --play)"
+expect "WARMD_WINDOW=1 does the same" '^cached test\|Play\|ShotTests\|\|\|gfx0\|window window=1$' "$(WARMD_WINDOW_REAL=1 WARMD_WINDOW=1 wt ShotTests --play)"
+rm -f "$TMP/order"; out="$(wt ShotTests --play --window)"
+expect "--window falls back to the graphics path with the hang detector" '^cached test\|Play\|ShotTests\|\|\|gfx1 window=0$' "$out"
+expect "and says how to get the window" 'WARMD_WINDOW_REAL=1' "$out"
 rm -f "$TMP/order"; out="$(wt ShotTests --play)"
 expect "without it the key stays as before" '^cached test\|Play\|ShotTests\|\|\|gfx0 window=0$' "$out"
 refuse "and nothing is closed" 'daemon_stop|window editor closed' "$out$(cat "$TMP/order" 2>/dev/null)"

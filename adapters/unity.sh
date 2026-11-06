@@ -335,6 +335,13 @@ a_test() {
   # --sound: the game is heard in this run; every other run is muted by the daemon (WarmdDaemon.cs)
   while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; --sound) sound=1;; *) filter="$1";; esac; shift; done
   [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
+  # --window falls back to the graphics path (batchmode with a GPU, the hang detector active): a visible editor hung in a
+  # real run without the HUNG detector firing and stayed open until the agent ended it. WARMD_WINDOW_REAL=1 opens the window.
+  if [ "${WARMD_WINDOW:-0}" = 1 ] && [ "${WARMD_WINDOW_REAL:-0}" != 1 ]; then
+    echo "(--window runs with graphics in batchmode, the hang detector stays on; a visible editor: WARMD_WINDOW_REAL=1)"
+    export WARMD_WINDOW=0 WARMD_GFX=1
+    if daemon_alive && [ "$(cat "$RUN/gfx.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
+  fi
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
   if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
     echo "(gfx_tests: $filter runs with graphics)"; export WARMD_GFX=1

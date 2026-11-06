@@ -17,6 +17,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - Unity test runs are silent: the daemon mutes the editor at start and before every job and sets `AudioListener.volume = 0` when a test run enters PlayMode; `warmd test --sound` lets one run be heard
 - Parallel PlayMode runs in different worktrees no longer collide on one network port: `test_port_env=<NAME>` gives every heavy run its own port, `test_port_base` (default 7930) plus its slot number, exported and set in the Unity daemon before each job
 
+- `warmd ship` waits for CI with one `gh` call per poll and nothing else: `nap` instead of `sleep`, the job parser in builtins (was awk, tail, tr and two date per poll), polls every 30 s, every 60 s while the run is younger than half its median. `warmd watch` reads task names from the worktree's HEAD file, remembers normalised paths and stops asking whether an agent died at start once it worked: far fewer program starts per round (on a machine that keeps kernel memory per process start, process objects grew from 11k to 145k in 50 min)
+
+- `warmd test --window` runs with graphics in batchmode (the `WARMD_GFX=1` path) with the hang detector on: a visible editor hung in a real run, `HUNG` never fired and the editor stayed open until the agent ended it. `WARMD_WINDOW_REAL=1` still opens the window; why the window editor's hang detector stays silent is open
+
 ### Added
 - Prewarm at session start: the engine of every open task worktree starts in the background through the normal queue (slots, RAM wait), like after `warmd split`
 - RAM short: before a run waits for RAM, the engine daemon of another worktree that is idle longest (alive, idle, no job, no run) is stopped; `ram_stop_idle=0` switches it off
