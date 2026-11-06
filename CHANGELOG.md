@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.22] - 2026-11-06
+
 ### Added
 - Claude Code plugin: `/plugin marketplace add Vyrenbusiness-source/warmd`, then `/plugin install warmd@warmd`. It brings the hooks, the agents as `warmd:warmd-worker`, `warmd:warmd-scout` and `warmd:warmd-merge`, `warmd` on the agent's PATH and the instructions as session context. Its hooks step aside in a project that has `warmd init` hooks. CI checks it with `claude plugin validate`
 
@@ -242,7 +244,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.21...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.22...HEAD
+[0.4.22]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.21...v0.4.22
 [0.4.21]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.20...v0.4.21
 [0.4.20]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.19...v0.4.20
 [0.4.19]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.18...v0.4.19
