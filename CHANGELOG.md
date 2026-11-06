@@ -10,6 +10,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ### Changed
 - The repo is now `Vyrenbusiness-source/warmd`, the short name the command already has. Old URLs, clones and the old install lines redirect
 
+### Fixed
+- A second `warmd ship` while another checkout holds `warmd-ship` stops with `WAIT another ship holds warmd-ship in <path>` and pushes nothing. Was "FAIL cannot branch from origin/main" with no hint that another ship ran
+
 ## [0.4.19] - 2026-11-06
 
 ### Changed

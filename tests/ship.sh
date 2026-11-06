@@ -205,6 +205,14 @@ expect "help lists registered commands" 'warmd ship .*warmd ci' "$("$WARMD" --he
 out="$("$WARMD" ship --help 2>&1)"; rc=$?
 expect "ship --help shows its usage" '^ *warmd ship \[--base' "$out"
 [ $rc = 0 ] && ! echo "$out" | grep -q "not merged" && ok "ship --help runs nothing" || no "ship --help ran: $rc $out"
+# A second ship while another checkout holds warmd-ship: WAIT with the place, nothing pushed, the other one untouched.
+git worktree add -q "$TMP/other" -B warmd-ship origin/main 2>/dev/null
+before="$(git --git-dir="$TMP/remote.git" rev-parse warmd-ship)"
+out="$("$WARMD" ship gamma 2>&1)"; rc=$?
+expect "second ship waits for the first" "^WAIT another ship holds warmd-ship in .*other" "$out"
+[ $rc != 0 ] && ok "second ship exits non-zero" || no "second ship exit $rc"
+expect "second ship pushed nothing" "^$before$" "$(git --git-dir="$TMP/remote.git" rev-parse warmd-ship)"
+git worktree remove -f "$TMP/other"; git branch -q -D warmd-ship 2>/dev/null
 out="$("$WARMD" ship --release 1.0 alpha 2>&1)"
 expect "bad release name" 'release must look like v1.2.3' "$out"
 
