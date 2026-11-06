@@ -12,7 +12,15 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.21
+WARMD_VERSION=0.4.22
+# Hooks of the Claude Code plugin pass --plugin. A project whose settings already hold warmd init hooks runs those, the
+# plugin's copy steps aside so no hook runs twice. Builtins only, this runs for every tool call.
+case "${1:-} ${2:-}" in
+  hook-*" --plugin")
+    WARMD_PLUGIN=1; set -- "$1"
+    _s="${CLAUDE_PROJECT_DIR:-.}/.claude/settings.local.json"; _x=""
+    if [ -f "$_s" ]; then IFS= read -r -d '' _x < "$_s"; [[ $_x == *' hook-pre"'* ]] && exit 0; fi;;
+esac
 # A hook loads only what it needs: no other lib, no grep over lib/. PreToolUse (every tool call), SubagentStop and PreCompact.
 case "${1:-}" in
   hook-pre|hook-subagent|hook-compact)
