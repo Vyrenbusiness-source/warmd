@@ -152,6 +152,24 @@ out="$(WARMD_UNITY=/nonexistent/Unity WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"; 
 expect "and closes with exit code and reason" "^FAIL warmd test ended with exit $rc" "$out"
 cd "$HERE" || exit 1
 
+# ---- disk: a merged worktree gives its Library back; a fresh one, an unmerged one and the running batch keep theirs ----
+U="$TMP/udisk"; mkdir -p "$U/ProjectSettings" "$U/Assets"; cd "$U" || exit 1
+printf 'm_EditorVersion: 6000.0.0f1\n' > ProjectSettings/ProjectVersion.txt
+git init -q -b main .; git config user.name t; git config user.email t@example.com; printf '.warmd\nLibrary\n' > .gitignore; git add -A; git commit -qm init
+git worktree add -q -b warmd/done "$TMP/ud-done"; (cd "$TMP/ud-done" && echo d > d.txt && git add d.txt && git commit -qm d); git merge -q --no-ff -m "Merge warmd/done" warmd/done
+git worktree add -q -b warmd/fresh "$TMP/ud-fresh"
+git worktree add -q -b warmd/open "$TMP/ud-open"; (cd "$TMP/ud-open" && echo o > o.txt && git add o.txt && git commit -qm o)
+git worktree add -q -b warmd/batch "$TMP/ud-batch"; (cd "$TMP/ud-batch" && echo b > b.txt && git add b.txt && git commit -qm b); git merge -q --no-ff -m "Merge warmd/batch" warmd/batch
+(cd "$TMP/ud-batch" && pwd) > "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+for w in done fresh open batch; do mkdir -p "$TMP/ud-$w/Library"; echo x > "$TMP/ud-$w/Library/ArtifactDB"; done
+expect "disk lists what a merge would free" 'note: 1 finished worktrees hold a Library' "$(WARMD_BASE=1 "$WARMD" disk 2>&1)"
+out="$(WARMD_BASE=1 "$WARMD" disk --free 2>&1)"
+expect "disk --free frees the Library of a merged worktree" '^OK freed the cache of 1 finished worktrees' "$out"
+[ ! -e "$TMP/ud-done/Library" ] && [ -d "$TMP/ud-fresh/Library" ] && [ -d "$TMP/ud-open/Library" ] && [ -d "$TMP/ud-batch/Library" ] && ok "fresh, unmerged and batch worktrees keep their Library" || no "freed wrong: $out"
+expect "disk below disk_min_mb is reported" '^LOW disk: .* GB free on ' "$(WARMD_BASE=1 WARMD_DISK_MIN_MB=999999999 "$WARMD" disk 2>&1)"
+rm -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+cd "$HERE" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

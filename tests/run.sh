@@ -312,6 +312,23 @@ out="$("$WARMD" merge side 2>&1)"
 expect "a red gate names the failing tests" 'FAIL merge side: 2 failed: FAIL beta broke \| FAIL delta broke' "$out"
 git reset -q --hard HEAD~1; git branch -qD side
 
+# ---- several branches: one call, one gate for all; red rolls all back; a conflict stops and --continue goes on ----
+sed -i.bak '/^gate=/d' warmd.conf; rm -f warmd.conf.bak
+printf 'gate=echo gated >> .warmd/gates.txt; test ! -f m3.txt\n' >> warmd.conf; git commit -qam greengate
+for b in m1 m2 m3 m4; do git checkout -qb "$b" main; echo "$b" > "$b.txt"; git add "$b.txt"; git commit -qm "$b"; git checkout -q main; done
+out="$("$WARMD" merge m1 m2 2>&1)"
+expect "several branches merge in one call" '^OK .*merged m1 m2 as' "$out"
+[ "$(wc -l < .warmd/gates.txt | tr -d ' ')" = 1 ] && [ -f m1.txt ] && [ -f m2.txt ] && ok "one gate for two branches" || no "gates: $(cat .warmd/gates.txt 2>&1), out: $out"
+[ "$(git log -2 --format=%s | tr '\n' ' ')" = "Merge m2 Merge m1 " ] && ok "one merge commit per branch" || no "log: $(git log -3 --format=%s)"
+before="$(git rev-parse HEAD)"; out="$("$WARMD" merge m4 m3 2>&1)"
+[ "$(git rev-parse HEAD)" = "$before" ] && [ ! -f m4.txt ] && echo "$out" | grep -q '^FAIL merge m4 m3' && ok "red rolls every branch of the call back" || no "red several: $out"
+for b in c1 c2; do git checkout -qb "$b" main; echo "$b" > same.txt; git add same.txt; git commit -qm "$b"; git checkout -q main; done
+out="$("$WARMD" merge c1 c2 2>&1)"
+expect "a conflict stops at its branch" 'FAIL conflict in 1 files of c2 \(merged before it: c1\)' "$out"
+echo both > same.txt; git add same.txt
+expect "continue merges the rest under one gate" '^OK .*merged c1 c2 as' "$("$WARMD" merge --continue 2>&1)"
+expect "--no-gate merges without the gate" '^OK .*merged m3 as .*no gate' "$("$WARMD" merge --no-gate m3 2>&1)"
+
 echo "time core $(( $(date +%s) - t0 ))s"
 fi
 

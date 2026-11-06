@@ -362,7 +362,8 @@ aff_changed() {
   [ -n "$GIT_ROOT" ] || return 0
   local base mb prefix f
   base="$(base_branch)"
-  mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"
+  # warmd merge of several branches commits each one: its gate compares with the commit before the first (WARMD_DIFF_BASE)
+  if [ -n "${WARMD_DIFF_BASE:-}" ]; then mb="$WARMD_DIFF_BASE"; else mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"; fi
   prefix="$(git -C "$PROJECT" rev-parse --show-prefix)"   # from git: string math breaks on symlinked and short temp paths
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only --no-renames "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u | while IFS= read -r f; do
     [ -n "$f" ] || continue

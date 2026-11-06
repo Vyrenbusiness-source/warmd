@@ -24,6 +24,7 @@ hook_main() { # command args...
     hook-compact) auto_compact;;
     hook-job)     hook_job "$@";;
     hook-merge)   hook_merge "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)";;
+    hook-package) hook_package "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" "$PWD" "${1:-}";;
     init)         case " $* " in *" --no-hooks "*) hook_remove;; *) hook_install;; esac;;
   esac
 }
@@ -412,7 +413,7 @@ hook_base_wt() { # common dir, shared checkout, base, project of the shared chec
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.
 hook_merge() { # common dir
   local common="$1" batch="$1/warmd-batch" done="$1/warmd-batch-done" lock="$1/warmd-automerge.lock" log="$1/warmd-automerge.log"
-  local main wt br oc out rc pid keep="" first=1 merged=0
+  local main wt br oc out rc pid keep="" first=1 merged=0 todo=()
   [ -s "$batch" ] || return 0
   while read -r wt; do [ -z "$wt" ] || grep -qF "$wt	" "$done" 2>/dev/null || return 0; done < "$batch"
   # One merge at a time: the lock holds the system pid of its merge (a job started through CIM lives in another session,
@@ -449,7 +450,21 @@ hook_merge() { # common dir
       [ "$(git -C "$tgt" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
       git -C "$tgt" rev-parse -q --verify "$ob" >/dev/null && git -C "$tgt" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { echo "SKIP $br: already on $ob"; continue; }
       [ $full = 1 ] && { ship="$ship $br"; continue; }
-      out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
+      todo+=("$br")
+    done < "$batch"
+    # Several green branches: one warmd merge, one gate for all of them. Red or a conflict rolls all of them back, then
+    # they go one by one, so only the bad one stays out. One branch goes the single way at once.
+    if [ ${#todo[@]} -gt 1 ]; then
+      out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" WARMD_NO_PACKAGE=1 WARMD_MERGE_ATOMIC=1 bash "$WARMD_HOME/bin/warmd" merge "${todo[@]}" 2>&1)"; rc=$?
+      echo "$out" | grep -E '^(OK|FAIL)' | head -3
+      if [ "$rc" = 0 ]; then merged=1; todo=()
+      elif echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
+        echo "STOP the checkout of $base in $tgt is not ready, batch stays open. Fix it, then run: warmd hook-merge"
+        hook_unlock; return 0
+      else echo "together red or in conflict: one by one"; fi
+    fi
+    for br in "${todo[@]}"; do
+      out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" WARMD_NO_PACKAGE=1 bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
       git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$tgt" merge --abort 2>/dev/null
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       [ "$rc" = 0 ] && merged=1
@@ -458,7 +473,7 @@ hook_merge() { # common dir
         hook_unlock; return 0
       fi
       first=0
-    done < "$batch"
+    done
     if [ -n "$ship" ]; then
       echo "SHIP full=ci, no local merge:$ship"
       auto_queue "$common" "SHIP batch done, full=ci merges through CI: warmd ship$ship"
@@ -469,6 +484,8 @@ hook_merge() { # common dir
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else
       rm -f "$batch" "$done"; echo "OK batch ended"
+      # The finished worktrees left the batch: their engine caches go back to the disk
+      (cd "$tgt" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" disk --free 2>&1 | tail -1)
     fi
   } >> "$log" 2>&1
   hook_unlock
