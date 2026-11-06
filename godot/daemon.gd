@@ -161,6 +161,9 @@ func _scripts(from: String) -> PackedStringArray:
 	var d := DirAccess.open(from)
 	if d == null:
 		return found
+	# Godot itself skips a folder holding .gdignore (raw assets, third-party code): its scripts are not part of the project
+	if d.file_exists(".gdignore"):
+		return found
 	d.list_dir_begin()
 	var name := d.get_next()
 	while name != "":

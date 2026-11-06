@@ -216,12 +216,11 @@ ship_run() {
   # Local changes make the merges below fail with no conflict to name: refuse up front and say where.
   local dirty; dirty="$(git status --porcelain --untracked-files=no | head -5 | cut -c4- | paste -sd' ' -)"
   [ -z "$dirty" ] || { echo "FAIL uncommitted changes in $(native_path "$(pwd)"): $dirty. Commit or discard them, then ship again"; return 1; }
-  # Another checkout of this repo holds the integration branch: a second ship runs there. Its push would be overwritten.
-  local holder; holder="$(git worktree list --porcelain 2>/dev/null | awk -v b="branch refs/heads/$into" '/^worktree /{w=substr($0,10)} $0==b {print w}')"
-  if [ -n "$holder" ] && [ "$holder" != "$(git rev-parse --show-toplevel)" ]; then
-    echo "WAIT another ship holds $into in $(native_path "$holder"): ship again when it is done, or pick another branch with --into <name>"; return 1
-  fi
   git fetch -q origin || { echo "FAIL git fetch origin"; return 1; }
+  # Another worktree (a second ship in flight) holds the integration branch: take a fresh one instead of failing
+  if git worktree list --porcelain | grep -qx "branch refs/heads/$into" && [ "$(git branch --show-current)" != "$into" ]; then
+    into="$into-$(date +%s)"; echo "(integration branch busy in another worktree, using $into)"
+  fi
   git checkout -q -B "$into" "origin/$base" || { echo "FAIL cannot branch from origin/$base"; return 1; }
   for b in "${branches[@]}"; do
     local ref="$b"; git rev-parse -q --verify "origin/$b" >/dev/null && ref="origin/$b"
