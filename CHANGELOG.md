@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.26] - 2026-11-06
+
+### Fixed
+- `warmd split`: a goal may contain `|` (for example `|offset| <= 49`): the name is the first field, files the last, the done check the one before; the task file no longer breaks apart
+
 ## [0.4.25] - 2026-11-06
 
 ### Fixed
@@ -262,7 +267,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.25...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.26...HEAD
+[0.4.26]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.25...v0.4.26
 [0.4.25]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.24...v0.4.25
 [0.4.24]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.23...v0.4.24
 [0.4.23]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.22...v0.4.23

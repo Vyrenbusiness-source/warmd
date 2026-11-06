@@ -102,6 +102,10 @@ printf '%s\tok\n%s\tok\n' "$(cd "$D/a" && pwd)" "$(cd "$D/b" && pwd)" > "$D/warm
 ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; batch_done_forget "$D" "$D/a" )
 if ! grep -q "/donecase/a" "$D/warmd-batch-done" && grep -q "/donecase/b" "$D/warmd-batch-done"; then ok "a reused worktree is no longer marked finished"; else no "batch_done_forget: $(cat "$D/warmd-batch-done")"; fi
 
+# A goal may contain "|" itself: name first, files last, done check before it, the goal keeps the rest
+out="$( ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; task_fields "t | keep |x| <= 49 | it works | a.gd, b.gd"; printf '%s;%s;%s' "$goal" "$check" "$files" ) )"
+case "$out" in *"keep |x| <= 49"*";"*"it works"*";"*"a.gd, b.gd"*) ok "a pipe inside the goal stays in the goal";; *) no "task_fields: $out";; esac
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
