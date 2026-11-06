@@ -12,6 +12,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [0.4.14] - 2026-11-06
 
 ### Fixed
+- The PreToolUse hook starts no program for a Bash or Agent call (was about 20 starts, 45 process objects per call): `bin/warmd` dispatches `hook-pre`, `hook-subagent` and `hook-compact` before loading the other libs, the hook JSON is parsed with builtins, python's name is cached; SubagentStop and the minute context check also start fewer programs
 - A queued run checks the places with builtins and starts no program while every place has a live owner (was about 25 starts per poll); queue polls every 5 s, the RAM wait every 15 s, `warmd watch` every 90 s (`WARMD_QUEUE_POLL`, `WARMD_RAM_POLL`, `WARMD_WATCH_POLL`)
 - Wait loops (queue, RAM, daemon start, job result, watch) wait with `nap`, a read on a FIFO, instead of `sleep`: under Git Bash every sleep is a process start, and on machines that keep kernel memory per process start eight queued runs ate 40 GB in 40 minutes
 
