@@ -20,7 +20,7 @@ foreign_unity() { procs "Unity.*$(project_rx)" 'AssetImportWorker|warmd-daemon|p
 a_kill_daemon() {
   local pid
   for pid in $(a_daemon_procs) $(daemon_pid); do kill_tree "$pid"; done
-  sleep 2
+  nap 2
   for pid in $(worker_procs); do kill_tree "$pid"; done
   rm -f "$RUN/alive.txt" "$RUN/pid.txt"
 }
@@ -112,7 +112,7 @@ unity_wait_window() { # seconds
   local i=0 d
   [ "$OS" = win ] && unity_dialog_watch "$1" >/dev/null 2>&1 &   # never holds the caller's output pipe open
   while :; do
-    sleep 1; i=$((i+1))
+    nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then break; fi
     if [ -s "$RUN/dialog.txt" ]; then
       d="$(tr -d '\r' < "$RUN/dialog.txt" | head -1 | cut -c1-300)"
@@ -123,7 +123,7 @@ unity_wait_window() { # seconds
     fi
     [ $i -gt "$1" ] && { echo "FAIL window editor not ready after ${1}s, see $(native_path "$RUN/warmd-daemon.log")"; a_kill_daemon; exit 1; }
   done
-  i=0; while [ ! -s "$RUN/screen.txt" ] && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done
+  i=0; while [ ! -s "$RUN/screen.txt" ] && [ $i -lt 20 ]; do nap 0.5; i=$((i+1)); done
   [ -s "$RUN/screen.txt" ] && echo "($(tr -d '\r' < "$RUN/screen.txt" | head -1))"
   return 0
 }
@@ -420,7 +420,7 @@ a_stop() {
       else echo "FAIL other Unity pid $pid on this project still alive after kill"; rc=1; fi
     else
       if [ "$OS" = win ]; then taskkill //PID "$pid" >/dev/null 2>&1; else kill -TERM "$pid" 2>/dev/null; fi
-      sleep 3
+      nap 3
       if pid_alive "$pid"; then echo "WARN Unity pid $pid has this project open in a window, maybe unsaved work: left open. Close it, or: warmd stop --force"
       else echo "OK closed Unity window pid $pid on this project"; fi
     fi

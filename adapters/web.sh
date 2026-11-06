@@ -54,7 +54,7 @@ a_start_server() {
   while [ $i -lt 120 ]; do
     u="${CFG_url:-$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$RUN/dev.log" | grep -oE 'https?://(localhost|127\.0\.0\.1)[:0-9]*/?[^ ]*' | head -1)}"
     if [ -n "$u" ] && curl -fsS -o /dev/null --max-time 2 "$u" 2>/dev/null; then echo "$u" > "$RUN/dev.url"; return 0; fi
-    sleep 0.5; i=$((i+1))
+    nap 0.5; i=$((i+1))
   done
   echo "FAIL dev server gave no URL in 60 s, see $(native_path "$RUN/dev.log")"; return 1
 }
