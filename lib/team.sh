@@ -375,7 +375,7 @@ team_watch() {
     [ $live = 1 ] && touch "$batch-alive"   # agents work: batch_guard keeps a marker older than 240 minutes
     [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
     [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
-    sleep 30
+    nap 30
   done
 }
 

@@ -104,5 +104,12 @@ printf '{"type":"user","message":"Read C:/x/.warmd/tasks/b.md"}\n{"message":"API
 if "$WARMD" watch --once | grep -q 'DEAD b'; then echo "FAIL an agent with commits counts as dead"; fails=$((fails+1)); else echo "ok   an agent with commits is not dead"; fi
 "$WARMD" batch-done > /dev/null
 
+# (n) waiting starts no process: a queued run polls for hours, and under Git Bash every sleep is a new process that some
+# Windows machines never give back (64 starts a second ate 40 GB in 40 minutes). Wait loops use nap, nap uses no program.
+out="$(grep -nE '(^|[;{ ]|then |else |do )sleep [0-9."$]' "$HERE"/lib/core.sh "$HERE"/lib/daemon.sh "$HERE"/lib/tune.sh "$HERE"/lib/team.sh "$HERE"/lib/platform.sh "$HERE"/adapters/unity.sh "$HERE"/adapters/web.sh | grep -v 'sleep "\$1"$')"
+expect "wait loops use nap, not sleep" '^$' "${out:-}"
+out="$(bash -c '. "$1/lib/platform.sh"; nap_init || exit 9; t0=$SECONDS; PATH=/nonexistent; nap 1 || echo rc; nap 1; echo "waited $((SECONDS - t0))"' _ "$HERE" 2>&1)"
+expect "nap waits without any program on PATH" '^waited [12]$' "$out"
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "OK brakes" || { echo "FAIL brakes: $fails"; exit 1; }

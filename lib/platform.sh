@@ -6,6 +6,23 @@ case "${OSTYPE:-$(uname -s)}" in
   *) OS=linux;;
 esac
 
+# nap <seconds>: a wait without a process start. Under Git Bash every `sleep` is a new process, and some Windows machines
+# keep kernel memory per process start until reboot: eight queued runs polling with sleep cost 64 starts a second and
+# ate 40 GB in 40 minutes. read -t on a FIFO that nobody writes waits in bash itself. The FIFO is opened once per shell,
+# subshells inherit the descriptor. Without mkfifo it falls back to sleep.
+nap_init() {
+  [ -n "${NAP_FD:-}" ] && return 0
+  [ "${NAP_OFF:-0}" = 1 ] && return 1
+  local f="${TMPDIR:-/tmp}/warmd-nap-$$-$RANDOM"
+  mkfifo "$f" 2>/dev/null || { NAP_OFF=1; return 1; }
+  exec {NAP_FD}<>"$f" || { NAP_OFF=1; rm -f "$f"; return 1; }
+  rm -f "$f"
+}
+nap() {
+  if nap_init; then read -r -t "$1" -u "$NAP_FD" _ 2>/dev/null; return 0; fi
+  sleep "$1"
+}
+
 # On Windows /c/dir becomes C:/dir in pure bash, only other roots such as /tmp need cygpath
 native_path() {
   if [ "$OS" != win ]; then printf '%s\n' "$1"; return; fi
@@ -95,9 +112,9 @@ unity_procs() {
 stop_gently() { # pid grace-seconds
   local i=0
   if [ "$OS" = win ]; then taskkill //PID "$1" >/dev/null 2>&1; else kill -TERM "$1" 2>/dev/null; fi
-  while pid_alive "$1" && [ $i -lt "$2" ]; do sleep 1; i=$((i+1)); done
+  while pid_alive "$1" && [ $i -lt "$2" ]; do nap 1; i=$((i+1)); done
   pid_alive "$1" || { STOP_HOW=friendly; return 0; }
   STOP_HOW=hard; kill_tree "$1"; i=0
-  while pid_alive "$1" && [ $i -lt 8 ]; do sleep 1; i=$((i+1)); done
+  while pid_alive "$1" && [ $i -lt 8 ]; do nap 1; i=$((i+1)); done
   ! pid_alive "$1"
 }
