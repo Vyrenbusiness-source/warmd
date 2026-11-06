@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd split` no longer hands one worktree to two agents: a reused worktree forgets the "finished" mark of its previous task, so a later split in the same batch does not prune it as free
+
 ## [0.4.21] - 2026-11-06
 
 ### Fixed

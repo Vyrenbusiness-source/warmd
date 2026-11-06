@@ -96,6 +96,12 @@ touch -d "-5 hours" "$AC/warmd-batch-alive"
 [ ! -f "$AC/warmd-batch" ] && [ ! -f "$AC/warmd-batch-alive" ] && ok "without work for 240 minutes the marker is stale again" || no "stale marker kept"
 cd "$TMP" || exit 1
 
+# A worktree handed to a new task forgets the "finished" line of its previous task, or the next split hands it out twice
+D="$TMP/donecase"; mkdir -p "$D/a" "$D/b"
+printf '%s\tok\n%s\tok\n' "$(cd "$D/a" && pwd)" "$(cd "$D/b" && pwd)" > "$D/warmd-batch-done"
+( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; batch_done_forget "$D" "$D/a" )
+if ! grep -q "/donecase/a" "$D/warmd-batch-done" && grep -q "/donecase/b" "$D/warmd-batch-done"; then ok "a reused worktree is no longer marked finished"; else no "batch_done_forget: $(cat "$D/warmd-batch-done")"; fi
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
