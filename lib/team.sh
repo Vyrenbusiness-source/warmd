@@ -31,7 +31,7 @@ area_of() { echo "$1" | cut -d, -f1 | sed 's#/[^/]*$##'; }
 tier_model() { case "$1" in cheap) echo "$CFG_cheap";; top) echo "$CFG_top";; *) echo "$CFG_mid";; esac; }
 tier_budget() { case "$1" in cheap) echo "$CFG_budget_cheap";; top) echo "$CFG_budget_top";; *) echo "$CFG_budget_mid";; esac; }
 tier_next() { case "$1" in cheap) echo mid;; mid) echo top;; *) echo "";; esac; }
-tier_agent() { case "$1" in cheap) echo warmd-scout;; *) echo warmd-worker;; esac; }
+tier_agent() { case "$1" in cheap) echo "${AGENT_NS:-}warmd-scout";; *) echo "${AGENT_NS:-}warmd-worker";; esac; }
 # Editing never runs on the cheap tier, whatever the config says: that tier only reads
 
 route_print() {
@@ -508,7 +508,7 @@ team_escalate() {
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
   handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
   local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$f")"
-  echo "AGENT $name: subagent_type=warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
+  echo "AGENT $name: subagent_type=${AGENT_NS:-}warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
 }
 
 # For the prompt of a next agent on a running task: where the branch stands, and that the old agent must be stopped first.

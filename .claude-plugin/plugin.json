@@ -1,0 +1,15 @@
+{
+  "name": "warmd",
+  "displayName": "warmd",
+  "version": "0.4.18",
+  "description": "Your coding agent waits less and reads less: warm engine, only the tests your change reaches, only the error. Hooks, agent definitions and the warmd command.",
+  "author": {
+    "name": "Vyrenbusiness-source",
+    "url": "https://github.com/Vyrenbusiness-source"
+  },
+  "homepage": "https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents",
+  "repository": "https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents",
+  "license": "MIT",
+  "keywords": ["unity", "godot", "tests", "tokens", "agents", "windows"],
+  "agents": ["./agents/warmd-worker.md", "./agents/warmd-scout.md", "./agents/warmd-merge.md"]
+}

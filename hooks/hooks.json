@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash|Agent|Task", "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/bin/warmd\" hook-pre --plugin" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/bin/warmd\" hook-session --plugin" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/bin/warmd\" hook-subagent --plugin" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/bin/warmd\" hook-compact --plugin" }] }
+    ]
+  }
+}
