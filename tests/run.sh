@@ -322,12 +322,12 @@ expect "several branches merge in one call" '^OK .*merged m1 m2 as' "$out"
 [ "$(git log -2 --format=%s | tr '\n' ' ')" = "Merge m2 Merge m1 " ] && ok "one merge commit per branch" || no "log: $(git log -3 --format=%s)"
 before="$(git rev-parse HEAD)"; out="$("$WARMD" merge m4 m3 2>&1)"
 [ "$(git rev-parse HEAD)" = "$before" ] && [ ! -f m4.txt ] && echo "$out" | grep -q '^FAIL merge m4 m3' && ok "red rolls every branch of the call back" || no "red several: $out"
-expect "--no-gate merges without the gate" '^OK .*merged m3 as .*no gate' "$("$WARMD" merge --no-gate m3 2>&1)"
 for b in c1 c2; do git checkout -qb "$b" main; echo "$b" > same.txt; git add same.txt; git commit -qm "$b"; git checkout -q main; done
 out="$("$WARMD" merge c1 c2 2>&1)"
 expect "a conflict stops at its branch" 'FAIL conflict in 1 files of c2 \(merged before it: c1\)' "$out"
 echo both > same.txt; git add same.txt
 expect "continue merges the rest under one gate" '^OK .*merged c1 c2 as' "$("$WARMD" merge --continue 2>&1)"
+expect "--no-gate merges without the gate" '^OK .*merged m3 as .*no gate' "$("$WARMD" merge --no-gate m3 2>&1)"
 
 echo "time core $(( $(date +%s) - t0 ))s"
 fi
