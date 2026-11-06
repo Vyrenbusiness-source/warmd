@@ -50,6 +50,40 @@ pid_alive() {
   if [ "$OS" = win ]; then tasklist //FI "PID eq $1" //NH 2>/dev/null | grep -q " $1 "; else kill -0 "$1" 2>/dev/null; fi
 }
 
+# proc_snap: REPLY = a file, first line its time, then "pid<TAB>command line" of every process. Made once per warmd process
+# and reused for WARMD_PROCS_TTL seconds (default 20): warmd watch asks for several worktrees and for gh watchers in one
+# round, so one PowerShell start (several process objects on Windows) instead of two per worktree.
+proc_snap() {
+  local now t="" f="${TMPDIR:-/tmp}/warmd-procs-$$"
+  printf -v now '%(%s)T' -1
+  { read -r t < "$f"; } 2>/dev/null
+  if ! [[ $t =~ ^[0-9]+$ ]] || [ $(( now - t )) -gt "${WARMD_PROCS_TTL:-20}" ]; then
+    { echo "$now"
+      if [ "$OS" = win ]; then
+        powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | ForEach-Object { if (\$_.CommandLine) { [string]\$_.ProcessId + [char]9 + \$_.CommandLine.Replace([char]10, ' ') } }" 2>/dev/null | tr -d '\r'
+      else ps -eo pid=,args= 2>/dev/null | sed 's/^ *\([0-9][0-9]*\) */\1	/'; fi
+    } > "$f.tmp" 2>/dev/null && mv -f "$f.tmp" "$f"
+  fi
+  REPLY="$f"
+}
+# procs_like <text> <must-not-match regex>: pids whose command line (backslashes read as /) holds <text>, any case, from
+# proc_snap. A path is plain text here, no regex to escape.
+procs_like() {
+  local pid c t="${1,,}" ex="${2,,}" f; t="${t//\\//}"
+  proc_snap; f="$REPLY"
+  { read -r _; while IFS=$'\t' read -r pid c; do
+      [ -n "$c" ] || continue; c="${c//\\//}"; c="${c,,}"
+      [[ $c == *"$t"* ]] || continue
+      [ -n "$ex" ] && [[ $c =~ $ex ]] && continue
+      [[ $c == *get-ciminstance* ]] && continue
+      echo "$pid"
+    done; } < "$f" 2>/dev/null
+}
+# procs_cmdlines <regex>: command lines from proc_snap that match <regex>
+procs_cmdlines() {
+  local pid c f; proc_snap; f="$REPLY"
+  { read -r _; while IFS=$'\t' read -r pid c; do [[ $c =~ $1 ]] && [[ $c != *Get-CimInstance* ]] && printf '%s\n' "$c"; done; } < "$f" 2>/dev/null
+}
 # procs <must-match regex> <must-not-match regex>: pids of processes by full command line
 procs() {
   if [ "$OS" = win ]; then

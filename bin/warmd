@@ -12,7 +12,7 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.18
+WARMD_VERSION=0.4.19
 # Hooks of the Claude Code plugin pass --plugin. A project whose settings already hold warmd init hooks runs those, the
 # plugin's copy steps aside so no hook runs twice. Builtins only, this runs for every tool call.
 case "${1:-} ${2:-}" in
@@ -37,6 +37,7 @@ esac
 . "$WARMD_HOME/lib/handoff.sh"
 . "$WARMD_HOME/lib/perf.sh"
 . "$WARMD_HOME/lib/layout.sh"
+. "$WARMD_HOME/lib/disk.sh"
 
 # Commands register themselves: a lib calls reg with its name, usage line and function.
 # New commands need no edit here, so parallel branches never conflict in this file.
@@ -77,7 +78,7 @@ Agents
   warmd report                 cost per tier and what escalation wasted
   warmd board                  all worktrees at a glance
   warmd watch [minutes]        run in the background, ends when an agent stalls or the batch is over
-  warmd merge <branch>         safe merge into the base branch, rolls back on red
+  warmd merge <branch>...      safe merge into the base branch, one gate for all, rolls back on red; --no-gate
   warmd merge --continue       finish a merge after you resolved its conflicts
   warmd batch-done             end the batch, the shared checkout opens again
 
@@ -88,6 +89,7 @@ Setup
   warmd init --slim            also give project agents without a tools line the cheapest useful set
   warmd init --no-hooks        remove the hooks (--hooks installs only them)
   warmd doctor                 check what is missing
+  warmd disk [--free]          free space; --free gives finished worktrees' engine caches back
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
   warmd package                build a player with your own method (Unity)
@@ -143,6 +145,7 @@ case "$CMD" in
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
-  doctor)  common_doctor; install_behind; a_doctor;;
+  doctor)  common_doctor; install_behind; a_doctor; disk_doctor;;
+  disk)    if [ "${1:-}" = --free ]; then disk_reclaim; echo "OK freed the cache of $REPLY finished worktrees${DISK_FREED:+:$DISK_FREED}"; else disk_doctor; fi;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac

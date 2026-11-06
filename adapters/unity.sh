@@ -477,4 +477,5 @@ a_doctor() {
   [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] && echo "ok daemon installed" || echo "MISSING daemon, run warmd init"
   command -v dotnet >/dev/null 2>&1 && echo "ok dotnet, compile runs without Unity" || echo "note: no dotnet, compile goes through Unity"
   grep -q test-framework "$PROJECT/Packages/manifest.json" && echo "ok test framework" || echo "MISSING com.unity.test-framework in manifest.json"
+  if package_state; then echo "ok player after every merge into $(native_path "$PACKAGE_DIR")"; else echo "MISSING ${REPLY#WARN }"; fi
 }

@@ -161,7 +161,11 @@ OK no batch running
 ```
 
 ### warmd merge
-Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>`. After a conflict, resolve it and run `warmd merge --continue`. The gate is `check`, or `gate=` from `warmd.conf`. Exit 1 on red.
+Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>... [--no-gate]`. Several branches are merged one after the other, one commit each, then one gate runs over all of them and one player build follows, not one per branch; red rolls every branch of the call back. After a conflict, resolve it and run `warmd merge --continue`: it commits the resolved branch and merges the ones after it. The gate is `check`, or `gate=` from `warmd.conf`; `--no-gate` skips it for an integration a human released. With `package_dir` the merge starts `warmd package` in the background, so the player is always the merged base; without it the merge says that no player follows. Afterwards the engine caches of finished worktrees are freed (see `warmd disk`). The automatic merge at the end of a batch merges all green branches in one call and goes one by one only when that is red. Exit 1 on red.
+
+```text
+warmd merge warmd/a warmd/b warmd/c
+```
 
 ### warmd batch-done
 Ends the batch, so the shared checkout opens again.
@@ -212,6 +216,12 @@ RED run 41
 
 ### warmd init
 Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`, between `<!-- warmd ... -->` markers. The session start hook renews that block and the agent definitions in the shared checkout when a newer warmd brings other text, an older block without markers is replaced in place. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
+
+### warmd disk
+Shows the free space and the finished worktrees that still hold an engine cache (a Unity `Library` is often several GB per worktree). `--free` frees those caches now. warmd does this by itself: `split` copies a cache only with room for it plus `disk_min_mb` and answers `WAIT` otherwise, every heavy run first frees finished caches and is refused below `disk_min_mb`, and every merge frees the caches of the worktrees it finished. A cache is freed only when the worktree's HEAD is in the base branch, nothing is uncommitted, it is not in the running batch and no engine or warmd run is there; a worktree without work of its own also needs 30 quiet minutes. The next split that reuses it copies the cache again.
+```text
+warmd disk --free
+```
 
 ### warmd doctor
 Checks what is missing.
@@ -277,9 +287,11 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `package_method`, `package_args` | Unity player build for `warmd package` | none |
 | `test_port_env`, `test_port_base` | Env variable that gets a port of its own for every heavy run: base plus the slot number, unique on the machine; the Unity daemon sets it before each job | none, 7930 |
 | `ram_stop_idle` | 0 keeps idle engine daemons of other worktrees running while a run waits for RAM | 1 |
-| `package_dir` | The one player folder, relative to the project or absolute; set it and every finished batch refreshes the player there | none |
+| `package_dir` | The one player folder, relative to the project or absolute; set it and every merge refreshes the player there. Without it `merge` and `doctor` say that no player is built | none |
 | `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
 | `gate` | Shell command `warmd merge` runs instead of `check` | none |
+| `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
+| `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
 | `port_env` | Env variable that gets a stable port per worktree | none |
 | `seed_links` | Untracked folders linked into new worktrees | none |
