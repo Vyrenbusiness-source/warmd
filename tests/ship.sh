@@ -26,6 +26,7 @@ case "$1 $2" in
   "pr create") echo 7 > "$FAKE/pr"; echo "https://github.com/o/r/pull/7";;
   "pr merge") git push -q origin warmd-ship:main;;
   "release create") ;;
+  "repo view") echo https://github.com/o/r;;
 esac
 EOF
 chmod +x "$FAKE/bin/gh"
@@ -89,7 +90,9 @@ expect "both usage lines kept" 'warmd alpha' "$pushed"
 expect "both usage lines kept 2" 'warmd beta' "$pushed"
 expect "both dispatch lines kept" 'beta\)  run_beta' "$pushed"
 expect "no conflict markers" '^[^<]*$' "$(echo "$pushed" | grep -c '<<<<<<<' | sed 's/^0$/clean/')"
-expect "release notes from git log" 'release create v0.2.0 .*add alpha' "$(tr '\n' ' ' < "$FAKE/log")"
+expect "release notes from the changelog section" 'release create v0.2.0 .*### Added - alpha and beta' "$(tr '\n' ' ' < "$FAKE/log")"
+expect "release notes without the release commit" '^$' "$(sed -n '/release create/,$p' "$FAKE/log" | grep -e '- release v')"
+expect "compare link in the release notes" 'Full changelog\*\*: https://github.com/o/r/compare/v0.1.0...v0.2.0' "$(cat "$FAKE/log")"
 expect "pr merge called" 'gh pr merge 7 --merge' "$(cat "$FAKE/log")"
 expect "no blocking gh run watch" '^$' "$(grep 'run watch' "$FAKE/log")"
 main_warmd="$(git --git-dir="$TMP/remote.git" show main:bin/warmd)"

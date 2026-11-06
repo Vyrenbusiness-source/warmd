@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+- `warmd ship --release` writes the release notes from the version's CHANGELOG section plus a compare link, not from raw commit subjects; without a section it falls back to the commit subjects, minus release and WIP commits
+
 ## [0.4.20] - 2026-11-06
 
 ### Fixed
