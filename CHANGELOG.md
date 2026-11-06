@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- Heavy runs wait for free RAM before they take a slot: a run waiting for RAM no longer holds a slot and stalls every other agent behind it
+
 ## [0.4.24] - 2026-11-06
 
 ### Fixed
