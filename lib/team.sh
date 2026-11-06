@@ -49,7 +49,7 @@ wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
   [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/')" ] || return 1   # a daemon warmd renewed is no work
   git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
-  [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
+  [ -z "$(procs_like "$(native_path "$p")" 'powershell|git')" ]
 }
 # A branch already merged into base holds nothing new: the worktree starts again from base, so the next task never builds on a stale state.
 wt_fresh() { # path name
@@ -270,19 +270,15 @@ wt_busy() { # worktree
   # A merge started through Win32_Process.Create (hook_detach) need not share this shell's msys pid table: its Windows pid counts
   pid="$(cat "$wt/.warmd/merge.owner.win" 2>/dev/null)"
   [ -f "$wt/.warmd/merge.owner" ] && [ -n "$pid" ] && pid_alive "$pid" && return 0
-  local pat; pat="$(native_path "$wt")"; pat="${pat//\//}"
-  pat="$(printf '%s' "$pat" | sed 's/[].()+*?^$|[]/\&/g')"
-  [ -n "$(procs "$pat" 'powershell|git|warmd watch')" ] && return 0
+  # A program that names the worktree in its command line (an editor's -projectPath, a build): one process list per round
+  [ -n "$(procs_like "$(native_path "$wt")" 'powershell|git|warmd watch')" ] && return 0
   wt_ci_wait "$wt"
 }
 
 # Command lines of running gh calls that wait on remote CI: gh run watch, gh pr checks --watch
 gh_watchers() {
-  if [ "$OS" = win ]; then
-    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match 'gh(\.exe)?.? +(run|pr) ' -and \$_.CommandLine -notmatch 'Get-CimInstance' } | ForEach-Object { \$_.CommandLine }" 2>/dev/null | tr -d '\r'
-  else
-    ps -eo args= 2>/dev/null | grep -E '(^|[/ ])gh +(run|pr) ' | grep -v grep
-  fi | grep -E 'run +watch|pr +checks.*--watch'
+  local c
+  while IFS= read -r c; do [[ $c =~ run\ +watch|pr\ +checks.*--watch ]] && printf '%s\n' "$c"; done < <(procs_cmdlines 'gh(\.exe)?.? +(run|pr) ')
 }
 
 # An agent that waits on CI for its branch is working: the gh watch names the branch, a PR number or a run id of that branch.

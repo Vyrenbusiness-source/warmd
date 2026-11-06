@@ -9,6 +9,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - Every `warmd merge` with `package_dir` starts `warmd package` in the background (one at a time), so the player always is the merged base, also for merges an agent runs by hand. Without `package_dir` merge and doctor say so instead of building nothing in silence
 - Disk: `split` copies an engine cache (a Unity `Library` is often 4 to 7 GB) only with room for it plus `disk_min_mb` (default 4096) and answers `WAIT` otherwise; heavy runs first free finished caches and are refused below `disk_min_mb`; every merge and the end of every batch free the caches of finished worktrees (HEAD in the base, clean, not in the batch, no engine). `warmd disk` shows it, `--free` frees now, doctor reports low space. Three new worktrees filled a disk and merges died with "unable to write file"
 
+### Changed
+- `warmd watch` and `split` read the process list once per 20 s and match worktree paths as plain text: one PowerShell per round instead of two per idle worktree (`WARMD_PROCS_TTL`). The old check escaped the path into a pattern that never matched
+
 ## [0.4.18] - 2026-11-06
 
 ### Fixed

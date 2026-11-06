@@ -28,6 +28,7 @@ on_exit() {
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
   [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
   [ -n "$RUNMARK" ] && rm -f "$RUNMARK"
+  rm -f "${TMPDIR:-/tmp}/warmd-procs-$$" 2>/dev/null
   return 0
 }
 # A heavy run marks itself in .warmd/run/active/<pid> (content: Windows pid or -, command) while it lives.
