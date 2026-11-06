@@ -183,6 +183,14 @@ echo "kind=test" > "$TMP/wt3/.warmd/run/job.txt"; echo phase=run > "$TMP/wt2/.wa
 expect "a busy one stays, and the own one too" '^$' "$(sti)"
 rm -f "$P/.warmd/run/alive.txt" "$P/.warmd/run/state.txt"
 
+# test_port_env: every heavy run its own port from the slot number, handed to the daemon with the job
+out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && CFG_test_port_env=GAME_PORT && SLOT="$TMP/cache/slots/3" && slot_port && echo "port=$GAME_PORT" ) )"
+expect "slot 3 gets base 7930 plus 3" '^port=7933$' "$out"
+out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && CFG_test_port_env=GAME_PORT && CFG_test_port_base=9000 && SLOT="$TMP/cache/slots/2" && slot_port && echo "port=$GAME_PORT" ) )"
+expect "test_port_base moves the range" '^port=9002$' "$out"
+expect "the daemon sets the run's port before the run" 'SetEnvironmentVariable\(Get\(job, "port_env"\), Get\(job, "port"\)\)' "$(cat "$HERE/unity/WarmdDaemon.cs")"
+expect "and mutes every run unless it asks for sound" 'audioMasterMute = Get\(job, "sound"\) != "1"' "$(cat "$HERE/unity/WarmdDaemon.cs")"
+
 # ---- warmd package with package_dir: one fixed folder, the method gets it, a running player is waited for ----
 printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -warmdPackageDir ] && [ "${PKG_IGNORE:-0}" != 1 ] && echo player > "$2/start.exe"; shift; done\nexit 0\n' > "$TMP/UnityPkg"; chmod +x "$TMP/UnityPkg"
 pk() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && . "$HERE/lib/tune.sh" && detect_project >/dev/null 2>&1 && . "$HERE/lib/daemon.sh" && . "$HERE/adapters/unity.sh" \

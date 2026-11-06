@@ -110,7 +110,8 @@ job() {
     start_locked a_start_daemon
     id="j$(now_ms)"
     rm -f "$RUN/result.txt" "$RUN/stop.flag"
-    { echo "id=$id"; echo "kind=$kind"; echo "timeout=$TIMEOUT"; printf '%s\n' "$@"; } > "$RUN/job.tmp"
+    { echo "id=$id"; echo "kind=$kind"; echo "timeout=$TIMEOUT"; printf '%s\n' "$@"
+      [ -z "${TEST_PORT:-}" ] || { echo "port_env=$CFG_test_port_env"; echo "port=$TEST_PORT"; }; } > "$RUN/job.tmp"
     mv "$RUN/job.tmp" "$RUN/job.txt"
     waited=0; lost=""
     while :; do

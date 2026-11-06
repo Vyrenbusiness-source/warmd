@@ -14,6 +14,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - Unity daemons stay warm through compile errors: the editor starts with `-ignoreCompilerErrors`, so a compile error no longer ends it ("Aborting batchmode due to failure") and the next run no longer starts cold (first checks measured 576 to 595 s cold against 9 s warm); the daemon answers the `error CS` lines as `FAIL`. An editor that lives but never beats because the errors keep the daemon's own code from loading is ended after 60 quiet log seconds (`WARMD_STUCK_QUIET`)
 - Every worktree of a split gets the base's `Library`, also a reused one or one that already exists: one `robocopy /MIR` (stale files of an older task go), never while an engine or a warmd run works there. Godot and web seeds no longer nest or start a program on a reused worktree
 
+- Unity test runs are silent: the daemon mutes the editor at start and before every job and sets `AudioListener.volume = 0` when a test run enters PlayMode; `warmd test --sound` lets one run be heard
+- Parallel PlayMode runs in different worktrees no longer collide on one network port: `test_port_env=<NAME>` gives every heavy run its own port, `test_port_base` (default 7930) plus its slot number, exported and set in the Unity daemon before each job
+
 ### Added
 - Prewarm at session start: the engine of every open task worktree starts in the background through the normal queue (slots, RAM wait), like after `warmd split`
 - RAM short: before a run waits for RAM, the engine daemon of another worktree that is idle longest (alive, idle, no job, no run) is stopped; `ram_stop_idle=0` switches it off

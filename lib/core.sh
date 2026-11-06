@@ -237,11 +237,22 @@ SLOT_LAZY=0
 slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
-  slot_try && return 0
+  slot_try && { slot_port; return 0; }
   echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   local sn; sn="$(slots_max)"
   until slot_maybe_free "$CACHE_ROOT/slots" "$sn" && slot_try; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
-  queue_done; echo "(slot free after $(secs)s)"
+  queue_done; echo "(slot free after $(secs)s)"; slot_port
+}
+# Parallel runs in different worktrees must not share a network port (a PlayMode test that binds UDP 7790 twice is red).
+# test_port_env=<NAME> in warmd.conf: every heavy run gets its own port, test_port_base (default 7930) plus its slot number,
+# unique on the machine while the slot is held. Exported for the run, and handed to the Unity daemon with every job.
+TEST_PORT=""
+slot_port() {
+  [ -n "${CFG_test_port_env:-}" ] && [ -n "$SLOT" ] || return 0
+  local n="${SLOT##*/}"; [[ $n =~ ^[0-9]+$ ]] || return 0
+  [[ $CFG_test_port_env =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+  TEST_PORT=$(( ${CFG_test_port_base:-7930} + n ))
+  export "$CFG_test_port_env=$TEST_PORT"
 }
 
 changed_files() {

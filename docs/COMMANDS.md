@@ -29,7 +29,7 @@ OK nothing to compile
 
 ### warmd test
 Runs the tests. A green result is cached by code hash, a red one never. Exit 1 on red, with only the error lines and the path of the full log.
-Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window]`. `WARMD_NOCACHE=1` ignores the cache.
+Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window] [--sound]`. Unity runs are muted (the daemon sets `EditorUtility.audioMasterMute` before every run and `AudioListener.volume = 0` in PlayMode), `--sound` lets one run be heard. `WARMD_NOCACHE=1` ignores the cache.
 
 Unity `--window` (or `WARMD_WINDOW=1`) runs the tests in an editor with a window, for tests that skip their work in batchmode, PlayMode screenshots for example. `-monitor` is a player argument that an editor ignores, so the daemon moves its own main window through Win32 to monitor `WARMD_MONITOR` (default 2, monitor 1 is the primary) and maximizes it there; with one monitor it stays where it opened and says so. Before the start warmd removes `Temp/__Backupscenes` (the dialog Recovering Scene Backups) and stops when the manifest names a local package that is missing (the dialog Packages with Errors). Any other modal dialog during the start ends the editor at once with its title, text and buttons, nothing is answered. A headless daemon on the project makes way, and the window closes after the run. The window run has its own cache key.
 ```text
@@ -272,6 +272,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `top_paths` | Paths that need the top tier (regex) | none |
 | `shot_method` | Unity capture method | none |
 | `package_method`, `package_args` | Unity player build for `warmd package` | none |
+| `test_port_env`, `test_port_base` | Env variable that gets a port of its own for every heavy run: base plus the slot number, unique on the machine; the Unity daemon sets it before each job | none, 7930 |
 | `ram_stop_idle` | 0 keeps idle engine daemons of other worktrees running while a run waits for RAM | 1 |
 | `package_dir` | The one player folder, relative to the project or absolute; set it and every finished batch refreshes the player there | none |
 | `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
@@ -280,4 +281,4 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `port_env` | Env variable that gets a stable port per worktree | none |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 
-Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`. Unity also has `warmd call Namespace.Class.Method`.
+Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.

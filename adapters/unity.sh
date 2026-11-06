@@ -331,8 +331,9 @@ unity_rounds_list() { # rc of the last round, id of the first round
 
 a_test() {
   unity_world || return 1
-  local filter="" mode="" cat="" speed="" rc
-  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; *) filter="$1";; esac; shift; done
+  local filter="" mode="" cat="" speed="" sound=0 rc
+  # --sound: the game is heard in this run; every other run is muted by the daemon (WarmdDaemon.cs)
+  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; --sound) sound=1;; *) filter="$1";; esac; shift; done
   [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
   if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
@@ -347,7 +348,7 @@ a_test() {
   fi
   unity_sync
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
-  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}" "sound=$sound"; rc=$?
   [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
   if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; [ $rc = 0 ] && echo "OK $(secs)s test"; fi
   return $rc
