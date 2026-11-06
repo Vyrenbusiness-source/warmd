@@ -12,7 +12,7 @@ W="$TMP/wt"; mkdir -p "$W/.warmd"; cd "$W" || exit 1
 git init -q -b warmd/ci .; git config user.name t; git config user.email t@example.com
 echo a > a.txt; git add a.txt; git commit -qm init
 # busy <worktree>: wt_busy from lib/team.sh, in a fresh shell like warmd watch
-busy() { ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; wt_busy "$1" ); }
+busy() { ( cd "$TMP" && WARMD_HOME="$HERE" && WARMD_PROCS_TTL=-1 && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; wt_busy "$1" ); }
 
 # Stub gh: a watch sleeps, the lists name PR 7 and run 4242 as this branch's
 mkdir -p "$TMP/bin"
