@@ -150,7 +150,7 @@ tune_wait_ram() {
     [ "$pct" -ge "$min" ] && break
     [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark; }
     [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
-    nap "${WARMD_RAM_POLL:-3}"; orphan_check
+    nap "${WARMD_RAM_POLL:-15}"; orphan_check   # each look at the RAM starts wmic, awk and tr
   done
   [ -z "$said" ] || queue_done
   [ -z "$said" ] || [ $anyway = 1 ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
@@ -199,7 +199,8 @@ gfx_take() {
   [ -n "$GFXSLOT" ] && return 0
   claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT && return 0
   echo "(queued: $(tune_gfx_slots) graphics runs active)"; queue_mark
-  until claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT; do nap 3; orphan_check; done
+  local gn; gn="$(tune_gfx_slots)"
+  until slot_maybe_free "$CACHE_ROOT/gfxslots" "$gn" && claim_slot "$CACHE_ROOT/gfxslots" "$gn" GFXSLOT; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
   queue_done
 }
 
@@ -236,6 +237,18 @@ claim_slot() {
   return 1
 }
 slot_try() { [ -n "$SLOT" ] && return 0; claim_slot "$CACHE_ROOT/slots" "$(slots_max)" SLOT; }
+# slot_maybe_free <dir> <count>: builtins only, no process start. False while every place is held by a live owner,
+# so a queued run polls for hours without starting a program; only a place that may be free goes to claim_slot.
+slot_maybe_free() {
+  local i holder
+  for (( i = 1; i <= $2; i++ )); do
+    [ -d "$1/$i" ] || return 0
+    holder=""; { read -r holder < "$1/$i/pid"; } 2>/dev/null
+    [ -n "$holder" ] || return 0
+    shell_alive "$holder" || return 0
+  done
+  return 1
+}
 # RAM check comes after the slot, so only slot holders wait for memory
 eval "$(declare -f slot_take | sed '1s/slot_take/slot_take_base/')"
 slot_take_now() { slot_take_base; tune_wait_ram; }

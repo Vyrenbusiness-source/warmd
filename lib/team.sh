@@ -375,7 +375,7 @@ team_watch() {
     [ $live = 1 ] && touch "$batch-alive"   # agents work: batch_guard keeps a marker older than 240 minutes
     [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
     [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
-    nap 30
+    nap "${WARMD_WATCH_POLL:-90}"   # one round costs about 40 process starts per worktree, idle is judged in minutes
   done
 }
 
