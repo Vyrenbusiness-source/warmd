@@ -237,7 +237,7 @@ slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
   echo "(queued: $(slots_max) heavy runs active)"; queue_mark
-  until slot_try; do sleep 3; orphan_check; done
+  until slot_try; do nap 3; orphan_check; done
   queue_done; echo "(slot free after $(secs)s)"
 }
 

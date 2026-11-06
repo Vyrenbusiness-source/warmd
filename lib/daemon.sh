@@ -24,7 +24,7 @@ start_locked() {
     if [ -n "$(find "$lock" -maxdepth 0 -mmin +11 2>/dev/null)" ]; then rmdir "$lock" 2>/dev/null; continue; fi
     n=$((n+1)); [ $n -gt 1300 ] && { echo "FAIL start lock stuck: $lock"; exit 1; }
     daemon_alive && return 0
-    sleep 0.5
+    nap 0.5
   done
   LOCK="$lock"
   "$1"
@@ -35,7 +35,7 @@ start_locked() {
 wait_ready() {
   local i=0
   while :; do
-    sleep 1; i=$((i+1))
+    nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then return 0; fi
     [ $i -gt "$1" ] && { echo "FAIL daemon not ready after ${1}s, see $(native_path "$RUN/daemon.log")"; exit 1; }
   done
@@ -49,7 +49,7 @@ job_lock() {
     holder="$(cat "$dir/pid" 2>/dev/null)"
     if [ -n "$holder" ] && ! shell_alive "$holder"; then rm -rf "$dir"; continue; fi
     [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; queue_mark; }
-    sleep 1; orphan_check
+    nap 1; orphan_check
   done
   [ -z "$said" ] || queue_done
   echo "$$" > "$dir/pid"; JOBLOCK="$dir"
@@ -75,7 +75,7 @@ job() {
         if grep -qE '^(timeout after|HUNG )' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
         [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f2)" = OK ]; return
       fi
-      if [ $waited -lt 40 ]; then sleep 0.05; else sleep 0.4; fi
+      if [ $waited -lt 40 ]; then nap 0.05; else nap 0.4; fi
       waited=$((waited+1))
       if [ $waited -ge 40 ] && [ $((waited % 25)) = 0 ]; then
         orphan_check
@@ -102,11 +102,11 @@ daemon_stop() {
   : > "$RUN/stop.flag"
   if [ -n "$had" ] && ! grep -q '^phase=[^i]' "$RUN/state.txt" 2>/dev/null; then
     pid="$(daemon_pid)"; { echo "id=q$(now_ms)"; echo "kind=quit"; } > "$RUN/job.tmp"; mv "$RUN/job.tmp" "$RUN/job.txt"; i=0
-    while pid_alive "$pid" && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done
+    while pid_alive "$pid" && [ $i -lt 60 ]; do nap 0.5; i=$((i+1)); done
   fi
   if [ -n "$(a_daemon_procs)" ]; then
     a_kill_daemon
-    i=0; while [ -n "$(a_daemon_procs)" ] && [ $i -lt 8 ]; do sleep 1; i=$((i+1)); done   # Windows ends a killed process with a delay
+    i=0; while [ -n "$(a_daemon_procs)" ] && [ $i -lt 8 ]; do nap 1; i=$((i+1)); done   # Windows ends a killed process with a delay
     [ -n "$(a_daemon_procs)" ] && { echo "FAIL daemon still alive after kill"; return 1; }
     echo "OK daemon killed"
   elif [ -n "$had" ]; then rm -f "$RUN/alive.txt" "$RUN/pid.txt"; echo "OK daemon stopped"
