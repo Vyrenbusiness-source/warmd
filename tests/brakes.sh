@@ -111,5 +111,11 @@ expect "wait loops use nap, not sleep" '^$' "${out:-}"
 out="$(bash -c '. "$1/lib/platform.sh"; nap_init || exit 9; t0=$SECONDS; PATH=/nonexistent; nap 1 || echo rc; nap 1; echo "waited $((SECONDS - t0))"' _ "$HERE" 2>&1)"
 expect "nap waits without any program on PATH" '^waited [12]$' "$out"
 
+# (q) a queued run judges the places with builtins: while every place has a live owner it starts no program
+mkdir -p "$TMP/held/1" "$TMP/held/2" "$TMP/half/1"; echo $$ > "$TMP/held/1/pid"; echo $$ > "$TMP/held/2/pid"; echo $$ > "$TMP/half/1/pid"
+out="$(bash -c '. "$1/lib/platform.sh"; . "$1/lib/core.sh" 2>/dev/null; . "$1/lib/tune.sh" 2>/dev/null; PATH=/nonexistent; for d in held half; do slot_maybe_free "$2/$d" 2 && echo "$d free" || echo "$d held"; done' _ "$HERE" "$TMP" 2>&1)"
+expect "a queued run sees held places without starting a program" '^held held$' "$(echo "$out" | head -1)"
+expect "a queued run sees a free place without starting a program" '^half free$' "$(echo "$out" | tail -1)"
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "OK brakes" || { echo "FAIL brakes: $fails"; exit 1; }
