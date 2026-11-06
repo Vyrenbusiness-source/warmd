@@ -9,6 +9,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 - The repo is now `Vyrenbusiness-source/warmd`, the short name the command already has. Old URLs, clones and the old install lines redirect
+- `warmd ship --release` writes the release notes from the version's CHANGELOG section plus a compare link, not from raw commit subjects; without a section it falls back to the commit subjects, minus release and WIP commits
 
 ## [0.4.21] - 2026-11-06
 
