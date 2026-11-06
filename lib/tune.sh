@@ -278,7 +278,8 @@ slot_maybe_free() {
 }
 # RAM check comes after the slot, so only slot holders wait for memory
 eval "$(declare -f slot_take | sed '1s/slot_take/slot_take_base/')"
-slot_take_now() { slot_take_base; tune_wait_ram; disk_guard; }
+# Wait for RAM BEFORE taking a heavy slot: a run that holds a slot while it waits blocks every other run behind it.
+slot_take_now() { tune_wait_ram; slot_take_base; disk_guard; }
 # A green-cache hit never waits: when the caller goes straight on to "cached", the slot and the RAM wait move behind the cache check.
 SLOT_DEFER=0
 slot_take() {
