@@ -237,7 +237,8 @@ slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && return 0
   echo "(queued: $(slots_max) heavy runs active)"; queue_mark
-  until slot_try; do nap 3; orphan_check; done
+  local sn; sn="$(slots_max)"
+  until slot_maybe_free "$CACHE_ROOT/slots" "$sn" && slot_try; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
   queue_done; echo "(slot free after $(secs)s)"
 }
 
