@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.18] - 2026-11-06
+
 ### Fixed
 - An agent's shell goes back to the main checkout after every Bash call when its worktree lies outside the session's folders, so `warmd finish` and `handoff` acted on the main checkout. The task file now says to start every Bash call with `cd "<worktree>" &&`, and `finish` and `handoff` refuse the shared checkout while a batch runs, like test, check and build; a worktree of an older batch still ends and hands off its own task
 
@@ -208,7 +210,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.17...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.18...HEAD
+[0.4.18]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.17...v0.4.18
 [0.4.17]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.16...v0.4.17
 [0.4.16]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.15...v0.4.16
 [0.4.15]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.14...v0.4.15
