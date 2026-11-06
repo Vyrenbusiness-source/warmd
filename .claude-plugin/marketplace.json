@@ -1,0 +1,17 @@
+{
+  "name": "warmd",
+  "description": "warmd: build, test and screenshot through one warm command, made for AI coding agents.",
+  "owner": {
+    "name": "Vyrenbusiness-source",
+    "url": "https://github.com/Vyrenbusiness-source"
+  },
+  "plugins": [
+    {
+      "name": "warmd",
+      "source": "./",
+      "description": "Your coding agent waits less and reads less: warm engine, only the tests your change reaches, only the error.",
+      "category": "development",
+      "tags": ["unity", "godot", "tests", "tokens", "windows"]
+    }
+  ]
+}

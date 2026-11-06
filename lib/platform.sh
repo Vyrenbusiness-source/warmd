@@ -6,6 +6,11 @@ case "${OSTYPE:-$(uname -s)}" in
   *) OS=linux;;
 esac
 
+# Installed as a Claude Code plugin, warmd runs from the plugin cache and its agents are namespaced: warmd:warmd-worker.
+# The plugin's hooks also pass --plugin (bin/warmd sets WARMD_PLUGIN=1 for them).
+case "${WARMD_HOME:-}" in */plugins/cache/*) WARMD_PLUGIN=1;; esac
+WARMD_PLUGIN="${WARMD_PLUGIN:-0}"; AGENT_NS=""; [ "$WARMD_PLUGIN" = 1 ] && AGENT_NS="warmd:"
+
 # nap <seconds>: a wait without a process start. Under Git Bash every `sleep` is a new process, and some Windows machines
 # keep kernel memory per process start until reboot: eight queued runs polling with sleep cost 64 starts a second and
 # ate 40 GB in 40 minutes. read -t on a FIFO that nobody writes waits in bash itself. The FIFO is opened once per shell,

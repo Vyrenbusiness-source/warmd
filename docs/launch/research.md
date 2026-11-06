@@ -1,6 +1,6 @@
 # How comparable agent tools reached many developers
 
-Research for the warmd launch, 2026-11-06. Star counts from the GitHub API on that day. Nothing here has been posted anywhere; the drafts are in [posts.md](posts.md) and [awesome-lists.md](awesome-lists.md).
+Research on how comparable agent tools reached many developers, 2026-11-06. Star counts from the GitHub API on that day. It drives the repo itself: name, README, demo, install.
 
 ## The projects
 
@@ -37,7 +37,7 @@ For warmd this is the opening: its [A/B](../ab.md) measures billed tokens and do
 ## Gaps in warmd compared with them
 
 - **No plugin-marketplace install.** The three biggest tools install with `/plugin marketplace add`. warmd needs `curl | bash` plus `warmd init`. A `.claude-plugin/marketplace.json` that runs the install and `warmd init` would remove the second step. Not done in this branch, it is a code change.
-- **Windows only.** HN and r/LocalLLaMA readers are mostly on macOS and Linux. Say it in the first line of every post so nobody feels tricked, and present the Unity and Godot editors on Windows as the focus.
+- **Windows only.** Many readers are on macOS and Linux. The README says it in the first screen so nobody feels tricked, and presents the Unity and Godot editors on Windows as the focus.
 - **Demo shows a small Node test.** The hero image is a real session, but the strongest number (Unity 56 s to 3 s) has no moving picture. A screen recording of one Unity test class, cold vs warm, would be the best launch asset.
 - **No social proof yet.** awesome-claude-code accepts warmd from 2026-11-16 (14 days after the first commit) or at 100 stars. Its "Mentioned in Awesome Claude Code" badge is what ccusage shows at the top.
 - **awesome-claude-code requires a human submission** through its web issue form; agents and `gh` submissions are refused.

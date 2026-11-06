@@ -65,3 +65,15 @@ jobs:
           unzip -q godot.zip -d "$HOME/godot"
           echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
+
+  plugin:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: The marketplace and the plugin pass the official validator
+        run: claude plugin validate .

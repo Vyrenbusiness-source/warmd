@@ -150,6 +150,7 @@ hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGE
   [ -n "$tier" ] || read -r tier < "${tf%.md}.tier" 2>/dev/null
   tier="${tier%$'\r'}"
   case "$tier" in cheap) agent=warmd-scout; model=haiku;; top) agent=warmd-worker; model=opus;; *) tier=mid; agent=warmd-worker; model=sonnet;; esac
+  agent="${AGENT_NS:-}$agent"
   if [ -f "$HOOK_PROJ/warmd.conf" ]; then
     while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; done < "$HOOK_PROJ/warmd.conf"
   fi
@@ -190,10 +191,22 @@ hook_prewarm() { # worktree
   done
   return 0
 }
+# Plugin install without warmd init: the instructions block arrives as session context instead of a CLAUDE.md edit.
+hook_plugin_instr() { # project dir
+  local f x
+  for f in "$1/CLAUDE.md" "$1/AGENTS.md"; do
+    [ -f "$f" ] || continue; x=""; IFS= read -r -d '' x < "$f"
+    [[ $x == *'Use `warmd` for every build'* ]] && return 0
+  done
+  [ -f "$WARMD_HOME/agents/INSTRUCTIONS.md" ] || return 0
+  cat "$WARMD_HOME/agents/INSTRUCTIONS.md"
+  echo "- The warmd command is on the PATH of your Bash tool. Its agents are warmd:warmd-worker, warmd:warmd-scout and warmd:warmd-merge."
+}
 hook_session() {
   local in src="" common here tf brief main batch donef wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
   local -A state=()
   in="$(cat)"; [[ $in =~ $re ]] && src="${BASH_REMATCH[1]}"
+  [ "${WARMD_PLUGIN:-0}" = 1 ] && hook_plugin_instr "${CLAUDE_PROJECT_DIR:-$PWD}"
   here="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
   hook_refresh
   common="$(hook_common)" || return 0
@@ -571,6 +584,7 @@ else:
 
 hook_install() {
   local f; f="$(hook_settings)"
+  [ "${WARMD_PLUGIN:-0}" = 1 ] && { echo "OK hooks come from the warmd plugin, nothing written to $f"; return 0; }
   hook_py >/dev/null || { echo "FAIL warmd hooks need python3 or python to edit $f"; return 1; }
   hook_edit add "$f" "$(hook_self)" || return 1
   echo "OK hooks installed in $f (noisy commands via warmd run, state back after restart or compact, agents recorded and merged on stop). Remove: warmd init --no-hooks"
@@ -580,6 +594,7 @@ hook_install() {
 # form at the next session start. Settings without warmd hooks (init --no-hooks) stay untouched.
 hook_refresh() {
   local f self; f="$(hook_settings)"
+  [ "${WARMD_PLUGIN:-0}" = 1 ] && return 0   # the plugin cache path changes with every update, settings never point there
   [ -f "$f" ] && grep -q ' hook-pre"' "$f" || return 0
   self="$(hook_self)"
   [ -n "$(type -t native_path)" ] || . "$WARMD_HOME/lib/platform.sh"

@@ -1,5 +1,5 @@
 # Installs warmd on Windows from PowerShell. One line:
-#   irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd/main/install.ps1 | iex
 # Finds Git for Windows (installs it with winget if missing), then runs install.sh in Git Bash:
 # warmd goes to ~/.warmd, warmd and warmd.cmd to ~/.local/bin, that folder onto PATH for Git Bash and PowerShell.
 # Run it again to update. Options as environment variables:
@@ -47,7 +47,7 @@ function Install-Warmd {
   elseif ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'install.sh'))) { $script = Join-Path $PSScriptRoot 'install.sh' }
   else {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
-    $url = 'https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh'
+    $url = 'https://raw.githubusercontent.com/Vyrenbusiness-source/warmd/main/install.sh'
     $script = Join-Path ([IO.Path]::GetTempPath()) ('warmd-install-' + [guid]::NewGuid().ToString('N') + '.sh')
     try { Invoke-RestMethod -Uri $url -OutFile $script -UseBasicParsing }
     catch { Write-Host "FAIL could not download $url ($($_.Exception.Message)). Fix: check the connection, or run in Git Bash: curl -fsSL $url | bash"; return 1 }
