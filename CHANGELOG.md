@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd ship` takes a fresh integration branch when another worktree already holds `warmd-ship`, instead of failing with "cannot branch from origin/main"
+- Godot: `warmd build` skips folders holding `.gdignore`, as Godot does, so raw asset packs with their own scripts no longer turn the build red
+
 ## [0.4.20] - 2026-11-06
 
 ### Fixed
