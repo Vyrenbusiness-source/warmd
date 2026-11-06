@@ -76,6 +76,10 @@ batch_guard() {
   echo "FAIL a batch runs, this is the shared checkout. Work in the worktree from your task file: start every Bash call with cd \"<worktree>\" &&, the shell goes back here after each call. Ending the batch: warmd batch-done, on purpose here: WARMD_BASE=1"; exit 5
 }
 
+# batch_guard for the shared checkout only (a linked worktree has a .git file, the main checkout a folder): a worktree of an
+# older batch or one made by hand still ends or hands off its own task. A builtin test, no program start.
+shared_guard() { [ -n "$GIT_ROOT" ] && [ -d "$GIT_ROOT/.git" ] || return 0; batch_guard; }
+
 # Changes during a merge end up in the merge. Only the merge's own checks may run here, everyone else gets a clear refusal.
 merge_guard() {
   [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0

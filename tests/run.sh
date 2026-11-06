@@ -16,7 +16,8 @@ OWN_JOB="proof godot"   # tests/<name>.sh with a CI job of its own
 MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
 guard() {
   local ci="$HERE/.github/workflows/ci.yml" groups f n s c
-  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '')"
+  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '
+')"
   [ -n "$groups" ] || { no "guard: ci.yml has no self-test matrix group list"; return; }
   for f in "$HERE"/tests/*.sh; do
     n="${f##*/}"; n="${n%.sh}"
@@ -255,6 +256,7 @@ expect "the note holds done and next" 'Next: write tests' "$(cat "$note")"
 expect "the note lists the commits" 'wip' "$(cat "$note")"
 (cd "$wtf" && "$WARMD" handoff footer a b && "$WARMD" handoff footer c d) > /dev/null
 expect "a fourth handoff asks for a split instead" 'handed off 3 times' "$(cd "$wtf" && "$WARMD" handoff footer e f)"
+expect "handoff in the shared checkout during a batch is refused" '^FAIL a batch runs, this is the shared checkout' "$("$WARMD" handoff footer g h)"
 expect "finish refuses the base checkout and pushes nothing" '^FAIL warmd finish runs in the base checkout \(main\), nothing recorded, nothing pushed' "$("$WARMD" finish)"
 expect "finish reports facts in one line" '^DONE warmd/footer [0-9a-f]+' "$(cd "$wtf" && "$WARMD" finish)"
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"

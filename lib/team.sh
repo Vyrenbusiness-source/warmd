@@ -525,7 +525,6 @@ agent_state() { # worktree [base]
 # The last line of every agent: facts from git and the last run, not prose.
 team_finish() {
   need_git
-  batch_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   local br sha ahead dirty up last base
   br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
   # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
@@ -533,6 +532,7 @@ team_finish() {
     echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
     return 2
   fi
+  shared_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   ledger_finish "$@" || return $?
   finish_stop_runs
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
