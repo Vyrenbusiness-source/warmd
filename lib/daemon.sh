@@ -31,14 +31,60 @@ start_locked() {
   rmdir "$lock" 2>/dev/null; LOCK=""
 }
 
-# wait_ready <seconds>: a daemon is ready once it writes its heartbeat
+# wait_ready <seconds>: a daemon is ready once it writes its heartbeat. An engine that exits during the start
+# (compiler errors end a batchmode editor with return code 1) ends the wait at once, see spawn_gone.
 wait_ready() {
   local i=0
   while :; do
     nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then return 0; fi
+    spawn_gone "$i" && spawn_fail
+    spawn_stuck "$i" && { declare -F a_kill_daemon >/dev/null && a_kill_daemon >/dev/null 2>&1; spawn_fail "never answered, compile errors keep the daemon from loading, editor ended"; }
     [ $i -gt "$1" ] && { echo "FAIL daemon not ready after ${1}s, see $(native_path "$RUN/daemon.log")"; exit 1; }
   done
+}
+
+# spawn_stuck <seconds waited>: the editor lives (-ignoreCompilerErrors) but never beats, because compile errors keep the
+# daemon's own code from loading (a Library without it). True once its log has been quiet for WARMD_STUCK_QUIET seconds
+# (default 60) and holds an error CS line. Builtins every second (a stamp and -nt), one grep only after the quiet time.
+spawn_stuck() {
+  local lg="$RUN/warmd-daemon.log" st="$RUN/spawn.seen"
+  [ -f "$lg" ] || return 1
+  if [ ! -f "$st" ] || [ "$lg" -nt "$st" ]; then : > "$st"; SPAWN_QUIET=0; return 1; fi
+  SPAWN_QUIET=$(( ${SPAWN_QUIET:-0} + 1 ))
+  [ "$SPAWN_QUIET" -ge "${WARMD_STUCK_QUIET:-60}" ] && [ $(( SPAWN_QUIET % 10 )) = 0 ] || return 1
+  grep -q 'error CS[0-9]' "$lg" 2>/dev/null
+}
+
+# spawn_gone <seconds waited>: true when the engine warmd started (pid in spawn.pid) no longer runs. Linux and macOS ask
+# the kernel through the kill builtin every second. Windows has no builtin for a Windows pid: one tasklist every
+# WARMD_SPAWN_POLL seconds (default 5), never a program per second. No spawn.pid: nothing to check, the timeout decides.
+spawn_gone() {
+  local p=""; { read -r p < "$RUN/spawn.pid"; } 2>/dev/null; p="${p%$'\r'}"; p="${p// /}"
+  [ -n "$p" ] || return 1
+  if [ "$OS" = win ]; then
+    [ $(( $1 % ${WARMD_SPAWN_POLL:-5} )) = 0 ] || return 1
+    pid_alive "$p" && return 1
+  else
+    kill -0 "$p" 2>/dev/null && return 1
+  fi
+  # It may have written its heartbeat in its last second
+  [ -f "$RUN/alive.txt" ] && daemon_alive && return 1
+  SPAWN_GONE_PID="$p"; return 0
+}
+
+# spawn_fail: the engine is gone before it was ready. The slot goes first, so a queued run starts while this one still
+# talks; then the unique compiler errors of the engine log (at most 10) and FAIL as the closing line, exit 1 (red).
+spawn_fail() { # [reason]
+  [ -n "${SLOT:-}" ] && rm -rf "$SLOT"; SLOT=""
+  [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"; GFXSLOT=""
+  local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/unity_out.log" "$RUN/daemon.log"; do [ -f "$c" ] && { lg="$c"; break; }; done
+  local errs=""
+  [ -n "$lg" ] && errs="$(cat "$RUN/warmd-daemon.log" "$RUN/unity_out.log" 2>/dev/null | tr -d '\r' | grep -E 'error CS[0-9]+' | sed 's/^[[:space:]]*//' | awk '!seen[$0]++' | head -10 | cut -c1-200)"
+  [ -n "$errs" ] && printf '%s\n' "$errs"
+  END_SAID=1
+  echo "FAIL $(secs)s engine ${1:-exited before it was ready (pid ${SPAWN_GONE_PID:-?})}$( [ -n "$errs" ] && echo ", compiler errors above"), slot freed, log: $(native_path "${lg:-$RUN/warmd-daemon.log}")"
+  exit 1
 }
 
 # One job at a time per daemon: a second caller waits instead of overwriting job.txt and losing both results.
@@ -64,7 +110,8 @@ job() {
     start_locked a_start_daemon
     id="j$(now_ms)"
     rm -f "$RUN/result.txt" "$RUN/stop.flag"
-    { echo "id=$id"; echo "kind=$kind"; echo "timeout=$TIMEOUT"; printf '%s\n' "$@"; } > "$RUN/job.tmp"
+    { echo "id=$id"; echo "kind=$kind"; echo "timeout=$TIMEOUT"; printf '%s\n' "$@"
+      [ -z "${TEST_PORT:-}" ] || { echo "port_env=$CFG_test_port_env"; echo "port=$TEST_PORT"; }; } > "$RUN/job.tmp"
     mv "$RUN/job.tmp" "$RUN/job.txt"
     waited=0; lost=""
     while :; do
@@ -73,7 +120,10 @@ job() {
         # Timeout: the run is still stuck in the engine, the next job needs a fresh daemon
         # HUNG: the test runner is still inside a test that never ended (lib unity daemon, test_timeout)
         if grep -qE '^(timeout after|HUNG )' "$RUN/result.txt"; then a_kill_daemon; return 1; fi
-        [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f2)" = OK ]; return
+        [ "$(head -1 "$RUN/result.txt" | cut -d' ' -f2)" = OK ] || return 1
+        # Details follow the OK line: a closing OK, so the last line still says green (a red one gets its FAIL in on_exit)
+        { read -r _; read -r _; } < "$RUN/result.txt" && echo "OK $(secs)s $kind"
+        return 0
       fi
       if [ $waited -lt 40 ]; then nap 0.05; else nap 0.4; fi
       waited=$((waited+1))

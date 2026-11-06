@@ -22,11 +22,11 @@ a_kill_daemon() {
 a_start_daemon() {
   local exe; exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; exit 2; }
   [ -n "$(a_daemon_procs)" ] && { echo "(daemon not answering, restarting)"; a_kill_daemon; }
-  rm -f "$RUN/alive.txt" "$RUN/state.txt"
+  rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/spawn.pid"
   export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
   # First start on a fresh checkout has to build the import cache
   [ -d "$PROJECT/.godot" ] || "$exe" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
-  spawn "$RUN/warmd-daemon.log" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")"
+  SPAWN_PID="$RUN/spawn.pid" spawn "$RUN/warmd-daemon.log" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")"
   wait_ready 120
 }
 
@@ -117,7 +117,7 @@ a_shot() {
 
 a_stop() { daemon_stop; }
 a_status() { if [ "$CFG_warm" != 1 ]; then echo "Godot one-shot (starts in about 0.2 s, warm=1 keeps a process)"; elif daemon_alive; then echo "Godot warm, pid $(daemon_pid)"; else echo "Godot cold"; fi; }
-a_seed() { [ -d "$1/.godot" ] && cp -R "$1/.godot" "$2/.godot"; return 0; }
+a_seed() { [ -d "$1/.godot" ] && [ ! -e "$2/.godot" ] && cp -R "$1/.godot" "$2/.godot"; return 0; }
 a_has_cache() { [ -d "$1/.godot" ]; }
 a_package() { echo "warmd package is for Unity"; return 2; }
 a_init() {

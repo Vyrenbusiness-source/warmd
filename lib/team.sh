@@ -92,8 +92,9 @@ wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
   rel="$(rel_project)"; src="$PROJECT"
-  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
-  if wt="$(wt_reuse "$name")"; then seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   wt="$(worktree_dir)/$name"
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
@@ -156,6 +157,13 @@ wt_norm() { # path -> long, absolute form
   local p; p="$(cd "$1" 2>/dev/null && pwd -P)" || p="$1"
   if command -v cygpath >/dev/null 2>&1; then p="$(cygpath -u "$(cygpath -l -w "$p" 2>/dev/null || echo "$p")" 2>/dev/null || echo "$p")"; fi
   printf '%s\n' "$p"
+}
+# wt_norm_r: the same into REPLY, remembered per path for the life of this shell. warmd watch asks every 90 s for every
+# worktree; three program starts per path and round add up on machines that keep kernel memory per process start.
+declare -gA WT_NORM_MEMO=()
+wt_norm_r() { # path -> REPLY
+  if [ -n "${WT_NORM_MEMO[$1]+x}" ]; then REPLY="${WT_NORM_MEMO[$1]}"; return 0; fi
+  REPLY="$(wt_norm "$1")"; WT_NORM_MEMO[$1]="$REPLY"
 }
 
 team_running() { # batchfile
@@ -225,7 +233,8 @@ prewarm() { # worktree
 # A session that only waits for notifications sits idle forever when an agent hangs. Start this in the background with every batch:
 # it ends, and so wakes the session, as soon as an agent has been idle for <minutes> (default 5) or the batch is over.
 # An agent counts as active when a file or a commit changed, a warmd run (test, check, build, merge) holds its worktree, or a process runs inside it.
-# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued automatic lines (lib/auto.sh) end it the same way.
+# On a stall: one WAKE line per idle agent with the message the session sends to it, then exit 3. Queued AGENT lines (lib/auto.sh) end it the same way;
+# an ESCALATE or SHIP line only a human can act on ends it with exit 4 and an OPEN line while the batch runs. Exit 0 only when no batch runs.
 # A paused task (its agent stopped, or warmd watch --pause <name>) never alarms until its worktree moves again.
 
 # Does a warmd run or any other process work inside this worktree right now?
@@ -237,7 +246,8 @@ wt_ci_mark() { # worktree -> the marker line of a live CI wait
 # One line for warmd watch: run, minutes in, ETA from the median of recent runs
 wt_ci_eta() { # worktree
   local m id start med el; m="$(wt_ci_mark "$1")" || return 1
-  read -r _ id start med <<< "$m"; el=$(( $(date +%s) - ${start:-0} ))
+  local now; printf -v now '%(%s)T' -1
+  read -r _ id start med <<< "$m"; el=$(( now - ${start:-0} ))
   if [ "${med:-0}" -gt 0 ]; then
     if [ "$med" -gt "$el" ]; then echo "run $id, $((el / 60)) min in, about $(( (med - el + 59) / 60 )) min left"
     else echo "run $id, $((el / 60)) min in, past the median of $(( (med + 30) / 60 )) min"; fi
@@ -298,15 +308,30 @@ wt_task() { # worktree
   local b; b="$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   case "$b" in warmd/*) echo "${b#warmd/}";; *) basename "$1";; esac
 }
+# wt_task_r: the same into REPLY from the worktree's .git file and HEAD with builtins, git only when they are unreadable
+wt_task_r() { # worktree -> REPLY
+  local g="" h=""
+  { IFS= read -r g < "$1/.git"; } 2>/dev/null; g="${g%$'\r'}"; g="${g#gitdir: }"
+  [ -d "$1/.git" ] && g="$1/.git"
+  [ -n "$g" ] && { IFS= read -r h < "$g/HEAD"; } 2>/dev/null; h="${h%$'\r'}"
+  case "$h" in
+    "ref: refs/heads/warmd/"*) REPLY="${h#ref: refs/heads/warmd/}";;
+    "ref: refs/heads/"*) REPLY="${1%/}"; REPLY="${REPLY##*/}";;
+    *) REPLY="$(wt_task "$1")";;
+  esac
+}
 
 # Minutes since the last movement in a worktree, 0 while a run or process is active.
 wt_idle() { # worktree limit batchfile [task name]
   local wt="$1" limit="$2" batch="$3" last started
-  if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path "$wt/.git/*" -not -path "$wt/*/.git/*" -not -path "$wt/Library/*" -not -path "$wt/*/Library/*" -not -path "$wt/.warmd/*" -not -path "$wt/*/.warmd/*" -not -path "$wt/Temp/*" -not -path "$wt/*/Temp/*" -not -path "$wt/Logs/*" -not -path "$wt/*/Logs/*" -not -path "$wt/obj/*" -not -path "$wt/*/obj/*" -not -path "$wt/node_modules/*" -not -path "$wt/*/node_modules/*" 2>/dev/null | head -1)" ]; then echo 0; return; fi
+  if [ -n "$(find "$wt" -type f -mmin "-$limit" -not -path "$wt/.git/*" -not -path "$wt/*/.git/*" -not -path "$wt/Library/*" -not -path "$wt/*/Library/*" -not -path "$wt/.warmd/*" -not -path "$wt/*/.warmd/*" -not -path "$wt/Temp/*" -not -path "$wt/*/Temp/*" -not -path "$wt/Logs/*" -not -path "$wt/*/Logs/*" -not -path "$wt/obj/*" -not -path "$wt/*/obj/*" -not -path "$wt/node_modules/*" -not -path "$wt/*/node_modules/*" -print -quit 2>/dev/null)" ]; then echo 0; return; fi
   # The batch start counts as movement: a worktree reused with an old commit is not stalled at minute zero.
-  last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; started="$(date -r "$batch" +%s 2>/dev/null || echo 0)"
+  last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"
+  [ "$batch" = "${WATCH_BATCH_F:-}" ] || { WATCH_BATCH_F="$batch"; WATCH_BATCH_T="$(date -r "$batch" +%s 2>/dev/null || echo 0)"; }
+  started="$WATCH_BATCH_T"
   [ "$started" -gt "$last" ] && last="$started"
-  local age=$(( ($(date +%s) - last) / 60 ))
+  local now; printf -v now '%(%s)T' -1
+  local age=$(( (now - last) / 60 ))
   [ "$age" -lt "$limit" ] && { echo 0; return; }
   wt_busy "$wt" && { echo 0; return; }
   # An agent that reads or thinks writes no file, but its transcript grows: that is movement too.
@@ -330,10 +355,22 @@ agent_dead() { # worktree name -> reason
   grep -oiE '(API Error|credit balance|billing|usage limit|rate.?limit|overloaded|authentication_error|invalid.?api.?key)[^"\]{0,80}' "$f" | head -1 | grep .
 }
 
+# watch_drain <common> <batch>: the queued lines for the session. 3 when one starts an agent (AGENT), 4 when only a human
+# can act (ESCALATE, SHIP): the batch is not over then, and a closing line says so, because exit 0 means "batch over"
+# and a watch piped through tail loses its exit code. 1 when nothing was queued.
+watch_drain() {
+  local out; out="$(auto_drain "$1")" || return 1
+  printf '%s\n' "$out"
+  case $'\n'"$out" in *$'\n'"AGENT "*) return 3;; esac
+  [ -f "$2" ] && echo "OPEN batch still runs, the line above needs you; start warmd watch again"
+  return 4
+}
+
 team_watch() {
   need_git
   local once=0 limit=5 batch wt age name stalled reason
   local common live paused ci ci_seen=" "
+  local -A WATCH_LIVE=()
   common="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)"
   case "${1:-}" in   # a task whose agent was stopped by hand: watch leaves it alone until its worktree moves again
     --pause) [ -n "${2:-}" ] || { echo "warmd watch --pause <name>"; return 2; }; auto_pause "$common" "$2"; echo "OK $2 paused, watch skips it until its worktree moves"; return 0;;
@@ -341,15 +378,15 @@ team_watch() {
   [ "${1:-}" = --once ] && { once=1; shift; }
   limit="${1:-5}"
   batch="$common/warmd-batch"
-  auto_drain "$common" && return 3
+  watch_drain "$common" "$batch"; case $? in 3) return 3;; 4) return 4;; esac
   [ -f "$batch" ] || { echo "OK no batch running"; return 0; }
   while :; do
-    auto_drain "$common" && return 3   # an automatic escalation waits for the session to start the next agent
+    watch_drain "$common" "$batch"; case $? in 3) return 3;; 4) return 4;; esac   # an automatic escalation waits for the session to start the next agent
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
     stalled=0; live=0; paused=""
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
-      name="$(wt_task "$wt")"
+      wt_task_r "$wt"; name="$REPLY"
       # Its agent stopped and none started since: nothing to wake. Unless its own warmd run still works there:
       # an agent that ended its turn waiting for a background test comes back for the result, the batch is not over.
       if wt_finished "$common" "$wt"; then wt_run_active "$wt" && live=1; continue; fi
@@ -357,11 +394,11 @@ team_watch() {
         if wt_run_active "$wt"; then live=1; else paused="$paused $name"; fi; continue
       fi
       grep -qxF "$name" "$batch-dead" 2>/dev/null && continue   # reported once, no further alarms for it
-      if reason="$(agent_dead "$wt" "$name")"; then
+      if [ -z "${WATCH_LIVE[$wt]:-}" ] && reason="$(agent_dead "$wt" "$name")"; then
         echo "DEAD $name: died at start, no commit. Reason: $reason. Fix the cause, then start it again: \"Read $(native_path "$STATE/tasks/$name.md") and do it.\""
         echo "$name" >> "$batch-dead"; stalled=1; continue
       fi
-      live=1
+      live=1; WATCH_LIVE[$wt]=1   # it got past the start once: agent_dead (git and find) is not asked again
       if ci="$(wt_ci_eta "$wt")"; then   # once per run, the line changes only with the run
         case "$ci_seen" in *" $name:${ci%%,*} "*) ;; *) echo "CI $name: $ci"; ci_seen="$ci_seen$name:${ci%%,*} ";; esac
       fi
@@ -388,9 +425,13 @@ files_norm() { printf '%s' "$1" | tr '[:blank:]' ',' | tr -s ',' | sed 's/^,//; 
 # A finished task: its agent stopped (the stop hook wrote warmd-batch-done) and no new agent started on it since
 # (an Agent call on the task removes that line again). warmd watch never wakes such a worktree.
 wt_finished() { # common worktree
-  local w; w="$(wt_norm "$2")"
   [ -f "$1/warmd-batch-done" ] || return 1
-  cut -f1 "$1/warmd-batch-done" | while IFS= read -r d; do [ "$(wt_norm "$d")" = "$w" ] && echo y; done | grep -q y
+  local w d; wt_norm_r "$2"; w="$REPLY"
+  while IFS= read -r d || [ -n "$d" ]; do
+    d="${d%%$'\t'*}"; [ -n "$d" ] || continue
+    wt_norm_r "$d"; [ "$REPLY" = "$w" ] && return 0
+  done < "$1/warmd-batch-done"
+  return 1
 }
 
 # When the next split appends to the batch, finished tasks whose work is merged (clean, nothing ahead of the base) leave it.
@@ -484,14 +525,38 @@ agent_state() { # worktree [base]
 # The last line of every agent: facts from git and the last run, not prose.
 team_finish() {
   need_git
+  local br sha ahead dirty up last base
+  br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
+  # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
+  if [ -z "$br" ] || [ "$br" = "$base" ]; then
+    echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
+    return 2
+  fi
   ledger_finish "$@" || return $?
-  local br sha ahead dirty up last
-  br="$(git -C "$GIT_ROOT" branch --show-current)"; sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
+  finish_stop_runs
+  sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
   dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
+}
+
+# The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
+# freed at once (a killed shell may not run its exit trap), and the engine stopped so the test stops too.
+finish_stop_runs() {
+  local f pid w c d p n=0
+  for f in "$STATE"/run/active/*; do
+    [ -f "$f" ] || continue
+    pid="${f##*/}"; [ "$pid" = "$$" ] && continue
+    shell_alive "$pid" || { rm -f "$f"; continue; }
+    w=""; c=""; read -r w c < "$f" 2>/dev/null
+    kill "$pid" 2>/dev/null; rm -f "$f"; n=$((n + 1))
+    for d in "$CACHE_ROOT"/slots/*/; do p=""; read -r p < "$d/pid" 2>/dev/null; [ "$p" = "$pid" ] && rm -rf "${d%/}"; done
+    echo "(stopped warmd ${c:-run} pid $pid that was still running here, its slot is free)"
+  done
+  [ $n = 0 ] || a_stop >/dev/null 2>&1
+  return 0
 }
 
 team_board() {

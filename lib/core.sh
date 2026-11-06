@@ -11,13 +11,15 @@ on_exit() {
   if [ -n "${CACHED_OUT:-}" ] && [ -f "$CACHED_OUT" ]; then
     {   # stderr: stdout still goes to the file here. No saved stdout fd: a daemon started inside would inherit it and hold the caller's pipe open
       cat "$CACHED_OUT"
-      if [ "$rc" != 0 ]; then
+      if [ "$rc" != 0 ] && [ "${END_SAID:-0}" != 1 ]; then
         local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/last.log"; do [ -f "$c" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"; done
         echo "FAIL warmd ${CMD:-run} ended with exit $rc$( [ -n "$lg" ] && echo ", log: $(native_path "$lg")")"
       fi
     } >&2
-    rm -f "$CACHED_OUT"
+    rm -f "$CACHED_OUT"; END_SAID=1
   fi
+  # build, check and test always close with OK or FAIL: an agent that pipes through tail loses the exit code, never the verdict
+  case "${CMD:-}" in build|check|test) [ "$rc" != 0 ] && [ "${END_SAID:-0}" != 1 ] && echo "FAIL $(secs)s ${CMD}: exit $rc, cause above";; esac
   # Exit code of the last warmd test or check, for every adapter: auto_stop reads it to see a red run behind an ok text
   case "${CMD:-}" in test|check) [ -n "${RUN:-}" ] && mkdir -p "$RUN" 2>/dev/null && echo "$rc $CMD" > "$RUN/last.rc" 2>/dev/null;; esac
   [ -n "$LOCK" ] && rmdir "$LOCK" 2>/dev/null
@@ -235,11 +237,22 @@ SLOT_LAZY=0
 slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
-  slot_try && return 0
+  slot_try && { slot_port; return 0; }
   echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   local sn; sn="$(slots_max)"
   until slot_maybe_free "$CACHE_ROOT/slots" "$sn" && slot_try; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
-  queue_done; echo "(slot free after $(secs)s)"
+  queue_done; echo "(slot free after $(secs)s)"; slot_port
+}
+# Parallel runs in different worktrees must not share a network port (a PlayMode test that binds UDP 7790 twice is red).
+# test_port_env=<NAME> in warmd.conf: every heavy run gets its own port, test_port_base (default 7930) plus its slot number,
+# unique on the machine while the slot is held. Exported for the run, and handed to the Unity daemon with every job.
+TEST_PORT=""
+slot_port() {
+  [ -n "${CFG_test_port_env:-}" ] && [ -n "$SLOT" ] || return 0
+  local n="${SLOT##*/}"; [[ $n =~ ^[0-9]+$ ]] || return 0
+  [[ $CFG_test_port_env =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+  TEST_PORT=$(( ${CFG_test_port_base:-7930} + n ))
+  export "$CFG_test_port_env=$TEST_PORT"
 }
 
 changed_files() {
@@ -287,12 +300,46 @@ run_check() {
 # The last line of every check, also on a cache hit or with no test touched: green has to be visible to be believed.
 check_line() { # rc
   local sum=""
+  END_SAID=1
   if [ "$1" != 0 ]; then echo "FAIL $(secs)s check: exit $1, cause above"; return; fi
   [ "$RUN/result.txt" -nt "$RUN/check.start" ] && sum="$(sed -n 2p "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-80)"
   [ -z "$sum" ] && [ "$RUN/last.log" -nt "$RUN/check.start" ] && sum="tests green"
   [ "${CACHE_HIT:-0}" = 1 ] && sum="${sum:+$sum, }green from the cache"
   echo "OK $(secs)s check: compiled, ${sum:-no tests affected}"
 }
+
+# ---- package_dir: one player folder per project, overwritten in place ----
+# REPLY = the absolute package_dir of warmd.conf (relative to the project), 1 when it is not set
+package_out() {
+  REPLY="${CFG_package_dir:-}"; [ -n "$REPLY" ] || return 1
+  case "$REPLY" in /*|[A-Za-z]:*) ;; *) REPLY="$PROJECT/$REPLY";; esac
+  REPLY="${REPLY%/}"; return 0
+}
+# package_busy <dir>: REPLY = the program in <dir> that runs right now. A running program cannot be opened for writing
+# (Windows: sharing violation, Linux: text file busy), so the check is one builtin open per file, no process list.
+package_busy() {
+  local f; REPLY=""
+  for f in "$1"/*.exe "$1"/*.x86_64 ${CFG_package_exe:+"$1/$CFG_package_exe"}; do
+    [ -f "$f" ] || continue
+    { : >> "$f"; } 2>/dev/null || { REPLY="${f##*/}"; return 0; }
+  done
+  return 1
+}
+# package_wait_free <dir>: while the player runs from <dir>, wait for it to close, said in one line, polled with nap.
+# Nothing is written elsewhere instead. WARMD_PACKAGE_WAIT seconds at most (default 43200), then FAIL.
+package_wait_free() {
+  package_busy "$1" || return 0
+  local n=0 max="${WARMD_PACKAGE_WAIT:-43200}" poll="${WARMD_PACKAGE_POLL:-10}"
+  echo "WAIT $REPLY runs from $(native_path "$1"), the package starts when it is closed"
+  queue_mark
+  while package_busy "$1"; do
+    nap "$poll"; n=$((n + poll))
+    [ $n -ge "$max" ] && { echo "FAIL $(secs)s package: $REPLY still runs after ${max}s, nothing built"; return 1; }
+  done
+  queue_done; return 0
+}
+# package_has_player <dir>: the method wrote into <dir> during this run (stamp package.start)
+package_has_player() { [ -n "$(find "$1" -maxdepth 2 -type f -newer "$RUN/package.start" -print -quit 2>/dev/null)" ]; }
 
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
 run_bench() {

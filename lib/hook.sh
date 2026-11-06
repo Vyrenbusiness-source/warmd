@@ -178,6 +178,17 @@ hook_instr() { # shared checkout
 
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
 # the shared checkout gets the running batch: who is done, who is open, the AGENT line for each open one, the last merge result.
+# Warm start at session start: the engine of an open task worktree starts now, in the background and through the normal
+# queue (slots, RAM wait), so the agent's first warmd check finds a warm editor. Unity projects only; a live one is kept.
+hook_prewarm() { # worktree
+  [ "${WARMD_NO_PREWARM:-0}" = 1 ] && return 0
+  local v; for v in "$1"/ProjectSettings/ProjectVersion.txt "$1"/*/ProjectSettings/ProjectVersion.txt; do
+    [ -f "$v" ] || continue
+    ( cd "${v%/ProjectSettings/ProjectVersion.txt}" || exit 0; WARMD_BASE=1 WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" ping > /dev/null 2>&1 < /dev/null & )
+    return 0
+  done
+  return 0
+}
 hook_session() {
   local in src="" common here tf brief main batch donef wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
   local -A state=()
@@ -214,6 +225,7 @@ hook_session() {
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
         open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
+        hook_prewarm "$wt"
         # The old session's agents are gone after a restart, after a compaction they may still run: the line says to stop them first
         hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")" " State: ${br:-$wt} at $(git -C "$wt" rev-parse --short HEAD 2>/dev/null), $ahead ahead of $base, $dirty uncommitted. Stop the previous agent of this task first, never two in one worktree.")"
       fi
@@ -400,7 +412,7 @@ hook_base_wt() { # common dir, shared checkout, base, project of the shared chec
 # Escalated tasks stay in the batch for the next tier, everything else leaves it. An empty batch ends.
 hook_merge() { # common dir
   local common="$1" batch="$1/warmd-batch" done="$1/warmd-batch-done" lock="$1/warmd-automerge.lock" log="$1/warmd-automerge.log"
-  local main wt br oc out rc pid keep="" first=1
+  local main wt br oc out rc pid keep="" first=1 merged=0
   [ -s "$batch" ] || return 0
   while read -r wt; do [ -z "$wt" ] || grep -qF "$wt	" "$done" 2>/dev/null || return 0; done < "$batch"
   # One merge at a time: the lock holds the system pid of its merge (a job started through CIM lives in another session,
@@ -440,6 +452,7 @@ hook_merge() { # common dir
       out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" bash "$WARMD_HOME/bin/warmd" merge "$br" 2>&1)"; rc=$?
       git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$tgt" merge --abort 2>/dev/null
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
+      [ "$rc" = 0 ] && merged=1
       if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
         echo "STOP the checkout of $base in $tgt is not ready, batch stays open. Fix it, then run: warmd hook-merge"
         hook_unlock; return 0
@@ -458,7 +471,29 @@ hook_merge() { # common dir
       rm -f "$batch" "$done"; echo "OK batch ended"
     fi
   } >> "$log" 2>&1
-  hook_unlock; return 0
+  hook_unlock
+  # One player for the user, fresh after every batch: world step and warmd package into package_dir, after the lock,
+  # so a player that still runs and is waited for never holds up the next batch's merge.
+  [ $merged = 1 ] && hook_package "$common" "$tgt" "$base" >> "$log" 2>&1
+  return 0
+}
+# hook_package <common dir> <base checkout> <base>: only with package_dir in the project's warmd.conf. One at a time:
+# a second request while one waits for the player to close is that one's job, it builds the newest base anyway.
+hook_package() {
+  local lock="$1/warmd-package.lock" pid="" out rc
+  ( cd "$2" 2>/dev/null && unset WARMD_PROJECT && detect_project >/dev/null 2>&1 && [ -n "${CFG_package_dir:-}" ] ) || return 0
+  if [ -d "$lock" ]; then
+    read -r pid 2>/dev/null < "$lock/pid"
+    { [ -n "$pid" ] && pid_alive "$pid"; } && { echo "$(date '+%F %T') package: one waits or builds already (pid $pid), it takes this merge along"; return 0; }
+    rm -rf "$lock"
+  fi
+  mkdir "$lock" 2>/dev/null || return 0
+  pid=$$; [ -r "/proc/$$/winpid" ] && read -r pid < "/proc/$$/winpid"; echo "$pid" > "$lock/pid"
+  echo "$(date '+%F %T') package: world step and player for the merged $3"
+  out="$(cd "$2" && WARMD_BASE=1 WARMD_BASE_BRANCH="$3" WARMD_DETACHED=1 bash "$WARMD_HOME/bin/warmd" package 2>&1)"; rc=$?
+  echo "$out" | grep -E '^(OK|FAIL|WAIT)' | head -4
+  echo "$(date '+%F %T') base checkout: $(cd "$2" && bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"
+  rm -rf "$lock"; return $rc
 }
 
 hook_settings() { echo "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/settings.local.json"; }
