@@ -457,6 +457,16 @@ batch_prune() { # common
   printf '%s' "$keep" > "$batch"
 }
 
+# task_fields <line>: name | goal | done check | files. The goal may contain "|" itself (|x| <= y, a | b):
+# name is the first field, files the last, the done check the one before it, the goal all in between.
+task_fields() {
+  local l="$1" rest pipes="${1//[^|]/}"
+  if [ ${#pipes} -lt 3 ]; then IFS='|' read -r name goal check files <<< "$l"; return; fi
+  name="${l%%|*}"; rest="${l#*|}"
+  files="${rest##*|}"; rest="${rest%|*}"
+  check="${rest##*|}"; goal="${rest%|*}"
+}
+
 team_split() {
   need_git
   local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
@@ -466,7 +476,8 @@ team_split() {
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
   if [ -f "$batch" ]; then batch_prune "${batch%/warmd-batch}"; append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
   cap="$(team_agents)"
-  while IFS='|' read -r name goal check files <&3; do
+  while IFS= read -r line <&3; do
+    task_fields "$line"
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
     case "$name" in \#*|"") continue;; esac
     if [ -n "$files" ] && [ "$files" != none ]; then
@@ -481,7 +492,8 @@ team_split() {
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
   [ $append = 1 ] || { : > "$batch"; rm -f "$batch-dead" "$batch-done"; }
-  while IFS='|' read -r name goal check files <&3; do
+  while IFS= read -r line <&3; do
+    task_fields "$line"
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
     case "$name" in \#*|"") continue;; esac
     if [ $append = 1 ] && batch_has "$batch" "$name"; then :
