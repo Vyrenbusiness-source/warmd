@@ -94,6 +94,7 @@ a_status() { if server_up; then echo "dev server warm: $(server_url)"; else echo
 a_call() { echo "warmd call is for engines"; return 2; }
 a_seed() { # node_modules is the slow part, a link costs nothing
   [ -d "$1/node_modules" ] || return 0
+  [ -e "$2/node_modules" ] && return 0   # a reused worktree keeps its link
   if [ "$OS" = win ]; then powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(native_path "$2/node_modules")' -Target '$(native_path "$1/node_modules")'" >/dev/null
   else ln -s "$1/node_modules" "$2/node_modules"; fi
 }

@@ -55,6 +55,7 @@ namespace Warmd
                 AssetDatabase.ActiveRefreshImportMode = AssetDatabase.RefreshImportMode.InProcess;
                 Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal;   // the machine stays usable
             }
+            EditorUtility.audioMasterMute = true;   // test runs stay silent, warmd test --sound turns it on for one run
             CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompiled;
             EditorApplication.playModeStateChanged += OnPlayMode;
             EditorApplication.update += Tick;
@@ -95,11 +96,14 @@ namespace Warmd
             if (errors.Length > 0) File.AppendAllLines(F("errors.txt"), errors);
         }
 
-        /// <summary>Test time lapse, warmd test --speed N. Fixed steps stay the same size, more of them run per real second.</summary>
+        /// <summary>Test time lapse, warmd test --speed N. Fixed steps stay the same size, more of them run per real second.
+        /// The game stays silent in a test run (no sound through the user's speakers) unless warmd test --sound asked for it.</summary>
         static void OnPlayMode(PlayModeStateChange change)
         {
             if (change != PlayModeStateChange.EnteredPlayMode) return;
-            if (float.TryParse(Get(Read("state.txt"), "speed"), NumberStyles.Float, CultureInfo.InvariantCulture, out float speed) && speed > 0f) Time.timeScale = speed;
+            var state = Read("state.txt");
+            if (Get(state, "sound") != "1") { EditorUtility.audioMasterMute = true; AudioListener.volume = 0f; }
+            if (float.TryParse(Get(state, "speed"), NumberStyles.Float, CultureInfo.InvariantCulture, out float speed) && speed > 0f) Time.timeScale = speed;
         }
 
         static void Finish(Dictionary<string, string> state, bool ok, IEnumerable<string> lines)
@@ -241,6 +245,9 @@ namespace Warmd
             if (id == "" || id == Get(last, "id")) return;
             var state = new Dictionary<string, string>(job) { { "start", NowMs().ToString() }, { "phase", kind } };
             File.Delete(F("errors.txt"));
+            EditorUtility.audioMasterMute = Get(job, "sound") != "1";   // muted before every run unless it asks for sound
+            // The run's own port (test_port_env in warmd.conf): parallel daemons never bind the same one
+            if (Get(job, "port_env") != "" && Get(job, "port") != "") Environment.SetEnvironmentVariable(Get(job, "port_env"), Get(job, "port"));
             switch (kind)
             {
                 case "ping":

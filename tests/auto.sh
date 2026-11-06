@@ -78,24 +78,30 @@ echo "$out" | grep -q '^AGENT a: subagent_type=warmd-worker model=opus-x' && ok 
 grep -c '^Earlier commits: ' "$R/.warmd/tasks/a.md" | grep -qx 1 && grep -q "^Earlier commits: .*a a2.txt; .*a a.txt" "$R/.warmd/tasks/a.md" && ok "earlier commits refreshed, one line" || no "commit lines: $(grep Earlier "$R/.warmd/tasks/a.md")"
 old a
 stop a "ESCALATE: still red"
-out="$("$WARMD" watch --once)"
+out="$("$WARMD" watch --once)"; rc=$?
 [ "$(tier a)" = top ] && [ "$(outcome a)" = failed ] && echo "$out" | grep -q '^ESCALATE a: failed at the top tier' && ok "failure at the top goes to a human" || no "top failure: tier $(tier a), outcome $(outcome a), $out"
+[ "$rc" = 4 ] && [ "$(echo "$out" | tail -1)" = "OPEN batch still runs, the line above needs you; start warmd watch again" ] && ok "an ESCALATE ends watch with exit 4 and says the batch still runs" || no "escalate watch rc=$rc: $out"
 rm -f "$W/a/.warmd/run/result.txt"
 
 # ---- compaction: work committed, handoff written, the agent's next Bash call ends it ----
 echo half > "$W/b/b.txt"; echo never-added > "$W/b/fresh.txt"; mkdir -p "$W/b/.warmd"; echo junk > "$W/b/.warmd/ignored.txt"
+mkdir -p "$W/b/Game/ProjectSettings" "$W/b/Game/Assets/Editor/Warmd" "$W/b/Game/Assets/Scripts"; echo 'm_EditorVersion: 6000.0.0f1' > "$W/b/Game/ProjectSettings/ProjectVersion.txt"
+echo daemon > "$W/b/Game/Assets/Editor/Warmd/WarmdDaemon.cs"; echo sln > "$W/b/Game/Game.slnx"; echo real > "$W/b/Game/Assets/Scripts/Ship.cs"
 transcript "$TMP/b.jsonl" b "working"
 printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreCompact","trigger":"auto"}' "$(native_path "$TMP/b.jsonl")" | "$WARMD" hook-compact; rc=$?
 [ "$rc" = 0 ] && [ -z "$(git -C "$W/b" status --porcelain -uno)" ] && git -C "$W/b" log -1 --format=%s | grep -q '^WIP b: automatic handoff at compaction' && ok "compaction commits the work" || no "compaction commit rc=$rc: $(git -C "$W/b" log -1 --format=%s)"
 git -C "$W/b" ls-tree --name-only HEAD | grep -qx fresh.txt && ok "the WIP commit takes a file the agent never added" || no "WIP commit misses an untracked file: $(git -C "$W/b" status --porcelain)"
 [ -z "$(git -C "$W/b" ls-tree -r --name-only HEAD .warmd)" ] && ok "the WIP commit leaves gitignored files out" || no "WIP commit took ignored files"
+t="$(git -C "$W/b" ls-tree -r --name-only HEAD Game)"
+echo "$t" | grep -qx Game/Assets/Scripts/Ship.cs && ! echo "$t" | grep -qE 'Editor/Warmd|\.slnx$' && [ -f "$W/b/Game/Game.slnx" ] && ok "the WIP commit leaves warmd's daemon and the .slnx out, the files stay" || no "WIP commit took warmd files: $t"
 grep -q '^## Handoff 1' "$C/warmd-handoff/b.md" && grep -q 'Automatic handoff at compaction' "$C/warmd-handoff/b.md" && ok "compaction writes a handoff" || no "handoff note: $(cat "$C/warmd-handoff/b.md" 2>&1)"
 pre() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}' "$(native_path "$1")" | "$WARMD" hook-pre; }
 out="$(pre "$TMP/b.jsonl")"
 echo "$out" | "$PY" -c 'import json,sys; h=json.load(sys.stdin)["hookSpecificOutput"]; assert h["permissionDecision"]=="deny"; r=h["permissionDecisionReason"]; assert "AGENT b: " in r and "then " in r, r' 2>/dev/null && ok "next Bash call is denied with the AGENT line" || no "deny after compaction: $out"
 prec() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"}}' "$(native_path "$1")" "$2" | "$WARMD" hook-pre; }
 [ -z "$(prec "$TMP/b.jsonl" 'warmd handoff b \"found x in y.c:4\" \"fix z\"')" ] && [ -z "$(prec "$TMP/b.jsonl" 'warmd finish --outcome ok')" ] && ok "after the limit warmd handoff and warmd finish still run" || no "handoff or finish blocked after the limit"
-prec "$TMP/b.jsonl" 'git status' | grep -q '"deny"' && ok "anything else stays blocked" || no "other command passed after the limit"
+[ -z "$(prec "$TMP/b.jsonl" 'cd /c/w && git add -A && git commit -qm \"wip; a && b\" && git push -q 2>&1 | tail -2')" ] && [ -z "$(prec "$TMP/b.jsonl" 'cd /c/w && warmd finish 2>&1 | tail -3')" ] && ok "after the limit git add, commit and push and a cd before warmd finish still run" || no "commit or cd blocked after the limit"
+prec "$TMP/b.jsonl" 'git status' | grep -q '"deny"' && prec "$TMP/b.jsonl" 'git commit -m x && warmd test' | grep -q '"deny"' && ok "anything else stays blocked, also behind an allowed part" || no "other command passed after the limit"
 printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreCompact"}' "$(native_path "$TMP/b.jsonl")" | "$WARMD" hook-compact
 [ "$(grep -c '^## Handoff' "$C/warmd-handoff/b.md")" = 1 ] && ok "a second compaction of the same agent writes no second handoff" || no "handoff rounds: $(grep -c '^## Handoff' "$C/warmd-handoff/b.md")"
 transcript "$TMP/b2.jsonl" b "fresh"
@@ -128,7 +134,10 @@ out="$("$WARMD" watch --once)"; rc=$?
 
 # ---- a new agent on a paused task: the Agent call clears the marker, watch does not end while it still reads ----
 agent() { printf '{"session_id":"s1","transcript_path":"%s","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"t","prompt":%s}}' "$(native_path "$TMP/main.jsonl")" "$(jstr "Read $1 and do it.")" | "$WARMD" hook-pre; }
+echo "ESCALATE a: failed at the top tier, a human has to look at warmd/a" >> "$C/warmd-auto/queue"; echo "SHIP keep me" >> "$C/warmd-auto/queue"
 out="$(agent "$(taskpath a)")"; rc=$?
+! grep -q '^ESCALATE a:' "$C/warmd-auto/queue" && grep -q '^SHIP keep me$' "$C/warmd-auto/queue" && ok "a fresh agent on the task drops its old ESCALATE line, nothing else" || no "queue after restart: $(cat "$C/warmd-auto/queue")"
+sed -i '/^SHIP keep me$/d' "$C/warmd-auto/queue"
 [ "$rc" = 0 ] && [ -z "$out" ] && [ ! -f "$C/warmd-auto/paused/a" ] && [ -f "$C/warmd-auto/paused/b" ] && ok "an Agent call on a task clears only its pause marker" || no "agent start rc=$rc, out $out, paused: $(ls "$C/warmd-auto/paused")"
 out="$("$WARMD" watch --once)"
 echo "$out" | grep -q '^WAKE a:' && ok "watch counts the new agent as running" || no "watch after agent start: $out"

@@ -72,7 +72,7 @@ a_start_daemon() {
     echo "$m"; echo "$m" >&2; echo "blocked BLOCKED ${m#FAIL }" > "$RUN/result.txt" 2>/dev/null
     exit 2
   fi
-  rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/dialog.txt" "$RUN/screen.txt" "$RUN/spawn.pid"
+  rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/dialog.txt" "$RUN/screen.txt" "$RUN/spawn.pid" "$RUN/spawn.seen"
   local exe gfx=(-nographics) batch=(-batchmode) win="${WARMD_WINDOW:-0}"; exe="$(unity_exe)"
   [ -x "$exe" ] || { echo "FAIL Unity $UNITY_VER not found, set WARMD_UNITY"; exit 2; }
   if [ "$win" = 1 ]; then batch=(); unity_window_prep || exit 2; fi
@@ -84,9 +84,10 @@ a_start_daemon() {
     export "$CFG_port_env=$(( 7830 + 10 * ( $(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1) % 160 ) ))"
   fi
   export WARMD_DIR WARMD_WINDOW="$win" WARMD_MONITOR="${WARMD_MONITOR:-2}"; WARMD_DIR="$(native_path "$RUN")"
-  # -logFile with warmd-daemon in the path is how the daemon is told from a human's editor
+  # -logFile with warmd-daemon in the path is how the daemon is told from a human's editor. -ignoreCompilerErrors: a compile
+  # error no longer ends the editor ("Aborting batchmode due to failure"), the daemon stays warm and answers the error as FAIL.
   SPAWN_STYLE="$([ "$win" = 1 ] && echo Normal || echo Hidden)" SPAWN_PID="$RUN/spawn.pid" \
-    spawn "$RUN/unity_out.log" "$exe" "${batch[@]}" -job-worker-count "$(tune_unity_workers)" "${gfx[@]}" -projectPath "$(native_path "$PROJECT")" -logFile "$(native_path "$RUN/warmd-daemon.log")"
+    spawn "$RUN/unity_out.log" "$exe" "${batch[@]}" -job-worker-count "$(tune_unity_workers)" "${gfx[@]}" -ignoreCompilerErrors -projectPath "$(native_path "$PROJECT")" -logFile "$(native_path "$RUN/warmd-daemon.log")"
   if [ "$win" = 1 ]; then unity_wait_window 600; else wait_ready 600; fi
 }
 
@@ -114,6 +115,7 @@ unity_wait_window() { # seconds
   while :; do
     nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then break; fi
+    spawn_gone "$i" && spawn_fail
     if [ -s "$RUN/dialog.txt" ]; then
       d="$(tr -d '\r' < "$RUN/dialog.txt" | head -1 | cut -c1-300)"
       a_kill_daemon
@@ -329,9 +331,17 @@ unity_rounds_list() { # rc of the last round, id of the first round
 
 a_test() {
   unity_world || return 1
-  local filter="" mode="" cat="" speed="" rc
-  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; *) filter="$1";; esac; shift; done
+  local filter="" mode="" cat="" speed="" sound=0 rc
+  # --sound: the game is heard in this run; every other run is muted by the daemon (WarmdDaemon.cs)
+  while [ $# -gt 0 ]; do case "$1" in --play) mode=Play;; --edit) mode=Edit;; --cat) cat="$2"; shift;; --speed) speed="$2"; shift;; --window) export WARMD_WINDOW=1;; --sound) sound=1;; *) filter="$1";; esac; shift; done
   [ -n "$filter" ] && { unity_filter_file "$filter"; filter="$REPLY"; }
+  # --window falls back to the graphics path (batchmode with a GPU, the hang detector active): a visible editor hung in a
+  # real run without the HUNG detector firing and stayed open until the agent ended it. WARMD_WINDOW_REAL=1 opens the window.
+  if [ "${WARMD_WINDOW:-0}" = 1 ] && [ "${WARMD_WINDOW_REAL:-0}" != 1 ]; then
+    echo "(--window runs with graphics in batchmode, the hang detector stays on; a visible editor: WARMD_WINDOW_REAL=1)"
+    export WARMD_WINDOW=0 WARMD_GFX=1
+    if daemon_alive && [ "$(cat "$RUN/gfx.txt" 2>/dev/null)" != 1 ]; then daemon_stop >/dev/null; fi
+  fi
   [ -n "$mode" ] || { if [ -n "$filter" ] && grep -rqE "${UF_GREP:-$filter}" "$PROJECT/Assets" --include='*.cs' --exclude-dir=Editor 2>/dev/null && find "$PROJECT/Assets" -path '*PlayMode*' -name '*.cs' | xargs -r grep -lqE "${UF_GREP:-$filter}" 2>/dev/null; then mode=Play; else mode=Edit; fi; }
   if [ -n "${CFG_gfx_tests:-}" ] && [ -n "$filter" ] && [ "${WARMD_GFX:-0}" != 1 ] && printf '%s\n' "$filter" | grep -qE "$CFG_gfx_tests"; then
     echo "(gfx_tests: $filter runs with graphics)"; export WARMD_GFX=1
@@ -345,9 +355,9 @@ a_test() {
   fi
   unity_sync
   # test_timeout in warmd.conf: seconds one test may run before it counts as hung and red
-  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}"; rc=$?
+  cached "test|$mode|$filter|$cat|$speed|gfx${WARMD_GFX:-0}$wkey" unity_test_rounds "mode=$mode" "filter=$filter" "cat=$cat" "speed=$speed" "test_timeout=${CFG_test_timeout:-}" "sound=$sound"; rc=$?
   [ $rc = 0 ] || unity_gfx_hint "$(cat "$RUN/result.txt" "$RUN/tests.txt" 2>/dev/null)"
-  if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; fi
+  if [ "$win" = 1 ] && daemon_alive; then daemon_stop >/dev/null; echo "(window editor closed)"; [ $rc = 0 ] && echo "OK $(secs)s test"; fi
   return $rc
 }
 
@@ -393,15 +403,25 @@ a_shot() { # needs graphics, so one start of its own
 }
 
 # Player build through your own method: package_method and package_args in warmd.conf. Needs graphics, so one start of its own.
+# package_dir=<folder> (relative to the project or absolute): the one place the player goes. The method gets it as
+# -warmdPackageDir <folder> and in WARMD_PACKAGE_DIR, builds into it and overwrites what is there; warmd never makes a second
+# folder. A player that runs from there is waited for (no slot held meanwhile). The world step (world_method) runs first.
 a_package() {
   [ -n "$CFG_package_method" ] || { echo "FAIL set package_method=Namespace.Class.Method in warmd.conf"; return 2; }
+  local out="" dir=()
+  if package_out; then out="$REPLY"; package_wait_free "$out" || return 1; dir=(-warmdPackageDir "$(native_path "$out")"); export WARMD_PACKAGE_DIR; WARMD_PACKAGE_DIR="$(native_path "$out")"; fi
+  unity_world || { echo "FAIL $(secs)s package: world step red, nothing built"; return 1; }
   slot_take; a_stop > /dev/null
   [ -z "$(foreign_unity)" ] || { echo "FAIL another Unity has this project open"; return 2; }
   local clean; clean="$(git -C "$PROJECT" status --porcelain -uno | grep -vE '\.sln[x]?$')"
-  timeout "${WARMD_BUILD_TIMEOUT:-2400}" $(tune_prefix) "$(unity_exe)" -batchmode -job-worker-count "$(tune_unity_workers)" -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_package_method" $CFG_package_args -quit -logFile "$(native_path "$RUN/package.log")"
+  [ -z "$out" ] || { mkdir -p "$out"; : > "$RUN/package.start"; }
+  timeout "${WARMD_BUILD_TIMEOUT:-2400}" $(tune_prefix) "$(unity_exe)" -batchmode -job-worker-count "$(tune_unity_workers)" -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_package_method" "${dir[@]}" $CFG_package_args -quit -logFile "$(native_path "$RUN/package.log")"
   local rc=$?
   [ -z "$clean" ] && git -C "$PROJECT" checkout -q -- .
-  if [ $rc = 0 ]; then echo "OK $(secs)s package"; else echo "FAIL $(secs)s package"; grep -m6 -E 'error CS|rror:|Failed' "$RUN/package.log" | cut -c1-200; fi
+  if [ $rc = 0 ] && [ -n "$out" ] && ! package_has_player "$out"; then
+    echo "FAIL $(secs)s package: the method built nothing into $(native_path "$out"), it has to read -warmdPackageDir"; return 1
+  fi
+  if [ $rc = 0 ]; then echo "OK $(secs)s package${out:+ in $(native_path "$out")}"; else echo "FAIL $(secs)s package"; grep -m6 -E 'error CS|rror:|Failed' "$RUN/package.log" | cut -c1-200; fi
   return $rc
 }
 
@@ -429,10 +449,17 @@ a_stop() {
 }
 a_has_cache() { [ -d "$1/Library" ]; }
 a_status() { if daemon_alive; then echo "Unity $UNITY_VER warm, pid $(daemon_pid)"; else echo "Unity $UNITY_VER cold"; fi; }
-a_seed() { # Library is the slow part: a worktree without it reimports everything
+# Library is the slow part: a worktree without it reimports everything (first check 576 to 595 s instead of 9 s warm).
+# One robocopy /MIR: a reused worktree gets the base's Library as it is, stale files of an older task go. Never while an
+# engine or a warmd run works in the target, its open files would break the copy.
+a_seed() { # source project, target project
   [ -d "$1/Library" ] || return 0
-  if [ "$OS" = win ]; then robocopy "$(cygpath -w "$1/Library")" "$(cygpath -w "$2/Library")" //E //MT:16 //R:1 //W:1 //NFL //NDL //NJH //NJS //NP >/dev/null; true
-  else cp -R "$1/Library" "$2/Library"; fi
+  [ "$1/Library" -ef "$2/Library" ] && return 0
+  local a=""; { read -r a < "$2/.warmd/run/alive.txt"; } 2>/dev/null; a="${a%$'\r'}"
+  [ -n "$a" ] && [ $(( $(now_ms) - a )) -lt 10000 ] 2>/dev/null && return 0
+  run_active "$2/.warmd" >/dev/null 2>&1 && return 0
+  if [ "$OS" = win ]; then robocopy "$(cygpath -w "$1/Library")" "$(cygpath -w "$2/Library")" //MIR //MT:16 //R:1 //W:1 //NFL //NDL //NJH //NJS //NP >/dev/null; true
+  else mkdir -p "$2/Library" && cp -R "$1/Library/." "$2/Library/"; fi
 }
 a_init() {
   mkdir -p "$EDITOR_DIR"

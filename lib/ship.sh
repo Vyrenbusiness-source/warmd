@@ -34,29 +34,31 @@ ship_run_id() { # branch -> id of the newest run for the branch's current commit
 
 # One poll of a run. Line 1: run|status|conclusion|createdAt. Then per job: name|status|conclusion|open steps|failed steps|current step|steps.
 ci_poll() { # id
-  gh run view "$1" --json status,conclusion,createdAt,jobs --jq '"run|\(.status)|\(.conclusion // "")|\(.createdAt // "")", (.jobs[] | [.name, .status, (.conclusion // ""), ([.steps[]? | select(.status != "completed")] | length), ([.steps[]? | select(.conclusion == "failure")] | length), ([.steps[]? | select(.status == "in_progress") | .name][0] // ""), (.steps | length)] | map(tostring) | join("|"))' 2>/dev/null | tr -d '\r'
+  gh run view "$1" --json status,conclusion,createdAt,jobs --jq '"run|\(.status)|\(.conclusion // "")|\(.createdAt // "")", (.jobs[] | [.name, .status, (.conclusion // ""), ([.steps[]? | select(.status != "completed")] | length), ([.steps[]? | select(.conclusion == "failure")] | length), ([.steps[]? | select(.status == "in_progress") | .name][0] // ""), (.steps | length)] | map(tostring) | join("|"))' 2>/dev/null
 }
 
 # A job whose steps are all completed counts by its steps: GitHub may keep it in_progress for many minutes after its last step.
 # Prints one line per finished job, then: STATE|done|red|createdAt|first open job|its current step
-ci_state() { # poll output on stdin
-  awk -F'|' '
-    NR==1 { rs=$2; rc=$3; created=$4; next }
-    NF>=7 {
-      st=$2; c=$3
-      if (st!="completed" && $7>0 && $4==0) { st="completed"; c=($5>0 ? "failure" : "success") }
-      n++
-      if (st!="completed" && $5>0) red=1   # a failed step already decides, even while the job still runs
-      if (st!="completed") { open++; if (job=="") { job=$1; step=($6!="" ? $6 : st) }; next }
-      if (c!="success" && c!="skipped" && c!="neutral") red=1
-      line[++l]=c " " $1
-    }
-    END {
-      for (i=1;i<=l;i++) print line[i]
-      done=((n>0 && open==0) || rs=="completed" || red)   # fail fast: the first red job ends the wait
-      if (n==0 && rs=="completed" && rc!="success") red=1
-      print "STATE|" (done?1:0) "|" (red?1:0) "|" created "|" job "|" step
-    }'
+# Builtins only: the CI wait polls for many minutes, a parser started per poll is a process start each time.
+ci_state() { ci_state_r; printf '%s\n' "$REPLY"; }   # poll output on stdin
+ci_state_r() { # poll output on stdin -> REPLY, no subshell
+  local l first=1 rs="" rc="" created="" n=0 open=0 red=0 job="" step="" out="" name st c o f cur steps isdone
+  while IFS= read -r l || [ -n "$l" ]; do
+    l="${l%$'\r'}"
+    if [ $first = 1 ]; then first=0; IFS='|' read -r _ rs rc created <<< "$l"; continue; fi
+    IFS='|' read -r name st c o f cur steps <<< "$l"
+    [ -n "$steps" ] || continue
+    [[ $o =~ ^[0-9]+$ ]] || o=0; [[ $f =~ ^[0-9]+$ ]] || f=0; [[ $steps =~ ^[0-9]+$ ]] || steps=0
+    if [ "$st" != completed ] && [ "$steps" -gt 0 ] && [ "$o" = 0 ]; then st=completed; if [ "$f" -gt 0 ]; then c=failure; else c=success; fi; fi
+    n=$((n + 1))
+    [ "$st" != completed ] && [ "$f" -gt 0 ] && red=1   # a failed step already decides, even while the job still runs
+    if [ "$st" != completed ]; then open=$((open + 1)); [ -n "$job" ] || { job="$name"; step="${cur:-$st}"; }; continue; fi
+    case "$c" in success|skipped|neutral) ;; *) red=1;; esac
+    out="$out$c $name"$'\n'
+  done
+  isdone=0; { [ $n -gt 0 ] && [ $open = 0 ]; } || [ "$rs" = completed ] || [ $red = 1 ] && isdone=1   # fail fast: the first red job ends the wait
+  [ $n = 0 ] && [ "$rs" = completed ] && [ "$rc" != success ] && red=1
+  printf -v REPLY '%sSTATE|%s|%s|%s|%s|%s' "$out" "$isdone" "$red" "$created" "$job" "$step"
 }
 
 ci_epoch() { [ -n "${1:-}" ] && date -d "$1" +%s 2>/dev/null; }
@@ -76,7 +78,7 @@ ci_wait() { # branch
 ci_wait_run() { # branch
   local br="$1" id tries=0 t0 now cap med="" runs=0 snap st fin red created job step start el first=1 slow=0 mark left
   id="$(ship_run_id "$br")"
-  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-30}" ]; do sleep "${WARMD_CI_POLL:-5}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
+  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-15}" ]; do nap "${WARMD_CI_POLL:-10}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
   [ -n "$id" ] || { echo "FAIL no CI run for $br"; return 1; }
   read -r med runs <<< "$(ci_median)"
   # Cap: WARMD_CI_MAX minutes when set, else twice the measured median (at least 5 min), else 20 min without history.
@@ -84,13 +86,19 @@ ci_wait_run() { # branch
   if [ -n "${WARMD_CI_MAX:-}" ]; then capmin="$WARMD_CI_MAX"
   elif [ -n "$med" ] && [ "$med" -gt 0 ]; then capmin=$(( (med * 2 + 59) / 60 )); [ "$capmin" -lt 5 ] && capmin=5
   else capmin=20; fi
-  t0="$(date +%s)"; cap=$(( capmin * 60 ))
+  printf -v t0 '%(%s)T' -1; cap=$(( capmin * 60 ))
   mark="$(ci_mark_file)"
+  # One gh call per poll and nothing else: the parser is builtins, the clock is printf, the run's start is read once.
+  # Polls are WARMD_CI_POLL seconds apart (default 30), 60 while the run is younger than half its median.
+  local raw poll
   while :; do
-    snap="$(ci_poll "$id" | ci_state)"
-    st="$(printf '%s\n' "$snap" | tail -1)"
+    raw="$(ci_poll "$id")"
+    ci_state_r <<< "$raw"; snap="$REPLY"
+    st="${snap##*$'\n'}"
     IFS='|' read -r _ fin red created job step <<< "$st"
-    now="$(date +%s)"; start="$(ci_epoch "$created")"; start="${start:-$t0}"; el=$((now - start))
+    printf -v now '%(%s)T' -1
+    [ -n "${start:-}" ] || { start="$(ci_epoch "$created")"; [ -n "$start" ] || start=""; }
+    el=$((now - ${start:-$t0}))
     [ -n "$mark" ] && echo "$$ $id $start ${med:-0}" > "$mark"
     if [ $first = 1 ] && [ -n "$med" ]; then
       left=$(( (med - el + 59) / 60 ))
@@ -105,7 +113,9 @@ ci_wait_run() { # branch
     if [ $el -ge $cap ]; then   # by run age: a run that was already slow before this wait counts too
       echo "FAIL CI run $id not done after $capmin min, ${job:-a job} at step ${step:-unknown}"; return 1
     fi
-    sleep "${WARMD_CI_POLL:-10}"
+    poll="${WARMD_CI_POLL:-30}"
+    [ -z "${WARMD_CI_POLL:-}" ] && [ -n "$med" ] && [ $((el * 2)) -lt "$med" ] && poll=60
+    nap "$poll"
   done
   printf '%s\n' "$snap" | sed '$d' | sed 's/^success /ok   /; s/^failure /FAIL /'
   ci_record "$id" "$br" "$el" "$([ "$red" = 1 ] && echo failure || echo success)"

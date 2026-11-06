@@ -4,6 +4,32 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-11-06
+
+### Fixed
+- An engine that exits while warmd waits for it to start (compiler errors end a batchmode Unity with return code 1) ends the wait at once: the heavy slot is freed, the unique `error CS` lines of the engine log (at most 10) and a closing `FAIL` follow, exit 1. Was up to 600 s of "daemon not ready" with the slot held and nobody alive. Checked with the kill builtin on Linux and macOS, one tasklist every 5 s on Windows (`WARMD_SPAWN_POLL`)
+- `warmd build`, `check` and `test` always close with an `OK` or `FAIL` line, also after an exit deep inside the run: an agent that pipes through `tail` loses the exit code, never the verdict
+- Past the context limit an agent can still save: `git add`, `commit` and `push`, a `cd` before them and `| tail` behind them pass with `warmd handoff`, `note` and `finish`; every part of a chain has to be one of these
+- The automatic WIP commit leaves warmd's own `Assets/Editor/Warmd` and the `.sln`, `.slnx` and `.csproj` files Unity writes out of the task branch
+- `warmd watch` ends with exit 4 and an `OPEN batch still runs` line for an `ESCALATE` or `SHIP` line, exit 0 only when no batch runs; a fresh agent on the task drops its old `ESCALATE` line
+
+- Unity daemons stay warm through compile errors: the editor starts with `-ignoreCompilerErrors`, so a compile error no longer ends it ("Aborting batchmode due to failure") and the next run no longer starts cold (first checks measured 576 to 595 s cold against 9 s warm); the daemon answers the `error CS` lines as `FAIL`. An editor that lives but never beats because the errors keep the daemon's own code from loading is ended after 60 quiet log seconds (`WARMD_STUCK_QUIET`)
+- Every worktree of a split gets the base's `Library`, also a reused one or one that already exists: one `robocopy /MIR` (stale files of an older task go), never while an engine or a warmd run works there. Godot and web seeds no longer nest or start a program on a reused worktree
+
+- Unity test runs are silent: the daemon mutes the editor at start and before every job and sets `AudioListener.volume = 0` when a test run enters PlayMode; `warmd test --sound` lets one run be heard
+- Parallel PlayMode runs in different worktrees no longer collide on one network port: `test_port_env=<NAME>` gives every heavy run its own port, `test_port_base` (default 7930) plus its slot number, exported and set in the Unity daemon before each job
+
+- `warmd ship` waits for CI with one `gh` call per poll and nothing else: `nap` instead of `sleep`, the job parser in builtins (was awk, tail, tr and two date per poll), polls every 30 s, every 60 s while the run is younger than half its median. `warmd watch` reads task names from the worktree's HEAD file, remembers normalised paths and stops asking whether an agent died at start once it worked: far fewer program starts per round (on a machine that keeps kernel memory per process start, process objects grew from 11k to 145k in 50 min)
+
+- `warmd test --window` runs with graphics in batchmode (the `WARMD_GFX=1` path) with the hang detector on: a visible editor hung in a real run, `HUNG` never fired and the editor stayed open until the agent ended it. `WARMD_WINDOW_REAL=1` still opens the window; why the window editor's hang detector stays silent is open
+
+- `warmd finish` refuses the base checkout (nothing recorded, nothing pushed, the base branch is never pushed by it) and points to the task worktree; a warmd run the agent left behind in its worktree is ended and its slot freed at once
+
+### Added
+- Prewarm at session start: the engine of every open task worktree starts in the background through the normal queue (slots, RAM wait), like after `warmd split`
+- RAM short: before a run waits for RAM, the engine daemon of another worktree that is idle longest (alive, idle, no job, no run) is stopped; `ram_stop_idle=0` switches it off
+- `package_dir` in warmd.conf: one player folder, refreshed after every finished batch (world step, then `warmd package`), overwritten in place; a player that runs from it is waited for
+
 ## [0.4.16] - 2026-11-06
 
 ### Changed
@@ -179,7 +205,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.16...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.17...HEAD
+[0.4.17]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.16...v0.4.17
 [0.4.16]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.15...v0.4.16
 [0.4.15]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.14...v0.4.15
 [0.4.14]: https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/compare/v0.4.13...v0.4.14

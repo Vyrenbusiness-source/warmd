@@ -12,7 +12,7 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.16
+WARMD_VERSION=0.4.17
 # A hook loads only what it needs: no other lib, no grep over lib/. PreToolUse (every tool call), SubagentStop and PreCompact.
 case "${1:-}" in
   hook-pre|hook-subagent|hook-compact)
@@ -84,7 +84,7 @@ Setup
   warmd update                 fetch the newest version, only when you run it
   warmd package                build a player with your own method (Unity)
 
-Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit | --window (Unity)
+Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit | --window | --sound (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
 Config    warmd.conf in the project root, every key in docs/COMMANDS.md
 EOF
