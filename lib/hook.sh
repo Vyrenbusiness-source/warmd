@@ -178,6 +178,17 @@ hook_instr() { # shared checkout
 
 # SessionStart (startup, resume, clear, compact): stdout becomes context. A task worktree gets its task and the brief back,
 # the shared checkout gets the running batch: who is done, who is open, the AGENT line for each open one, the last merge result.
+# Warm start at session start: the engine of an open task worktree starts now, in the background and through the normal
+# queue (slots, RAM wait), so the agent's first warmd check finds a warm editor. Unity projects only; a live one is kept.
+hook_prewarm() { # worktree
+  [ "${WARMD_NO_PREWARM:-0}" = 1 ] && return 0
+  local v; for v in "$1"/ProjectSettings/ProjectVersion.txt "$1"/*/ProjectSettings/ProjectVersion.txt; do
+    [ -f "$v" ] || continue
+    ( cd "${v%/ProjectSettings/ProjectVersion.txt}" || exit 0; WARMD_BASE=1 WARMD_DETACHED=1 nohup bash "$WARMD_HOME/bin/warmd" ping > /dev/null 2>&1 < /dev/null & )
+    return 0
+  done
+  return 0
+}
 hook_session() {
   local in src="" common here tf brief main batch donef wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
   local -A state=()
@@ -214,6 +225,7 @@ hook_session() {
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
         open=$((open+1)); echo "- ${br:-$wt}: open, $ahead ahead, $dirty uncommitted"
+        hook_prewarm "$wt"
         # The old session's agents are gone after a restart, after a compaction they may still run: the line says to stop them first
         hook_abs "$wt" && hook_task_of "$REPLY" && echo "  $(hook_agent_line "$common" "$(native_path "$REPLY")" " State: ${br:-$wt} at $(git -C "$wt" rev-parse --short HEAD 2>/dev/null), $ahead ahead of $base, $dirty uncommitted. Stop the previous agent of this task first, never two in one worktree.")"
       fi

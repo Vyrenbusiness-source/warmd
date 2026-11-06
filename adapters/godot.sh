@@ -117,7 +117,7 @@ a_shot() {
 
 a_stop() { daemon_stop; }
 a_status() { if [ "$CFG_warm" != 1 ]; then echo "Godot one-shot (starts in about 0.2 s, warm=1 keeps a process)"; elif daemon_alive; then echo "Godot warm, pid $(daemon_pid)"; else echo "Godot cold"; fi; }
-a_seed() { [ -d "$1/.godot" ] && cp -R "$1/.godot" "$2/.godot"; return 0; }
+a_seed() { [ -d "$1/.godot" ] && [ ! -e "$2/.godot" ] && cp -R "$1/.godot" "$2/.godot"; return 0; }
 a_has_cache() { [ -d "$1/.godot" ]; }
 a_package() { echo "warmd package is for Unity"; return 2; }
 a_init() {

@@ -39,8 +39,21 @@ wait_ready() {
     nap 1; i=$((i+1))
     if [ -f "$RUN/alive.txt" ] && daemon_alive; then return 0; fi
     spawn_gone "$i" && spawn_fail
+    spawn_stuck "$i" && { declare -F a_kill_daemon >/dev/null && a_kill_daemon >/dev/null 2>&1; spawn_fail "never answered, compile errors keep the daemon from loading, editor ended"; }
     [ $i -gt "$1" ] && { echo "FAIL daemon not ready after ${1}s, see $(native_path "$RUN/daemon.log")"; exit 1; }
   done
+}
+
+# spawn_stuck <seconds waited>: the editor lives (-ignoreCompilerErrors) but never beats, because compile errors keep the
+# daemon's own code from loading (a Library without it). True once its log has been quiet for WARMD_STUCK_QUIET seconds
+# (default 60) and holds an error CS line. Builtins every second (a stamp and -nt), one grep only after the quiet time.
+spawn_stuck() {
+  local lg="$RUN/warmd-daemon.log" st="$RUN/spawn.seen"
+  [ -f "$lg" ] || return 1
+  if [ ! -f "$st" ] || [ "$lg" -nt "$st" ]; then : > "$st"; SPAWN_QUIET=0; return 1; fi
+  SPAWN_QUIET=$(( ${SPAWN_QUIET:-0} + 1 ))
+  [ "$SPAWN_QUIET" -ge "${WARMD_STUCK_QUIET:-60}" ] && [ $(( SPAWN_QUIET % 10 )) = 0 ] || return 1
+  grep -q 'error CS[0-9]' "$lg" 2>/dev/null
 }
 
 # spawn_gone <seconds waited>: true when the engine warmd started (pid in spawn.pid) no longer runs. Linux and macOS ask
@@ -62,7 +75,7 @@ spawn_gone() {
 
 # spawn_fail: the engine is gone before it was ready. The slot goes first, so a queued run starts while this one still
 # talks; then the unique compiler errors of the engine log (at most 10) and FAIL as the closing line, exit 1 (red).
-spawn_fail() {
+spawn_fail() { # [reason]
   [ -n "${SLOT:-}" ] && rm -rf "$SLOT"; SLOT=""
   [ -n "${GFXSLOT:-}" ] && rm -rf "$GFXSLOT"; GFXSLOT=""
   local lg="" c; for c in "$RUN/warmd-daemon.log" "$RUN/unity_out.log" "$RUN/daemon.log"; do [ -f "$c" ] && { lg="$c"; break; }; done
@@ -70,7 +83,7 @@ spawn_fail() {
   [ -n "$lg" ] && errs="$(cat "$RUN/warmd-daemon.log" "$RUN/unity_out.log" 2>/dev/null | tr -d '\r' | grep -E 'error CS[0-9]+' | sed 's/^[[:space:]]*//' | awk '!seen[$0]++' | head -10 | cut -c1-200)"
   [ -n "$errs" ] && printf '%s\n' "$errs"
   END_SAID=1
-  echo "FAIL $(secs)s engine exited before it was ready (pid ${SPAWN_GONE_PID:-?})$( [ -n "$errs" ] && echo ", compiler errors above"), slot freed, log: $(native_path "${lg:-$RUN/warmd-daemon.log}")"
+  echo "FAIL $(secs)s engine ${1:-exited before it was ready (pid ${SPAWN_GONE_PID:-?})}$( [ -n "$errs" ] && echo ", compiler errors above"), slot freed, log: $(native_path "${lg:-$RUN/warmd-daemon.log}")"
   exit 1
 }
 

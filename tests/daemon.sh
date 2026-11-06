@@ -93,6 +93,7 @@ out="$(WARMD_MONITOR=3 start 1)"
 expect "WARMD_MONITOR picks another monitor" '^spawn .* monitor=3 window=1 ' "$out"
 out="$(start 0)"
 expect "a headless start stays hidden in batchmode" '^spawn style=Hidden pid=spawn.pid monitor=2 window=0 .*/Unity -batchmode .*-nographics ' "$out"
+expect "a compile error never ends the daemon editor" '^spawn style=Hidden .* -ignoreCompilerErrors -projectPath ' "$out"
 expect "and waits as before" '^wait_ready$' "$out"
 echo '{ "dependencies": { "com.x.local": "file:../../gone/x" } }' > "$P/Packages/manifest.json"
 out="$(start 1)"
@@ -151,6 +152,36 @@ out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE
   && daemon_alive() { :; } && wait_ready 5 ); echo "rc=$?")"
 expect "a ready editor still goes on" '^rc=0$' "$out"
 rm -f "$P/.warmd/run/alive.txt" "$P/.warmd/run/warmd-daemon.log"
+
+# An editor that lives but never beats (compile errors keep the daemon code from loading) ends after a quiet log
+me=$$; [ -r "/proc/$$/winpid" ] && read -r me < "/proc/$$/winpid"; echo "$me" > "$P/.warmd/run/spawn.pid"
+echo "Assets/C.cs(1,1): error CS0246: The type or namespace name 'Foo' could not be found" > "$P/.warmd/run/warmd-daemon.log"; rm -f "$P/.warmd/run/spawn.seen"
+out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && . "$HERE/lib/daemon.sh" && . "$HERE/adapters/unity.sh" \
+  && rm -f "$RUN/alive.txt" && a_kill_daemon() { echo killed > "$TMP/killed"; } && WARMD_STUCK_QUIET=3 WARMD_SPAWN_POLL=1000 wait_ready 40 ); echo "rc=$?")"
+expect "a living editor without heartbeat and with compile errors is ended" "^killed$" "$(cat "$TMP/killed" 2>/dev/null)"
+expect "and named as stuck" '^FAIL [0-9]+s engine never answered, compile errors keep the daemon from loading, editor ended, compiler errors above, slot freed' "$out"
+expect "exit 1" '^rc=1$' "$out"
+rm -f "$P/.warmd/run/spawn.pid" "$P/.warmd/run/spawn.seen" "$P/.warmd/run/warmd-daemon.log"
+
+# A reused worktree gets the base's Library mirrored: stale files go. Never while an engine works there.
+mkdir -p "$TMP/src/Library/sub" "$TMP/dst/Library" "$TMP/dst/.warmd/run"; echo new > "$TMP/src/Library/sub/a.asset"; echo stale > "$TMP/dst/Library/old.asset"
+seed() { ( WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && . "$HERE/lib/daemon.sh" && cd "$P" && detect_project >/dev/null 2>&1 && . "$HERE/adapters/unity.sh" && a_seed "$TMP/src" "$TMP/dst" ); }
+now_ms_t() { ( . "$HERE/lib/daemon.sh"; now_ms ); }
+now_ms_t > "$TMP/dst/.warmd/run/alive.txt"; seed
+[ -f "$TMP/dst/Library/old.asset" ] && [ ! -f "$TMP/dst/Library/sub/a.asset" ] && echo "ok   a live engine in the target keeps its Library" || { echo "FAIL Library copied under a live engine"; fails=$((fails+1)); }
+rm -f "$TMP/dst/.warmd/run/alive.txt"; seed
+[ ! -f "$TMP/dst/Library/old.asset" ] && [ -f "$TMP/dst/Library/sub/a.asset" ] && [ ! -d "$TMP/dst/Library/Library" ] && echo "ok   the Library is mirrored, stale files gone" || { echo "FAIL mirror: $(cd "$TMP/dst" && find Library | paste -sd' ' -)"; fails=$((fails+1)); }
+
+# RAM short: the engine idle longest in another worktree goes, a busy one or this run's own stays
+git -C "$P" worktree add -q "$TMP/wt2" -b w2 2>/dev/null; git -C "$P" worktree add -q "$TMP/wt3" -b w3 2>/dev/null
+for w in wt2 wt3; do mkdir -p "$TMP/$w/.warmd/run"; now_ms_t > "$TMP/$w/.warmd/run/alive.txt"; echo phase=idle > "$TMP/$w/.warmd/run/state.txt"; done
+echo r > "$TMP/wt3/.warmd/run/result.txt"; touch -d "-30 min" "$TMP/wt3/.warmd/run/result.txt"; echo r > "$TMP/wt2/.warmd/run/result.txt"
+mkdir -p "$P/.warmd/run"; now_ms_t > "$P/.warmd/run/alive.txt"; echo phase=idle > "$P/.warmd/run/state.txt"; touch -d "-60 min" "$P/.warmd/run/state.txt"
+sti() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && . "$HERE/lib/tune.sh" && . "$HERE/lib/daemon.sh" && detect_project >/dev/null 2>&1 && tune_stop_idle && echo "stopped $REPLY" ); }
+expect "the engine idle longest goes" "^stopped .*/wt3$" "$(sti)"
+echo "kind=test" > "$TMP/wt3/.warmd/run/job.txt"; echo phase=run > "$TMP/wt2/.warmd/run/state.txt"
+expect "a busy one stays, and the own one too" '^$' "$(sti)"
+rm -f "$P/.warmd/run/alive.txt" "$P/.warmd/run/state.txt"
 
 # ---- warmd package with package_dir: one fixed folder, the method gets it, a running player is waited for ----
 printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -warmdPackageDir ] && [ "${PKG_IGNORE:-0}" != 1 ] && echo player > "$2/start.exe"; shift; done\nexit 0\n' > "$TMP/UnityPkg"; chmod +x "$TMP/UnityPkg"

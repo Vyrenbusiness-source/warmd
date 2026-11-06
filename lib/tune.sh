@@ -149,12 +149,39 @@ tune_wait_ram() {
     pct="$(tune_free_pct)"
     [ "$pct" -ge "$min" ] && break
     [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark; }
+    # An idle daemon holds gigabytes for nobody: the one idle longest goes before this run waits for RAM
+    if tune_stop_idle; then echo "(RAM short: stopped the idle engine in $(native_path "$REPLY"))"; nap 5; continue; fi
     [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
     nap "${WARMD_RAM_POLL:-15}"; orphan_check   # each look at the RAM starts wmic, awk and tr
   done
   [ -z "$said" ] || queue_done
   [ -z "$said" ] || [ $anyway = 1 ] || echo "(RAM free again after $(( $(date +%s) - t0 ))s)"
   return 0
+}
+
+# tune_stop_idle: stop the engine daemon of another worktree of this repo that has been idle longest: alive, phase idle,
+# no job, no warmd run there. REPLY = its project, 1 when there is none. ram_stop_idle=0 in warmd.conf switches it off.
+# Builtins per worktree (reads and -nt), one git call for the list; the oldest result.txt is the longest idle.
+tune_stop_idle() {
+  REPLY=""
+  [ "${CFG_ram_stop_idle:-1}" = 0 ] && return 1
+  declare -F now_ms >/dev/null || return 1
+  local rel p d best="" a l idle now; now="$(now_ms)"
+  rel="$(git -C "$PROJECT" rev-parse --show-prefix 2>/dev/null)"; rel="${rel%/}"
+  while IFS= read -r p; do
+    p="${p%$'\r'}"; d="$p${rel:+/$rel}"
+    [ "$d/.warmd" -ef "$STATE" ] && continue   # this run's own daemon is about to work
+    a=""; { read -r a < "$d/.warmd/run/alive.txt"; } 2>/dev/null; a="${a%$'\r'}"
+    [ -n "$a" ] && [ $(( now - a )) -lt 10000 ] 2>/dev/null || continue
+    [ -f "$d/.warmd/run/job.txt" ] && continue
+    idle=0; while IFS= read -r l; do [ "${l%$'\r'}" = phase=idle ] && idle=1; done < "$d/.warmd/run/state.txt" 2>/dev/null
+    [ $idle = 1 ] || continue
+    run_active "$d/.warmd" >/dev/null && continue
+    if [ -z "$best" ] || [ "$best/.warmd/run/result.txt" -nt "$d/.warmd/run/result.txt" ]; then best="$d"; fi
+  done < <(git -C "$PROJECT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  [ -n "$best" ] || return 1
+  ( cd "$best" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" stop --idle ) >/dev/null 2>&1
+  REPLY="$best"; return 0
 }
 
 # hw_gpu: "<index>|<vram_mb>|<name>", cached as line 2 of the machine data

@@ -92,8 +92,9 @@ wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
   rel="$(rel_project)"; src="$PROJECT"
-  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
-  if wt="$(wt_reuse "$name")"; then seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   wt="$(worktree_dir)/$name"
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
