@@ -272,6 +272,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `top_paths` | Paths that need the top tier (regex) | none |
 | `shot_method` | Unity capture method | none |
 | `package_method`, `package_args` | Unity player build for `warmd package` | none |
+| `ram_stop_idle` | 0 keeps idle engine daemons of other worktrees running while a run waits for RAM | 1 |
 | `package_dir` | The one player folder, relative to the project or absolute; set it and every finished batch refreshes the player there | none |
 | `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
 | `gate` | Shell command `warmd merge` runs instead of `check` | none |
