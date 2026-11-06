@@ -174,7 +174,7 @@ Ends the batch, so the shared checkout opens again.
 Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Use it when the marker was lost while agents still work.
 
 ### warmd perf
-Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline.
+Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline. The load time is the median of at least 5 loads after one discarded warm-up load, alternating with a tiny reference page from memory: when the reference loads slower than at `--save` (a busy CI runner), that difference is taken out before the compare. A regression needs a second measurement before it fails.
 ```text
 warmd perf
 FAIL perf: no baseline, run warmd perf --save first

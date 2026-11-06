@@ -26,12 +26,18 @@ perf_out_dir() {
   return 1
 }
 
-# Serves the built folder, loads it in headless Chrome over the DevTools protocol, prints the median loadEventEnd in tenths of ms.
+# Serves the built folder, loads it in headless Chrome over the DevTools protocol, prints the median loadEventEnd in tenths of ms,
+# then the median of a reference page served from memory. Reference and app loads alternate after one discarded warm-up load:
+# a machine that is slower right now (shared CI runner, a virus scan) slows both, perf_compare takes that out again.
 perf_load_js() { cat <<'JS'
 const http=require('http'),fs=require('fs'),path=require('path'),cp=require('child_process'),os=require('os');
 const [,, root, chrome, runs] = process.argv;
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm'};
-const srv=http.createServer((q,r)=>{let p=path.join(root,decodeURIComponent(q.url.split('?')[0]));if(fs.existsSync(p)&&fs.statSync(p).isDirectory())p=path.join(p,'index.html');
+const REF='/__warmd_ref__/';
+const srv=http.createServer((q,r)=>{
+  if(q.url.startsWith(REF)){const js=q.url.endsWith('.js');r.writeHead(200,{'content-type':js?'text/javascript':'text/html','cache-control':'no-store'});
+    r.end(js?'document.title="ref";':'<!doctype html><html><body><div id="app"></div><script type="module" src="'+REF+'r.js"></script></body></html>');return;}
+  let p=path.join(root,decodeURIComponent(q.url.split('?')[0]));if(fs.existsSync(p)&&fs.statSync(p).isDirectory())p=path.join(p,'index.html');
   fs.readFile(p,(e,d)=>{if(e){r.writeHead(404);r.end();return;}r.writeHead(200,{'content-type':types[path.extname(p)]||'application/octet-stream','cache-control':'no-store'});r.end(d);});});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{
@@ -56,19 +62,22 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&waits[m.id])waits[m.id](m);};
   const send=(method,params={})=>new Promise(r=>{const i=++id;waits[i]=r;ws.send(JSON.stringify({id:i,method,params}));});
   await send('Page.enable');await send('Network.enable');await send('Network.setCacheDisabled',{cacheDisabled:true});
-  const vals=[];
-  for(let i=0;i<+runs;i++){
+  const load=async u=>{
     await send('Page.navigate',{url:'about:blank'});await sleep(200);
-    await send('Page.navigate',{url});
+    await send('Page.navigate',{url:u});
     let v=null;
     for(let k=0;k<300&&v==null;k++){await sleep(100);
       const r=await send('Runtime.evaluate',{expression:"(()=>{const n=performance.getEntriesByType('navigation')[0];return n&&n.loadEventEnd>0?n.loadEventEnd:null})()",returnByValue:true});
       v=r.result&&r.result.result?r.result.result.value:null;}
-    if(v==null)return done(1,'error: page did not fire load within 30s: '+url);
-    vals.push(v);
+    return v;};
+  const med=a=>{a.sort((x,y)=>x-y);return Math.round(a[Math.floor((a.length-1)/2)]*10);};
+  if(await load(url)==null)return done(1,'error: page did not fire load within 30s: '+url);
+  const vals=[],refs=[];
+  for(let i=0;i<+runs;i++){
+    const f=await load(url+REF.slice(1));if(f==null)return done(1,'error: reference page did not fire load within 30s');refs.push(f);
+    const v=await load(url);if(v==null)return done(1,'error: page did not fire load within 30s: '+url);vals.push(v);
   }
-  vals.sort((a,b)=>a-b);
-  console.log(Math.round(vals[Math.floor((vals.length-1)/2)]*10));
+  console.log(med(vals)+' '+med(refs));
   done(0);
 })().catch(e=>{console.error(String(e));process.exit(1);});
 JS
@@ -86,9 +95,11 @@ perf_collect() {
         echo "size_bytes $(find "$d" -type f -exec cat {} + | wc -c | tr -d ' ')"
         if b="$(find_browser)" && command -v node >/dev/null 2>&1; then
           perf_load_js > "$RUN/perf-load.cjs"
-          v="$(node "$(native_path "$RUN/perf-load.cjs")" "$(native_path "$d")" "$(native_path "$b")" "$CFG_perf_runs" 2>"$RUN/perf-load.log")" \
+          # At least 5 loads: one load is cheap, and a median of 5 shrugs off two outliers
+          v="$(node "$(native_path "$RUN/perf-load.cjs")" "$(native_path "$d")" "$(native_path "$b")" "$(( CFG_perf_runs < 5 ? 5 : CFG_perf_runs ))" 2>"$RUN/perf-load.log")" \
             || { echo "FAIL perf load metric failed: $( { grep -m1 -iE "error|fail" "$RUN/perf-load.log" || tail -1 "$RUN/perf-load.log"; } | cut -c1-200) (browser $b)" >&2; return 1; }
-          echo "load_ms10 $v"
+          echo "load_ms10 ${v%% *}"
+          case "$v" in *' '*) echo "load_ref_ms10 ${v##* }";; esac
         else echo "(no Chrome or node, load metric skipped)" >&2; fi
       else echo "(no build folder, set perf_dir, size metric skipped)" >&2; fi;;
     unity)
@@ -111,16 +122,24 @@ perf_collect() {
   return 0
 }
 
-# perf_compare <baseline> <current>: one line per regression, nothing when equal or better
+# perf_compare <baseline> <current>: one line per regression, nothing when equal or better.
+# load_ref_ms10 is no metric of the product but the speed of the machine: when the reference page loads slower than at
+# --save, load_ms10 is compared with that difference taken out. A baseline without it (older warmd) compares as before.
 perf_compare() {
   awk -v tol="$CFG_perf_tolerance" -v floor="$CFG_perf_floor_ms" '
     NR==FNR { base[$1]=$2; next }
-    { n=$1; v=$2
-      if (!(n in base)) { printf "new metric %s=%s has no baseline, run warmd perf --save\n", n, v; bad=1; next }
-      b=base[n]; seen[n]=1
-      f=0; if (n == "cmd_ms") f=floor; else if (n ~ /ms10/) f=floor*10
-      if (v > b*(1+tol/100) && v-b > f) { printf "%s %d -> %d (+%.1f%%, limit %s%%)\n", n, b, v, (v-b)*100/b, tol; bad=1 } }
-    END { for (k in base) if (!(k in seen)) { printf "metric %s is in the baseline but was not measured\n", k; bad=1 }; exit bad }
+    { cur[$1]=$2; order[++m]=$1 }
+    END {
+      slow=0; if (("load_ref_ms10" in base) && ("load_ref_ms10" in cur) && cur["load_ref_ms10"] > base["load_ref_ms10"]) slow=cur["load_ref_ms10"]-base["load_ref_ms10"]
+      for (i=1; i<=m; i++) { n=order[i]; v=cur[n]; seen[n]=1
+        if (n == "load_ref_ms10") continue
+        if (!(n in base)) { printf "new metric %s=%s has no baseline, run warmd perf --save\n", n, v; bad=1; continue }
+        b=base[n]; s=(n == "load_ms10") ? slow : 0
+        f=0; if (n == "cmd_ms") f=floor; else if (n ~ /ms10/) f=floor*10
+        if (v-s > b*(1+tol/100) && v-s-b > f) {
+          printf "%s %d -> %d (+%.1f%%, limit %s%%%s)\n", n, b, v, (v-s-b)*100/b, tol, (s ? sprintf(", machine slower by %d", s) : ""); bad=1 } }
+      for (k in base) if (k != "load_ref_ms10" && !(k in seen)) { printf "metric %s is in the baseline but was not measured\n", k; bad=1 }
+      exit bad }
   ' "$1" "$2"
 }
 

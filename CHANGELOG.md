@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd perf` no longer fails an unchanged web app on a busy machine: the load time is the median of at least 5 loads after a discarded warm-up, and a reference page measured in the same browser takes out what a slower machine adds. Old baselines without the reference compare as before
+- The Claude Code plugin manifest says 0.4.22 like `bin/warmd`, and the docs test fails when the two differ again. `warmd ship --release` moves both
+
 ## [0.4.22] - 2026-11-06
 
 ### Added
