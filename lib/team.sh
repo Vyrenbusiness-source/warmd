@@ -49,6 +49,7 @@ wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
   [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/')" ] || return 1   # a daemon warmd renewed is no work
   git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
+  a_has_cache "$p${rel:+/$rel}" || return 1
   [ -z "$(procs_like "$(native_path "$p")" 'powershell|git')" ]
 }
 # A branch already merged into base holds nothing new: the worktree starts again from base, so the next task never builds on a stale state.
