@@ -56,6 +56,7 @@ disk_reclaim() {
   base="$(base_branch)"; rel="$(rel_project)"; here="$(cd "$GIT_ROOT" && pwd)"
   batch="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   fp=" $(git -C "$GIT_ROOT" rev-list --first-parent --max-count=5000 "$base" 2>/dev/null | tr '\n' ' ') "
+  local inbatch=(); [ -f "$batch" ] && mapfile -t inbatch < <(tr -d '\r' < "$batch")
   ref="$STATE/run/reclaim.ref"; mkdir -p "$STATE/run"; touch -d "-${WARMD_RECLAIM_IDLE_MIN:-30} min" "$ref" 2>/dev/null || return 0
   while IFS='|' read -r p br; do
     [ -n "$main" ] || { main="$p"; continue; }   # git lists the main checkout first
@@ -63,7 +64,8 @@ disk_reclaim() {
     d="$p${rel:+/$rel}"
     [ -d "$d/$c" ] || continue
     [ "$(cd "$p" 2>/dev/null && pwd)" = "$here" ] && continue
-    grep -qxF -e "$(cd "$p" && pwd)" -e "$p" "$batch" 2>/dev/null && continue
+    # -ef: the marker may spell the folder as /tmp/x, /c/Users/.../x or C:/Users/.../x
+    a=0; for g in "${inbatch[@]}"; do [ "$g" -ef "$p" ] && { a=1; break; }; done; [ $a = 1 ] && continue
     [ -e "$d/Temp/UnityLockfile" ] && continue
     a=""; { read -r a < "$d/.warmd/run/alive.txt"; } 2>/dev/null; a="${a%$'\r'}"
     [ -n "$a" ] && [ $(( $(now_ms) - a )) -lt 120000 ] 2>/dev/null && continue
