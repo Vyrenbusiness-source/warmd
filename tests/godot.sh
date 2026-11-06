@@ -43,5 +43,25 @@ expect "first of two parallel callers" '1 passed, 0 failed' "$(cat one.out)"
 expect "second of two parallel callers" '1 passed, 0 failed' "$(cat two.out)"
 rm -f one.out two.out
 expect "stop" 'OK daemon stopped' "$("$WARMD" stop)"
+# A project with its own SceneTree runners (tests/run_*.gd, quit(1) on failure) and no WarmdTest
+R="$TMP/runners"; mkdir -p "$R/tests"; cd "$R" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+printf 'config_version=5
+[application]
+config/name="r"
+' > project.godot
+printf '.warmd
+.godot
+' > .gitignore
+printf 'extends SceneTree
+
+func _initialize() -> void:
+	quit(0 if 2 + 3 == 5 else 1)
+' > tests/run_math.gd
+"$WARMD" init > /dev/null; git add -A; git commit -qm init
+expect "own runners are found and run" 'OK .*test' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+sed -i.bak 's/== 5/== 6/' tests/run_math.gd; rm tests/run_math.gd.bak
+expect "a failing runner is red" 'FAIL runner tests/run_math.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+cd "$TMP" || exit 1
 rm -rf "$TMP" 2>/dev/null
 exit $fails
