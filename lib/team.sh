@@ -49,7 +49,6 @@ wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
   [ -z "$(git -C "$p" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/')" ] || return 1   # a daemon warmd renewed is no work
   git -C "$p" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null || return 1
-  a_has_cache "$p${rel:+/$rel}" || return 1
   [ -z "$(procs "$(printf '%s' "$p" | sed 's/[]().+*?^$|\\[]/\\&/g')" 'powershell|git')" ]
 }
 # A branch already merged into base holds nothing new: the worktree starts again from base, so the next task never builds on a stale state.
@@ -448,7 +447,8 @@ batch_prune() { # common
 
 team_split() {
   need_git
-  local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0
+  local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
+  rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
@@ -478,6 +478,13 @@ team_split() {
     else running=$((running+1)); own="$own- $name: ${files:-none}"$'\n'
     fi
     tier="$(route_tier "$goal" "$files")"
+    # A worktree without its engine cache gets a copy: only with room for it plus disk_min_mb, after freeing finished ones
+    if [ -n "$files" ] && [ "$files" != none ] && disk_cache_name && [ ! -d "$(worktree_dir)/$name${rel:+/$rel}/$REPLY" ] && ! disk_room "$PROJECT" 1 "$(dirname "$GIT_ROOT")"; then
+      disk_reclaim
+      if ! disk_room "$PROJECT" 1 "$(dirname "$GIT_ROOT")"; then
+        echo "WAIT $name: disk short, $REPLY. Split it again when space is free"; waited=$((waited+1)); running=$((running-1)); continue
+      fi
+    fi
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     if [ -n "$files" ] && [ "$files" != none ]; then
@@ -608,7 +615,7 @@ team_merge() {
     br="$(git -C "$GIT_ROOT" name-rev --name-only MERGE_HEAD 2>/dev/null)" || { echo "FAIL no merge open"; return 2; }
     [ -z "$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)" ] || { echo "FAIL still unresolved:"; git -C "$GIT_ROOT" diff --name-only --diff-filter=U | head -8; return 1; }
     # A merge of several branches stopped here: its start, its gate choice and the branches after this one
-    brs=(); if [ -f "$q" ]; then { read -r start; read -r m; read -r rest; } < "$q"; [ "$m" = 1 ] && nogate=1; read -ra brs <<< "$rest"; fi
+    brs=(); if [ -f "$q" ]; then { read -r start; read -r m; read -r rest; read -r i; } < "$q"; [ "$m" = 1 ] && nogate=1; read -ra brs <<< "$rest"; read -ra merged <<< "$i"; fi
     [ -n "$start" ] || start="$(git -C "$GIT_ROOT" rev-parse HEAD)"
     git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q --no-edit -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} || { echo "FAIL cannot commit the resolved merge of $br"; return 1; }
     merged+=("$br"); rm -f "$q"
@@ -623,7 +630,7 @@ team_merge() {
     br="${brs[$i]}"
     out="$(git -C "$GIT_ROOT" merge --no-ff -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} "$br" 2>&1)" || {
       if [ "${WARMD_MERGE_ATOMIC:-0}" != 1 ] && git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null; then
-        printf '%s\n%s\n%s\n' "$start" "$nogate" "${brs[*]:$((i+1))}" > "$q"
+        printf '%s\n%s\n%s\n%s\n' "$start" "$nogate" "${brs[*]:$((i+1))}" "${merged[*]}" > "$q"
         echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files of $br${merged[0]:+ (merged before it: ${merged[*]})}, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160
       else
         # WARMD_MERGE_ATOMIC=1 (the batch merge of the hooks): a conflict rolls back all, nobody is there to resolve it
@@ -651,6 +658,7 @@ team_merge() {
   echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD)$([ $nogate = 1 ] && echo ", no gate (--no-gate)"), not pushed"
   rm -f "$MERGELOCK" "$MERGELOCK.win"; unset WARMD_IN_MERGE WARMD_DIFF_BASE
   merge_package
+  disk_after_merge
   return 0
 }
 

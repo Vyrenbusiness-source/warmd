@@ -484,6 +484,8 @@ hook_merge() { # common dir
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else
       rm -f "$batch" "$done"; echo "OK batch ended"
+      # The finished worktrees left the batch: their engine caches go back to the disk
+      (cd "$tgt" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" disk --free 2>&1 | tail -1)
     fi
   } >> "$log" 2>&1
   hook_unlock
