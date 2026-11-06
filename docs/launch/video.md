@@ -1,6 +1,6 @@
 # Launch video: one Unity test, cold vs. warm
 
-Plan only, nothing recorded yet. Goal: a 30 to 45 second clip that shows the strongest measured number ([MEASURED.md](../MEASURED.md): one Unity test class, 56 s to 3 s) as a moving picture, for the README hero, the Show HN post and r/Unity3D. Research said this is the best launch asset warmd lacks ([research.md](research.md#gaps-in-warmd-compared-with-them)).
+Plan only, nothing recorded yet. Goal: a 30 to 45 second clip that shows the strongest measured number ([MEASURED.md](../MEASURED.md): one Unity test class, 56 s to 3 s) as a moving picture, for the README hero. Research said this is the best launch asset warmd lacks ([research.md](research.md#gaps-in-warmd-compared-with-them)).
 
 ## What the viewer sees
 
@@ -50,5 +50,4 @@ Three takes, report the median, keep all three raw logs in the public demo repo.
 ## Where it goes
 
 - README: GIF in the hero position, MP4 link below it.
-- Show HN and r/Unity3D: the MP4 uploaded natively, first line of the post states "Windows only".
-- Nothing is posted by an agent; the user records and posts.
+- Release notes of the version it was recorded with: the MP4 attached.
