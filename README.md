@@ -6,7 +6,23 @@
 </picture>
 
 **Your coding agent waits less and reads less.**<br>
+warmd keeps the engine warm, skips tests whose code did not change and hands the agent only the error.<br>
 <sub>Unity · Godot · Web · Python · Rust · Go · .NET, on Windows, for Claude Code, Codex and Cursor</sub>
+
+<table>
+<tr>
+<td align="center" width="25%"><h3>56 s → 3 s</h3>one Unity test class<br><sub><a href="docs/MEASURED.md">warm headless editor</a></sub></td>
+<td align="center" width="25%"><h3>33,323 → 41</h3>bytes read per green run<br><sub><a href="docs/PROOF.md#tokens">Unity log vs. warmd</a></sub></td>
+<td align="center" width="25%"><h3>26% fewer</h3>tokens, 27% lower cost<br><sub><a href="docs/ab.md">agent A/B, 5 of 5 fixed per arm</a></sub></td>
+<td align="center" width="25%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub><a href="docs/PROOF.md#unity">answered from the green cache</a></sub></td>
+</tr>
+</table>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
+```
+
+<sub>Git Bash. PowerShell: see [Install](#install). Then `warmd init` once in your project, your agent does the rest.</sub>
 
 [Install](#install) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
@@ -21,6 +37,14 @@
 
 A coding agent spends most of a test run waiting for the engine to start, then pays tokens to read a log it mostly ignores.
 warmd keeps the engine warm, answers unchanged code from cache and hands the agent only the error.
+
+What the agent reads after one Unity test run, real output from [PROOF.md](docs/PROOF.md#unity):
+
+| | Without warmd | With warmd |
+|---|---|---|
+| **Green** | 33,323 bytes of editor log, about 8,300 tokens, after a cold editor start | `OK 3s test`<br>`8 passed, 0 failed, 0 skipped` |
+| **Red** | The same log with the failure somewhere inside | `RED Adds: ScoreTests.cs:2 Expected: 5    But was:  -1` |
+| **Repeat, code unchanged** | The whole run again | `OK cached, code unchanged: 1 passed, 0 failed, 0 skipped` in 0.4 s |
 
 ## What runs by itself
 
