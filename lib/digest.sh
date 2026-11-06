@@ -14,6 +14,7 @@ digest_runner() { # file -> runner name or empty
   elif grep -qE '^ *--- FAIL: ' "$f"; then echo go
   elif grep -qE '^ *● .+' "$f" && grep -qE '^ *(Expected|Received|at )|expect\(' "$f"; then echo jest
   elif grep -qE '^ *FAIL +[^ ]' "$f" && grep -qE '^ *(❯|×|Failed Tests|AssertionError|Error)' "$f"; then echo vitest
+  elif grep -qE '^✖ failing tests:$|^ *not ok [0-9]+ - ' "$f"; then echo node
   fi
 }
 
@@ -87,6 +88,34 @@ _digest_go() {
     /^ *--- FAIL: / { n++; if (n <= max) { s = trim($0); sub(/^--- FAIL: /, "", s); print "FAIL " s; printf "%s", buf }; buf = ""; next }
     /^panic: / && !p { p = 1; print trim($0); next }
     /^[^ ]+\.go:[0-9]+:[0-9]+: / { print $0 }
+    END { if (n > max) print "(+" n - max " more failures)" }' "$1"
+}
+
+# node --test: the spec reporter's "failing tests" block at the end of the run, or the TAP reporter (older Node, pipes).
+# Per failure the test name, the test's file:line, the message and actual/expected. A TAP parent that failed only
+# because a subtest failed is not counted.
+_digest_node() {
+  awk -v max="$DIGEST_MAX_FAILS" '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function unq(s) { s = trim(s); gsub(/^'\''|'\''$/, "", s); gsub(/\\\\/, "\\", s); return s }
+    /^✖ failing tests:$/ { spec = 1; next }
+    spec && /^test at / { loc = trim(substr($0, 9)); next }
+    spec && /^ *✖ / { n++; st = 1; m = 0; s = trim($0); sub(/^✖ /, "", s); sub(/ \([0-9.]+m?s\)$/, "", s)
+      if (n <= max) { print "FAIL " s; if (loc != "") print "at " loc }; loc = ""; next }
+    spec && st && n <= max {
+      if (/^ +at /) { st = 2; next }
+      if (st == 1 && NF && m < 6) { print trim($0); m++; next }
+      if (/^ +(actual|expected):/) print trim($0)
+      next }
+    /^ *not ok [0-9]+ - / { t = $0; sub(/^ *not ok [0-9]+ - /, "", t); sub(/ # .*$/, "", t); tap = 1; tl = ""; e = 0; tm = 0; buf = ""; next }
+    !tap { next }
+    /^ *failureType: / { if ($0 ~ /subtestsFailed/) tap = 0; next }
+    /^ *location: / { s = $0; sub(/^ *location: /, "", s); tl = unq(s); next }
+    /^ *error: / { s = $0; ei = match($0, /[^ ]/); sub(/^ *error: /, "", s); if (s ~ /^[|>]/) e = 1; else buf = buf unq(s) "\n"; next }
+    e && (!NF || match($0, /[^ ]/) > ei) { if (NF && tm < 6) { buf = buf trim($0) "\n"; tm++ }; next }
+    e { e = 0 }
+    /^ *(expected|actual): / { buf = buf trim($0) "\n"; next }
+    /^ *\.\.\.$/ { n++; if (n <= max) { print "FAIL " t; if (tl != "") print "at " tl; printf "%s", buf }; tap = 0; next }
     END { if (n > max) print "(+" n - max " more failures)" }' "$1"
 }
 

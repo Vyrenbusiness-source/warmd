@@ -1,0 +1,1830 @@
+TAP version 13
+# Subtest: cart(0)
+ok 1 - cart(0)
+  ---
+  duration_ms: 1.0296
+  type: 'test'
+  ...
+# Subtest: cart(1)
+ok 2 - cart(1)
+  ---
+  duration_ms: 0.0954
+  type: 'test'
+  ...
+# Subtest: cart(2)
+ok 3 - cart(2)
+  ---
+  duration_ms: 0.1752
+  type: 'test'
+  ...
+# Subtest: cart(3)
+ok 4 - cart(3)
+  ---
+  duration_ms: 0.0542
+  type: 'test'
+  ...
+# Subtest: cart(4)
+ok 5 - cart(4)
+  ---
+  duration_ms: 0.0606
+  type: 'test'
+  ...
+# Subtest: cart(5)
+ok 6 - cart(5)
+  ---
+  duration_ms: 0.0454
+  type: 'test'
+  ...
+# Subtest: cart(6)
+ok 7 - cart(6)
+  ---
+  duration_ms: 0.0437
+  type: 'test'
+  ...
+# Subtest: cart(7)
+ok 8 - cart(7)
+  ---
+  duration_ms: 0.0351
+  type: 'test'
+  ...
+# Subtest: cart(8)
+ok 9 - cart(8)
+  ---
+  duration_ms: 0.0537
+  type: 'test'
+  ...
+# Subtest: cart(9)
+ok 10 - cart(9)
+  ---
+  duration_ms: 0.0813
+  type: 'test'
+  ...
+# Subtest: cart(10)
+ok 11 - cart(10)
+  ---
+  duration_ms: 0.0502
+  type: 'test'
+  ...
+# Subtest: cart(11)
+ok 12 - cart(11)
+  ---
+  duration_ms: 0.0355
+  type: 'test'
+  ...
+# Subtest: cart(12)
+ok 13 - cart(12)
+  ---
+  duration_ms: 0.0385
+  type: 'test'
+  ...
+# Subtest: cart(13)
+ok 14 - cart(13)
+  ---
+  duration_ms: 0.0256
+  type: 'test'
+  ...
+# Subtest: cart(14)
+ok 15 - cart(14)
+  ---
+  duration_ms: 0.0441
+  type: 'test'
+  ...
+# Subtest: cart(15)
+ok 16 - cart(15)
+  ---
+  duration_ms: 0.0514
+  type: 'test'
+  ...
+# Subtest: cart(16)
+ok 17 - cart(16)
+  ---
+  duration_ms: 0.0631
+  type: 'test'
+  ...
+# Subtest: cart(17)
+ok 18 - cart(17)
+  ---
+  duration_ms: 0.062
+  type: 'test'
+  ...
+# Subtest: cart(18)
+ok 19 - cart(18)
+  ---
+  duration_ms: 0.0689
+  type: 'test'
+  ...
+# Subtest: cart(19)
+ok 20 - cart(19)
+  ---
+  duration_ms: 0.0303
+  type: 'test'
+  ...
+# Subtest: cart(20)
+ok 21 - cart(20)
+  ---
+  duration_ms: 0.0258
+  type: 'test'
+  ...
+# Subtest: cart(21)
+ok 22 - cart(21)
+  ---
+  duration_ms: 0.0204
+  type: 'test'
+  ...
+# Subtest: cart(22)
+ok 23 - cart(22)
+  ---
+  duration_ms: 0.0171
+  type: 'test'
+  ...
+# Subtest: cart(23)
+ok 24 - cart(23)
+  ---
+  duration_ms: 0.017
+  type: 'test'
+  ...
+# Subtest: cart(24)
+ok 25 - cart(24)
+  ---
+  duration_ms: 0.0169
+  type: 'test'
+  ...
+# Subtest: coupon(30)
+ok 26 - coupon(30)
+  ---
+  duration_ms: 0.6118
+  type: 'test'
+  ...
+# Subtest: coupon(31)
+ok 27 - coupon(31)
+  ---
+  duration_ms: 0.0805
+  type: 'test'
+  ...
+# Subtest: coupon(32)
+ok 28 - coupon(32)
+  ---
+  duration_ms: 0.0526
+  type: 'test'
+  ...
+# Subtest: coupon(33)
+ok 29 - coupon(33)
+  ---
+  duration_ms: 0.043
+  type: 'test'
+  ...
+# Subtest: coupon(34)
+ok 30 - coupon(34)
+  ---
+  duration_ms: 0.0559
+  type: 'test'
+  ...
+# Subtest: coupon(35)
+ok 31 - coupon(35)
+  ---
+  duration_ms: 0.0461
+  type: 'test'
+  ...
+# Subtest: coupon(36)
+ok 32 - coupon(36)
+  ---
+  duration_ms: 0.0419
+  type: 'test'
+  ...
+# Subtest: coupon(37)
+ok 33 - coupon(37)
+  ---
+  duration_ms: 0.0433
+  type: 'test'
+  ...
+# Subtest: coupon(38)
+ok 34 - coupon(38)
+  ---
+  duration_ms: 0.0513
+  type: 'test'
+  ...
+# Subtest: coupon(39)
+ok 35 - coupon(39)
+  ---
+  duration_ms: 0.0865
+  type: 'test'
+  ...
+# Subtest: coupon(40)
+ok 36 - coupon(40)
+  ---
+  duration_ms: 0.0555
+  type: 'test'
+  ...
+# Subtest: coupon(41)
+ok 37 - coupon(41)
+  ---
+  duration_ms: 0.0471
+  type: 'test'
+  ...
+# Subtest: coupon(42)
+ok 38 - coupon(42)
+  ---
+  duration_ms: 0.0451
+  type: 'test'
+  ...
+# Subtest: coupon(43)
+ok 39 - coupon(43)
+  ---
+  duration_ms: 0.0316
+  type: 'test'
+  ...
+# Subtest: coupon(44)
+ok 40 - coupon(44)
+  ---
+  duration_ms: 0.0388
+  type: 'test'
+  ...
+# Subtest: coupon(45)
+ok 41 - coupon(45)
+  ---
+  duration_ms: 0.0239
+  type: 'test'
+  ...
+# Subtest: coupon(46)
+ok 42 - coupon(46)
+  ---
+  duration_ms: 0.5106
+  type: 'test'
+  ...
+# Subtest: coupon(47)
+ok 43 - coupon(47)
+  ---
+  duration_ms: 0.0765
+  type: 'test'
+  ...
+# Subtest: coupon(48)
+ok 44 - coupon(48)
+  ---
+  duration_ms: 0.0392
+  type: 'test'
+  ...
+# Subtest: coupon(49)
+ok 45 - coupon(49)
+  ---
+  duration_ms: 0.0249
+  type: 'test'
+  ...
+# Subtest: coupon(50)
+not ok 46 - coupon(50)
+  ---
+  duration_ms: 0.5088
+  type: 'test'
+  location: 'C:\\dev\\warmd-demo\\test\\coupon.test.js:5:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    50 !== 45
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 45
+  actual: 50
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/dev/warmd-demo/test/coupon.test.js:5:41)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1062:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:752:18)
+    Test.postRun (node:internal/test_runner/test:1191:19)
+    Test.run (node:internal/test_runner/test:1119:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:752:7)
+  ...
+# Subtest: coupon(51)
+ok 47 - coupon(51)
+  ---
+  duration_ms: 0.5187
+  type: 'test'
+  ...
+# Subtest: coupon(52)
+ok 48 - coupon(52)
+  ---
+  duration_ms: 0.0479
+  type: 'test'
+  ...
+# Subtest: coupon(53)
+ok 49 - coupon(53)
+  ---
+  duration_ms: 0.0271
+  type: 'test'
+  ...
+# Subtest: coupon(54)
+ok 50 - coupon(54)
+  ---
+  duration_ms: 0.0241
+  type: 'test'
+  ...
+# Subtest: currency(0)
+ok 51 - currency(0)
+  ---
+  duration_ms: 0.6723
+  type: 'test'
+  ...
+# Subtest: currency(1)
+ok 52 - currency(1)
+  ---
+  duration_ms: 0.1018
+  type: 'test'
+  ...
+# Subtest: currency(2)
+ok 53 - currency(2)
+  ---
+  duration_ms: 0.0625
+  type: 'test'
+  ...
+# Subtest: currency(3)
+ok 54 - currency(3)
+  ---
+  duration_ms: 0.0571
+  type: 'test'
+  ...
+# Subtest: currency(4)
+ok 55 - currency(4)
+  ---
+  duration_ms: 0.0574
+  type: 'test'
+  ...
+# Subtest: currency(5)
+ok 56 - currency(5)
+  ---
+  duration_ms: 0.0391
+  type: 'test'
+  ...
+# Subtest: currency(6)
+ok 57 - currency(6)
+  ---
+  duration_ms: 0.0415
+  type: 'test'
+  ...
+# Subtest: currency(7)
+ok 58 - currency(7)
+  ---
+  duration_ms: 0.0329
+  type: 'test'
+  ...
+# Subtest: currency(8)
+ok 59 - currency(8)
+  ---
+  duration_ms: 0.045
+  type: 'test'
+  ...
+# Subtest: currency(9)
+ok 60 - currency(9)
+  ---
+  duration_ms: 0.1173
+  type: 'test'
+  ...
+# Subtest: currency(10)
+ok 61 - currency(10)
+  ---
+  duration_ms: 0.0533
+  type: 'test'
+  ...
+# Subtest: currency(11)
+ok 62 - currency(11)
+  ---
+  duration_ms: 0.1425
+  type: 'test'
+  ...
+# Subtest: currency(12)
+ok 63 - currency(12)
+  ---
+  duration_ms: 0.0739
+  type: 'test'
+  ...
+# Subtest: currency(13)
+ok 64 - currency(13)
+  ---
+  duration_ms: 0.0348
+  type: 'test'
+  ...
+# Subtest: currency(14)
+ok 65 - currency(14)
+  ---
+  duration_ms: 0.0449
+  type: 'test'
+  ...
+# Subtest: currency(15)
+ok 66 - currency(15)
+  ---
+  duration_ms: 0.6724
+  type: 'test'
+  ...
+# Subtest: currency(16)
+ok 67 - currency(16)
+  ---
+  duration_ms: 0.0801
+  type: 'test'
+  ...
+# Subtest: currency(17)
+ok 68 - currency(17)
+  ---
+  duration_ms: 0.0758
+  type: 'test'
+  ...
+# Subtest: currency(18)
+ok 69 - currency(18)
+  ---
+  duration_ms: 0.0435
+  type: 'test'
+  ...
+# Subtest: currency(19)
+ok 70 - currency(19)
+  ---
+  duration_ms: 0.0284
+  type: 'test'
+  ...
+# Subtest: currency(20)
+ok 71 - currency(20)
+  ---
+  duration_ms: 0.0244
+  type: 'test'
+  ...
+# Subtest: currency(21)
+ok 72 - currency(21)
+  ---
+  duration_ms: 0.0246
+  type: 'test'
+  ...
+# Subtest: currency(22)
+ok 73 - currency(22)
+  ---
+  duration_ms: 0.0256
+  type: 'test'
+  ...
+# Subtest: currency(23)
+ok 74 - currency(23)
+  ---
+  duration_ms: 0.023
+  type: 'test'
+  ...
+# Subtest: currency(24)
+ok 75 - currency(24)
+  ---
+  duration_ms: 0.0549
+  type: 'test'
+  ...
+# Subtest: discount(0)
+ok 76 - discount(0)
+  ---
+  duration_ms: 0.6109
+  type: 'test'
+  ...
+# Subtest: discount(1)
+ok 77 - discount(1)
+  ---
+  duration_ms: 0.0866
+  type: 'test'
+  ...
+# Subtest: discount(2)
+ok 78 - discount(2)
+  ---
+  duration_ms: 0.055
+  type: 'test'
+  ...
+# Subtest: discount(3)
+ok 79 - discount(3)
+  ---
+  duration_ms: 0.0434
+  type: 'test'
+  ...
+# Subtest: discount(4)
+ok 80 - discount(4)
+  ---
+  duration_ms: 0.0561
+  type: 'test'
+  ...
+# Subtest: discount(5)
+ok 81 - discount(5)
+  ---
+  duration_ms: 0.0437
+  type: 'test'
+  ...
+# Subtest: discount(6)
+ok 82 - discount(6)
+  ---
+  duration_ms: 0.0517
+  type: 'test'
+  ...
+# Subtest: discount(7)
+ok 83 - discount(7)
+  ---
+  duration_ms: 0.0413
+  type: 'test'
+  ...
+# Subtest: discount(8)
+ok 84 - discount(8)
+  ---
+  duration_ms: 0.0535
+  type: 'test'
+  ...
+# Subtest: discount(9)
+ok 85 - discount(9)
+  ---
+  duration_ms: 0.088
+  type: 'test'
+  ...
+# Subtest: discount(10)
+ok 86 - discount(10)
+  ---
+  duration_ms: 0.0516
+  type: 'test'
+  ...
+# Subtest: discount(11)
+ok 87 - discount(11)
+  ---
+  duration_ms: 0.0417
+  type: 'test'
+  ...
+# Subtest: discount(12)
+ok 88 - discount(12)
+  ---
+  duration_ms: 0.0616
+  type: 'test'
+  ...
+# Subtest: discount(13)
+ok 89 - discount(13)
+  ---
+  duration_ms: 0.04
+  type: 'test'
+  ...
+# Subtest: discount(14)
+ok 90 - discount(14)
+  ---
+  duration_ms: 0.0463
+  type: 'test'
+  ...
+# Subtest: discount(15)
+ok 91 - discount(15)
+  ---
+  duration_ms: 0.0278
+  type: 'test'
+  ...
+# Subtest: discount(16)
+ok 92 - discount(16)
+  ---
+  duration_ms: 0.0536
+  type: 'test'
+  ...
+# Subtest: discount(17)
+ok 93 - discount(17)
+  ---
+  duration_ms: 0.0486
+  type: 'test'
+  ...
+# Subtest: discount(18)
+ok 94 - discount(18)
+  ---
+  duration_ms: 0.047
+  type: 'test'
+  ...
+# Subtest: discount(19)
+ok 95 - discount(19)
+  ---
+  duration_ms: 0.024
+  type: 'test'
+  ...
+# Subtest: discount(20)
+ok 96 - discount(20)
+  ---
+  duration_ms: 0.0224
+  type: 'test'
+  ...
+# Subtest: discount(21)
+ok 97 - discount(21)
+  ---
+  duration_ms: 0.0219
+  type: 'test'
+  ...
+# Subtest: discount(22)
+ok 98 - discount(22)
+  ---
+  duration_ms: 0.0223
+  type: 'test'
+  ...
+# Subtest: discount(23)
+ok 99 - discount(23)
+  ---
+  duration_ms: 0.0208
+  type: 'test'
+  ...
+# Subtest: discount(24)
+ok 100 - discount(24)
+  ---
+  duration_ms: 0.0552
+  type: 'test'
+  ...
+# Subtest: format(0)
+ok 101 - format(0)
+  ---
+  duration_ms: 0.8073
+  type: 'test'
+  ...
+# Subtest: format(1)
+ok 102 - format(1)
+  ---
+  duration_ms: 0.1095
+  type: 'test'
+  ...
+# Subtest: format(2)
+ok 103 - format(2)
+  ---
+  duration_ms: 0.1219
+  type: 'test'
+  ...
+# Subtest: format(3)
+ok 104 - format(3)
+  ---
+  duration_ms: 0.0593
+  type: 'test'
+  ...
+# Subtest: format(4)
+ok 105 - format(4)
+  ---
+  duration_ms: 0.0543
+  type: 'test'
+  ...
+# Subtest: format(5)
+ok 106 - format(5)
+  ---
+  duration_ms: 0.0443
+  type: 'test'
+  ...
+# Subtest: format(6)
+ok 107 - format(6)
+  ---
+  duration_ms: 0.0407
+  type: 'test'
+  ...
+# Subtest: format(7)
+ok 108 - format(7)
+  ---
+  duration_ms: 0.0396
+  type: 'test'
+  ...
+# Subtest: format(8)
+ok 109 - format(8)
+  ---
+  duration_ms: 0.0907
+  type: 'test'
+  ...
+# Subtest: format(9)
+ok 110 - format(9)
+  ---
+  duration_ms: 0.0995
+  type: 'test'
+  ...
+# Subtest: format(10)
+ok 111 - format(10)
+  ---
+  duration_ms: 0.052
+  type: 'test'
+  ...
+# Subtest: format(11)
+ok 112 - format(11)
+  ---
+  duration_ms: 0.0473
+  type: 'test'
+  ...
+# Subtest: format(12)
+ok 113 - format(12)
+  ---
+  duration_ms: 0.0514
+  type: 'test'
+  ...
+# Subtest: format(13)
+ok 114 - format(13)
+  ---
+  duration_ms: 0.0335
+  type: 'test'
+  ...
+# Subtest: format(14)
+ok 115 - format(14)
+  ---
+  duration_ms: 0.0394
+  type: 'test'
+  ...
+# Subtest: format(15)
+ok 116 - format(15)
+  ---
+  duration_ms: 0.0251
+  type: 'test'
+  ...
+# Subtest: format(16)
+ok 117 - format(16)
+  ---
+  duration_ms: 0.0237
+  type: 'test'
+  ...
+# Subtest: format(17)
+ok 118 - format(17)
+  ---
+  duration_ms: 0.0822
+  type: 'test'
+  ...
+# Subtest: format(18)
+ok 119 - format(18)
+  ---
+  duration_ms: 0.0474
+  type: 'test'
+  ...
+# Subtest: format(19)
+ok 120 - format(19)
+  ---
+  duration_ms: 0.0276
+  type: 'test'
+  ...
+# Subtest: format(20)
+ok 121 - format(20)
+  ---
+  duration_ms: 0.0249
+  type: 'test'
+  ...
+# Subtest: format(21)
+ok 122 - format(21)
+  ---
+  duration_ms: 0.0251
+  type: 'test'
+  ...
+# Subtest: format(22)
+ok 123 - format(22)
+  ---
+  duration_ms: 0.0314
+  type: 'test'
+  ...
+# Subtest: format(23)
+ok 124 - format(23)
+  ---
+  duration_ms: 0.0209
+  type: 'test'
+  ...
+# Subtest: format(24)
+ok 125 - format(24)
+  ---
+  duration_ms: 0.0472
+  type: 'test'
+  ...
+# Subtest: invoice(0)
+ok 126 - invoice(0)
+  ---
+  duration_ms: 0.6089
+  type: 'test'
+  ...
+# Subtest: invoice(1)
+ok 127 - invoice(1)
+  ---
+  duration_ms: 0.0776
+  type: 'test'
+  ...
+# Subtest: invoice(2)
+ok 128 - invoice(2)
+  ---
+  duration_ms: 0.0478
+  type: 'test'
+  ...
+# Subtest: invoice(3)
+ok 129 - invoice(3)
+  ---
+  duration_ms: 0.0428
+  type: 'test'
+  ...
+# Subtest: invoice(4)
+ok 130 - invoice(4)
+  ---
+  duration_ms: 0.0483
+  type: 'test'
+  ...
+# Subtest: invoice(5)
+ok 131 - invoice(5)
+  ---
+  duration_ms: 0.0405
+  type: 'test'
+  ...
+# Subtest: invoice(6)
+ok 132 - invoice(6)
+  ---
+  duration_ms: 0.0399
+  type: 'test'
+  ...
+# Subtest: invoice(7)
+ok 133 - invoice(7)
+  ---
+  duration_ms: 0.04
+  type: 'test'
+  ...
+# Subtest: invoice(8)
+ok 134 - invoice(8)
+  ---
+  duration_ms: 0.0499
+  type: 'test'
+  ...
+# Subtest: invoice(9)
+ok 135 - invoice(9)
+  ---
+  duration_ms: 0.0803
+  type: 'test'
+  ...
+# Subtest: invoice(10)
+ok 136 - invoice(10)
+  ---
+  duration_ms: 0.0485
+  type: 'test'
+  ...
+# Subtest: invoice(11)
+ok 137 - invoice(11)
+  ---
+  duration_ms: 0.0458
+  type: 'test'
+  ...
+# Subtest: invoice(12)
+ok 138 - invoice(12)
+  ---
+  duration_ms: 0.0471
+  type: 'test'
+  ...
+# Subtest: invoice(13)
+ok 139 - invoice(13)
+  ---
+  duration_ms: 0.0256
+  type: 'test'
+  ...
+# Subtest: invoice(14)
+ok 140 - invoice(14)
+  ---
+  duration_ms: 0.0411
+  type: 'test'
+  ...
+# Subtest: invoice(15)
+ok 141 - invoice(15)
+  ---
+  duration_ms: 0.0243
+  type: 'test'
+  ...
+# Subtest: invoice(16)
+ok 142 - invoice(16)
+  ---
+  duration_ms: 0.0265
+  type: 'test'
+  ...
+# Subtest: invoice(17)
+ok 143 - invoice(17)
+  ---
+  duration_ms: 0.0667
+  type: 'test'
+  ...
+# Subtest: invoice(18)
+ok 144 - invoice(18)
+  ---
+  duration_ms: 0.078
+  type: 'test'
+  ...
+# Subtest: invoice(19)
+ok 145 - invoice(19)
+  ---
+  duration_ms: 0.0369
+  type: 'test'
+  ...
+# Subtest: invoice(20)
+ok 146 - invoice(20)
+  ---
+  duration_ms: 0.0286
+  type: 'test'
+  ...
+# Subtest: invoice(21)
+ok 147 - invoice(21)
+  ---
+  duration_ms: 0.0267
+  type: 'test'
+  ...
+# Subtest: invoice(22)
+ok 148 - invoice(22)
+  ---
+  duration_ms: 0.0231
+  type: 'test'
+  ...
+# Subtest: invoice(23)
+ok 149 - invoice(23)
+  ---
+  duration_ms: 0.0241
+  type: 'test'
+  ...
+# Subtest: invoice(24)
+ok 150 - invoice(24)
+  ---
+  duration_ms: 0.0591
+  type: 'test'
+  ...
+# Subtest: points(0)
+ok 151 - points(0)
+  ---
+  duration_ms: 0.5907
+  type: 'test'
+  ...
+# Subtest: points(1)
+ok 152 - points(1)
+  ---
+  duration_ms: 0.0775
+  type: 'test'
+  ...
+# Subtest: points(2)
+ok 153 - points(2)
+  ---
+  duration_ms: 0.0691
+  type: 'test'
+  ...
+# Subtest: points(3)
+ok 154 - points(3)
+  ---
+  duration_ms: 0.0488
+  type: 'test'
+  ...
+# Subtest: points(4)
+ok 155 - points(4)
+  ---
+  duration_ms: 0.0511
+  type: 'test'
+  ...
+# Subtest: points(5)
+ok 156 - points(5)
+  ---
+  duration_ms: 0.0406
+  type: 'test'
+  ...
+# Subtest: points(6)
+ok 157 - points(6)
+  ---
+  duration_ms: 0.0418
+  type: 'test'
+  ...
+# Subtest: points(7)
+ok 158 - points(7)
+  ---
+  duration_ms: 0.0404
+  type: 'test'
+  ...
+# Subtest: points(8)
+ok 159 - points(8)
+  ---
+  duration_ms: 0.048
+  type: 'test'
+  ...
+# Subtest: points(9)
+ok 160 - points(9)
+  ---
+  duration_ms: 0.0809
+  type: 'test'
+  ...
+# Subtest: points(10)
+ok 161 - points(10)
+  ---
+  duration_ms: 0.0494
+  type: 'test'
+  ...
+# Subtest: points(11)
+ok 162 - points(11)
+  ---
+  duration_ms: 0.0404
+  type: 'test'
+  ...
+# Subtest: points(12)
+ok 163 - points(12)
+  ---
+  duration_ms: 0.0444
+  type: 'test'
+  ...
+# Subtest: points(13)
+ok 164 - points(13)
+  ---
+  duration_ms: 0.0258
+  type: 'test'
+  ...
+# Subtest: points(14)
+ok 165 - points(14)
+  ---
+  duration_ms: 0.0482
+  type: 'test'
+  ...
+# Subtest: points(15)
+ok 166 - points(15)
+  ---
+  duration_ms: 0.0246
+  type: 'test'
+  ...
+# Subtest: points(16)
+ok 167 - points(16)
+  ---
+  duration_ms: 0.0226
+  type: 'test'
+  ...
+# Subtest: points(17)
+ok 168 - points(17)
+  ---
+  duration_ms: 0.0633
+  type: 'test'
+  ...
+# Subtest: points(18)
+ok 169 - points(18)
+  ---
+  duration_ms: 0.0515
+  type: 'test'
+  ...
+# Subtest: points(19)
+ok 170 - points(19)
+  ---
+  duration_ms: 0.0286
+  type: 'test'
+  ...
+# Subtest: points(20)
+ok 171 - points(20)
+  ---
+  duration_ms: 0.0244
+  type: 'test'
+  ...
+# Subtest: points(21)
+ok 172 - points(21)
+  ---
+  duration_ms: 0.0248
+  type: 'test'
+  ...
+# Subtest: points(22)
+ok 173 - points(22)
+  ---
+  duration_ms: 0.0239
+  type: 'test'
+  ...
+# Subtest: points(23)
+ok 174 - points(23)
+  ---
+  duration_ms: 0.0232
+  type: 'test'
+  ...
+# Subtest: points(24)
+ok 175 - points(24)
+  ---
+  duration_ms: 0.0771
+  type: 'test'
+  ...
+# Subtest: price(0)
+ok 176 - price(0)
+  ---
+  duration_ms: 0.6221
+  type: 'test'
+  ...
+# Subtest: price(1)
+ok 177 - price(1)
+  ---
+  duration_ms: 0.075
+  type: 'test'
+  ...
+# Subtest: price(2)
+ok 178 - price(2)
+  ---
+  duration_ms: 0.0568
+  type: 'test'
+  ...
+# Subtest: price(3)
+ok 179 - price(3)
+  ---
+  duration_ms: 0.0428
+  type: 'test'
+  ...
+# Subtest: price(4)
+ok 180 - price(4)
+  ---
+  duration_ms: 0.051
+  type: 'test'
+  ...
+# Subtest: price(5)
+ok 181 - price(5)
+  ---
+  duration_ms: 0.0436
+  type: 'test'
+  ...
+# Subtest: price(6)
+ok 182 - price(6)
+  ---
+  duration_ms: 0.0392
+  type: 'test'
+  ...
+# Subtest: price(7)
+ok 183 - price(7)
+  ---
+  duration_ms: 0.0405
+  type: 'test'
+  ...
+# Subtest: price(8)
+ok 184 - price(8)
+  ---
+  duration_ms: 0.0577
+  type: 'test'
+  ...
+# Subtest: price(9)
+ok 185 - price(9)
+  ---
+  duration_ms: 0.0832
+  type: 'test'
+  ...
+# Subtest: price(10)
+ok 186 - price(10)
+  ---
+  duration_ms: 0.0526
+  type: 'test'
+  ...
+# Subtest: price(11)
+ok 187 - price(11)
+  ---
+  duration_ms: 0.0395
+  type: 'test'
+  ...
+# Subtest: price(12)
+ok 188 - price(12)
+  ---
+  duration_ms: 0.0439
+  type: 'test'
+  ...
+# Subtest: price(13)
+ok 189 - price(13)
+  ---
+  duration_ms: 0.0287
+  type: 'test'
+  ...
+# Subtest: price(14)
+ok 190 - price(14)
+  ---
+  duration_ms: 0.0376
+  type: 'test'
+  ...
+# Subtest: price(15)
+ok 191 - price(15)
+  ---
+  duration_ms: 0.0234
+  type: 'test'
+  ...
+# Subtest: price(16)
+ok 192 - price(16)
+  ---
+  duration_ms: 0.023
+  type: 'test'
+  ...
+# Subtest: price(17)
+ok 193 - price(17)
+  ---
+  duration_ms: 0.0682
+  type: 'test'
+  ...
+# Subtest: price(18)
+ok 194 - price(18)
+  ---
+  duration_ms: 0.0477
+  type: 'test'
+  ...
+# Subtest: price(19)
+ok 195 - price(19)
+  ---
+  duration_ms: 0.0278
+  type: 'test'
+  ...
+# Subtest: price(20)
+ok 196 - price(20)
+  ---
+  duration_ms: 0.0289
+  type: 'test'
+  ...
+# Subtest: price(21)
+ok 197 - price(21)
+  ---
+  duration_ms: 0.0282
+  type: 'test'
+  ...
+# Subtest: price(22)
+ok 198 - price(22)
+  ---
+  duration_ms: 0.0236
+  type: 'test'
+  ...
+# Subtest: price(23)
+ok 199 - price(23)
+  ---
+  duration_ms: 0.0221
+  type: 'test'
+  ...
+# Subtest: price(24)
+ok 200 - price(24)
+  ---
+  duration_ms: 0.0643
+  type: 'test'
+  ...
+# Subtest: refund(0)
+ok 201 - refund(0)
+  ---
+  duration_ms: 0.5994
+  type: 'test'
+  ...
+# Subtest: refund(1)
+ok 202 - refund(1)
+  ---
+  duration_ms: 0.0748
+  type: 'test'
+  ...
+# Subtest: refund(2)
+ok 203 - refund(2)
+  ---
+  duration_ms: 0.0478
+  type: 'test'
+  ...
+# Subtest: refund(3)
+ok 204 - refund(3)
+  ---
+  duration_ms: 0.0467
+  type: 'test'
+  ...
+# Subtest: refund(4)
+ok 205 - refund(4)
+  ---
+  duration_ms: 0.0529
+  type: 'test'
+  ...
+# Subtest: refund(5)
+ok 206 - refund(5)
+  ---
+  duration_ms: 0.0419
+  type: 'test'
+  ...
+# Subtest: refund(6)
+ok 207 - refund(6)
+  ---
+  duration_ms: 0.0492
+  type: 'test'
+  ...
+# Subtest: refund(7)
+ok 208 - refund(7)
+  ---
+  duration_ms: 0.038
+  type: 'test'
+  ...
+# Subtest: refund(8)
+ok 209 - refund(8)
+  ---
+  duration_ms: 0.0481
+  type: 'test'
+  ...
+# Subtest: refund(9)
+ok 210 - refund(9)
+  ---
+  duration_ms: 0.0885
+  type: 'test'
+  ...
+# Subtest: refund(10)
+ok 211 - refund(10)
+  ---
+  duration_ms: 0.0515
+  type: 'test'
+  ...
+# Subtest: refund(11)
+ok 212 - refund(11)
+  ---
+  duration_ms: 0.0435
+  type: 'test'
+  ...
+# Subtest: refund(12)
+ok 213 - refund(12)
+  ---
+  duration_ms: 0.0471
+  type: 'test'
+  ...
+# Subtest: refund(13)
+ok 214 - refund(13)
+  ---
+  duration_ms: 0.0357
+  type: 'test'
+  ...
+# Subtest: refund(14)
+ok 215 - refund(14)
+  ---
+  duration_ms: 0.0533
+  type: 'test'
+  ...
+# Subtest: refund(15)
+ok 216 - refund(15)
+  ---
+  duration_ms: 0.672
+  type: 'test'
+  ...
+# Subtest: refund(16)
+ok 217 - refund(16)
+  ---
+  duration_ms: 0.0355
+  type: 'test'
+  ...
+# Subtest: refund(17)
+ok 218 - refund(17)
+  ---
+  duration_ms: 0.069
+  type: 'test'
+  ...
+# Subtest: refund(18)
+ok 219 - refund(18)
+  ---
+  duration_ms: 0.0462
+  type: 'test'
+  ...
+# Subtest: refund(19)
+ok 220 - refund(19)
+  ---
+  duration_ms: 0.0414
+  type: 'test'
+  ...
+# Subtest: refund(20)
+ok 221 - refund(20)
+  ---
+  duration_ms: 0.0446
+  type: 'test'
+  ...
+# Subtest: refund(21)
+ok 222 - refund(21)
+  ---
+  duration_ms: 0.0282
+  type: 'test'
+  ...
+# Subtest: refund(22)
+ok 223 - refund(22)
+  ---
+  duration_ms: 0.081
+  type: 'test'
+  ...
+# Subtest: refund(23)
+ok 224 - refund(23)
+  ---
+  duration_ms: 0.0312
+  type: 'test'
+  ...
+# Subtest: refund(24)
+ok 225 - refund(24)
+  ---
+  duration_ms: 0.0206
+  type: 'test'
+  ...
+# Subtest: shipping(0)
+ok 226 - shipping(0)
+  ---
+  duration_ms: 0.6084
+  type: 'test'
+  ...
+# Subtest: shipping(1)
+ok 227 - shipping(1)
+  ---
+  duration_ms: 0.442
+  type: 'test'
+  ...
+# Subtest: shipping(2)
+ok 228 - shipping(2)
+  ---
+  duration_ms: 0.0571
+  type: 'test'
+  ...
+# Subtest: shipping(3)
+ok 229 - shipping(3)
+  ---
+  duration_ms: 0.0442
+  type: 'test'
+  ...
+# Subtest: shipping(4)
+ok 230 - shipping(4)
+  ---
+  duration_ms: 0.0554
+  type: 'test'
+  ...
+# Subtest: shipping(5)
+ok 231 - shipping(5)
+  ---
+  duration_ms: 0.0514
+  type: 'test'
+  ...
+# Subtest: shipping(6)
+ok 232 - shipping(6)
+  ---
+  duration_ms: 0.0444
+  type: 'test'
+  ...
+# Subtest: shipping(7)
+ok 233 - shipping(7)
+  ---
+  duration_ms: 0.0438
+  type: 'test'
+  ...
+# Subtest: shipping(8)
+ok 234 - shipping(8)
+  ---
+  duration_ms: 0.053
+  type: 'test'
+  ...
+# Subtest: shipping(9)
+ok 235 - shipping(9)
+  ---
+  duration_ms: 0.1183
+  type: 'test'
+  ...
+# Subtest: shipping(10)
+ok 236 - shipping(10)
+  ---
+  duration_ms: 0.1437
+  type: 'test'
+  ...
+# Subtest: shipping(11)
+ok 237 - shipping(11)
+  ---
+  duration_ms: 0.058
+  type: 'test'
+  ...
+# Subtest: shipping(12)
+ok 238 - shipping(12)
+  ---
+  duration_ms: 0.0559
+  type: 'test'
+  ...
+# Subtest: shipping(13)
+ok 239 - shipping(13)
+  ---
+  duration_ms: 0.0482
+  type: 'test'
+  ...
+# Subtest: shipping(14)
+ok 240 - shipping(14)
+  ---
+  duration_ms: 0.0507
+  type: 'test'
+  ...
+# Subtest: shipping(15)
+ok 241 - shipping(15)
+  ---
+  duration_ms: 0.0222
+  type: 'test'
+  ...
+# Subtest: shipping(16)
+ok 242 - shipping(16)
+  ---
+  duration_ms: 0.5298
+  type: 'test'
+  ...
+# Subtest: shipping(17)
+ok 243 - shipping(17)
+  ---
+  duration_ms: 0.0585
+  type: 'test'
+  ...
+# Subtest: shipping(18)
+ok 244 - shipping(18)
+  ---
+  duration_ms: 0.0279
+  type: 'test'
+  ...
+# Subtest: shipping(19)
+ok 245 - shipping(19)
+  ---
+  duration_ms: 0.0208
+  type: 'test'
+  ...
+# Subtest: shipping(20)
+ok 246 - shipping(20)
+  ---
+  duration_ms: 0.0192
+  type: 'test'
+  ...
+# Subtest: shipping(21)
+ok 247 - shipping(21)
+  ---
+  duration_ms: 0.0197
+  type: 'test'
+  ...
+# Subtest: shipping(22)
+ok 248 - shipping(22)
+  ---
+  duration_ms: 0.0263
+  type: 'test'
+  ...
+# Subtest: shipping(23)
+ok 249 - shipping(23)
+  ---
+  duration_ms: 0.0255
+  type: 'test'
+  ...
+# Subtest: shipping(24)
+ok 250 - shipping(24)
+  ---
+  duration_ms: 0.0181
+  type: 'test'
+  ...
+# Subtest: stock(0)
+ok 251 - stock(0)
+  ---
+  duration_ms: 0.5857
+  type: 'test'
+  ...
+# Subtest: stock(1)
+ok 252 - stock(1)
+  ---
+  duration_ms: 0.0787
+  type: 'test'
+  ...
+# Subtest: stock(2)
+ok 253 - stock(2)
+  ---
+  duration_ms: 0.0471
+  type: 'test'
+  ...
+# Subtest: stock(3)
+ok 254 - stock(3)
+  ---
+  duration_ms: 0.0422
+  type: 'test'
+  ...
+# Subtest: stock(4)
+ok 255 - stock(4)
+  ---
+  duration_ms: 0.058
+  type: 'test'
+  ...
+# Subtest: stock(5)
+ok 256 - stock(5)
+  ---
+  duration_ms: 0.0509
+  type: 'test'
+  ...
+# Subtest: stock(6)
+ok 257 - stock(6)
+  ---
+  duration_ms: 0.0568
+  type: 'test'
+  ...
+# Subtest: stock(7)
+ok 258 - stock(7)
+  ---
+  duration_ms: 0.0412
+  type: 'test'
+  ...
+# Subtest: stock(8)
+ok 259 - stock(8)
+  ---
+  duration_ms: 0.052
+  type: 'test'
+  ...
+# Subtest: stock(9)
+ok 260 - stock(9)
+  ---
+  duration_ms: 0.1361
+  type: 'test'
+  ...
+# Subtest: stock(10)
+ok 261 - stock(10)
+  ---
+  duration_ms: 0.0629
+  type: 'test'
+  ...
+# Subtest: stock(11)
+ok 262 - stock(11)
+  ---
+  duration_ms: 0.0392
+  type: 'test'
+  ...
+# Subtest: stock(12)
+ok 263 - stock(12)
+  ---
+  duration_ms: 0.063
+  type: 'test'
+  ...
+# Subtest: stock(13)
+ok 264 - stock(13)
+  ---
+  duration_ms: 0.0325
+  type: 'test'
+  ...
+# Subtest: stock(14)
+ok 265 - stock(14)
+  ---
+  duration_ms: 0.0433
+  type: 'test'
+  ...
+# Subtest: stock(15)
+ok 266 - stock(15)
+  ---
+  duration_ms: 0.0238
+  type: 'test'
+  ...
+# Subtest: stock(16)
+ok 267 - stock(16)
+  ---
+  duration_ms: 0.0446
+  type: 'test'
+  ...
+# Subtest: stock(17)
+ok 268 - stock(17)
+  ---
+  duration_ms: 0.0634
+  type: 'test'
+  ...
+# Subtest: stock(18)
+ok 269 - stock(18)
+  ---
+  duration_ms: 0.0261
+  type: 'test'
+  ...
+# Subtest: stock(19)
+ok 270 - stock(19)
+  ---
+  duration_ms: 0.0274
+  type: 'test'
+  ...
+# Subtest: stock(20)
+ok 271 - stock(20)
+  ---
+  duration_ms: 0.1311
+  type: 'test'
+  ...
+# Subtest: stock(21)
+ok 272 - stock(21)
+  ---
+  duration_ms: 0.0485
+  type: 'test'
+  ...
+# Subtest: stock(22)
+ok 273 - stock(22)
+  ---
+  duration_ms: 0.0261
+  type: 'test'
+  ...
+# Subtest: stock(23)
+ok 274 - stock(23)
+  ---
+  duration_ms: 0.0196
+  type: 'test'
+  ...
+# Subtest: stock(24)
+ok 275 - stock(24)
+  ---
+  duration_ms: 0.0311
+  type: 'test'
+  ...
+# Subtest: tax(0)
+ok 276 - tax(0)
+  ---
+  duration_ms: 0.6088
+  type: 'test'
+  ...
+# Subtest: tax(1)
+ok 277 - tax(1)
+  ---
+  duration_ms: 0.084
+  type: 'test'
+  ...
+# Subtest: tax(2)
+ok 278 - tax(2)
+  ---
+  duration_ms: 0.0499
+  type: 'test'
+  ...
+# Subtest: tax(3)
+ok 279 - tax(3)
+  ---
+  duration_ms: 0.0426
+  type: 'test'
+  ...
+# Subtest: tax(4)
+ok 280 - tax(4)
+  ---
+  duration_ms: 0.052
+  type: 'test'
+  ...
+# Subtest: tax(5)
+ok 281 - tax(5)
+  ---
+  duration_ms: 0.0428
+  type: 'test'
+  ...
+# Subtest: tax(6)
+ok 282 - tax(6)
+  ---
+  duration_ms: 0.0427
+  type: 'test'
+  ...
+# Subtest: tax(7)
+ok 283 - tax(7)
+  ---
+  duration_ms: 0.041
+  type: 'test'
+  ...
+# Subtest: tax(8)
+ok 284 - tax(8)
+  ---
+  duration_ms: 0.0703
+  type: 'test'
+  ...
+# Subtest: tax(9)
+ok 285 - tax(9)
+  ---
+  duration_ms: 0.081
+  type: 'test'
+  ...
+# Subtest: tax(10)
+ok 286 - tax(10)
+  ---
+  duration_ms: 0.0589
+  type: 'test'
+  ...
+# Subtest: tax(11)
+ok 287 - tax(11)
+  ---
+  duration_ms: 0.0372
+  type: 'test'
+  ...
+# Subtest: tax(12)
+ok 288 - tax(12)
+  ---
+  duration_ms: 0.0484
+  type: 'test'
+  ...
+# Subtest: tax(13)
+ok 289 - tax(13)
+  ---
+  duration_ms: 0.0335
+  type: 'test'
+  ...
+# Subtest: tax(14)
+ok 290 - tax(14)
+  ---
+  duration_ms: 0.0419
+  type: 'test'
+  ...
+# Subtest: tax(15)
+ok 291 - tax(15)
+  ---
+  duration_ms: 0.0272
+  type: 'test'
+  ...
+# Subtest: tax(16)
+ok 292 - tax(16)
+  ---
+  duration_ms: 0.6186
+  type: 'test'
+  ...
+# Subtest: tax(17)
+ok 293 - tax(17)
+  ---
+  duration_ms: 0.1226
+  type: 'test'
+  ...
+# Subtest: tax(18)
+ok 294 - tax(18)
+  ---
+  duration_ms: 0.1767
+  type: 'test'
+  ...
+# Subtest: tax(19)
+ok 295 - tax(19)
+  ---
+  duration_ms: 0.0449
+  type: 'test'
+  ...
+# Subtest: tax(20)
+ok 296 - tax(20)
+  ---
+  duration_ms: 0.0331
+  type: 'test'
+  ...
+# Subtest: tax(21)
+ok 297 - tax(21)
+  ---
+  duration_ms: 0.0291
+  type: 'test'
+  ...
+# Subtest: tax(22)
+ok 298 - tax(22)
+  ---
+  duration_ms: 0.0252
+  type: 'test'
+  ...
+# Subtest: tax(23)
+ok 299 - tax(23)
+  ---
+  duration_ms: 0.0261
+  type: 'test'
+  ...
+# Subtest: tax(24)
+ok 300 - tax(24)
+  ---
+  duration_ms: 0.1416
+  type: 'test'
+  ...
+1..300
+# tests 300
+# suites 0
+# pass 299
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 222.9608
