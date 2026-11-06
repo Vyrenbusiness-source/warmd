@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd split`: a goal may contain `|` (for example `|offset| <= 49`): the name is the first field, files the last, the done check the one before; the task file no longer breaks apart
+
 ## [0.4.25] - 2026-11-06
 
 ### Fixed
