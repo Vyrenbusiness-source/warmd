@@ -394,15 +394,25 @@ a_shot() { # needs graphics, so one start of its own
 }
 
 # Player build through your own method: package_method and package_args in warmd.conf. Needs graphics, so one start of its own.
+# package_dir=<folder> (relative to the project or absolute): the one place the player goes. The method gets it as
+# -warmdPackageDir <folder> and in WARMD_PACKAGE_DIR, builds into it and overwrites what is there; warmd never makes a second
+# folder. A player that runs from there is waited for (no slot held meanwhile). The world step (world_method) runs first.
 a_package() {
   [ -n "$CFG_package_method" ] || { echo "FAIL set package_method=Namespace.Class.Method in warmd.conf"; return 2; }
+  local out="" dir=()
+  if package_out; then out="$REPLY"; package_wait_free "$out" || return 1; dir=(-warmdPackageDir "$(native_path "$out")"); export WARMD_PACKAGE_DIR; WARMD_PACKAGE_DIR="$(native_path "$out")"; fi
+  unity_world || { echo "FAIL $(secs)s package: world step red, nothing built"; return 1; }
   slot_take; a_stop > /dev/null
   [ -z "$(foreign_unity)" ] || { echo "FAIL another Unity has this project open"; return 2; }
   local clean; clean="$(git -C "$PROJECT" status --porcelain -uno | grep -vE '\.sln[x]?$')"
-  timeout "${WARMD_BUILD_TIMEOUT:-2400}" $(tune_prefix) "$(unity_exe)" -batchmode -job-worker-count "$(tune_unity_workers)" -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_package_method" $CFG_package_args -quit -logFile "$(native_path "$RUN/package.log")"
+  [ -z "$out" ] || { mkdir -p "$out"; : > "$RUN/package.start"; }
+  timeout "${WARMD_BUILD_TIMEOUT:-2400}" $(tune_prefix) "$(unity_exe)" -batchmode -job-worker-count "$(tune_unity_workers)" -projectPath "$(native_path "$PROJECT")" -executeMethod "$CFG_package_method" "${dir[@]}" $CFG_package_args -quit -logFile "$(native_path "$RUN/package.log")"
   local rc=$?
   [ -z "$clean" ] && git -C "$PROJECT" checkout -q -- .
-  if [ $rc = 0 ]; then echo "OK $(secs)s package"; else echo "FAIL $(secs)s package"; grep -m6 -E 'error CS|rror:|Failed' "$RUN/package.log" | cut -c1-200; fi
+  if [ $rc = 0 ] && [ -n "$out" ] && ! package_has_player "$out"; then
+    echo "FAIL $(secs)s package: the method built nothing into $(native_path "$out"), it has to read -warmdPackageDir"; return 1
+  fi
+  if [ $rc = 0 ]; then echo "OK $(secs)s package${out:+ in $(native_path "$out")}"; else echo "FAIL $(secs)s package"; grep -m6 -E 'error CS|rror:|Failed' "$RUN/package.log" | cut -c1-200; fi
   return $rc
 }
 

@@ -297,6 +297,39 @@ check_line() { # rc
   echo "OK $(secs)s check: compiled, ${sum:-no tests affected}"
 }
 
+# ---- package_dir: one player folder per project, overwritten in place ----
+# REPLY = the absolute package_dir of warmd.conf (relative to the project), 1 when it is not set
+package_out() {
+  REPLY="${CFG_package_dir:-}"; [ -n "$REPLY" ] || return 1
+  case "$REPLY" in /*|[A-Za-z]:*) ;; *) REPLY="$PROJECT/$REPLY";; esac
+  REPLY="${REPLY%/}"; return 0
+}
+# package_busy <dir>: REPLY = the program in <dir> that runs right now. A running program cannot be opened for writing
+# (Windows: sharing violation, Linux: text file busy), so the check is one builtin open per file, no process list.
+package_busy() {
+  local f; REPLY=""
+  for f in "$1"/*.exe "$1"/*.x86_64 ${CFG_package_exe:+"$1/$CFG_package_exe"}; do
+    [ -f "$f" ] || continue
+    { : >> "$f"; } 2>/dev/null || { REPLY="${f##*/}"; return 0; }
+  done
+  return 1
+}
+# package_wait_free <dir>: while the player runs from <dir>, wait for it to close, said in one line, polled with nap.
+# Nothing is written elsewhere instead. WARMD_PACKAGE_WAIT seconds at most (default 43200), then FAIL.
+package_wait_free() {
+  package_busy "$1" || return 0
+  local n=0 max="${WARMD_PACKAGE_WAIT:-43200}" poll="${WARMD_PACKAGE_POLL:-10}"
+  echo "WAIT $REPLY runs from $(native_path "$1"), the package starts when it is closed"
+  queue_mark
+  while package_busy "$1"; do
+    nap "$poll"; n=$((n + poll))
+    [ $n -ge "$max" ] && { echo "FAIL $(secs)s package: $REPLY still runs after ${max}s, nothing built"; return 1; }
+  done
+  queue_done; return 0
+}
+# package_has_player <dir>: the method wrote into <dir> during this run (stamp package.start)
+package_has_player() { [ -n "$(find "$1" -maxdepth 2 -type f -newer "$RUN/package.start" -print -quit 2>/dev/null)" ]; }
+
 # Reproducible proof on your own project: cold, warm and cached, plus what an agent has to read.
 run_bench() {
   local self="$WARMD_HOME/bin/warmd" s cold warm cached raw out

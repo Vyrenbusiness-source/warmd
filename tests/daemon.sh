@@ -152,6 +152,28 @@ out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE
 expect "a ready editor still goes on" '^rc=0$' "$out"
 rm -f "$P/.warmd/run/alive.txt" "$P/.warmd/run/warmd-daemon.log"
 
+# ---- warmd package with package_dir: one fixed folder, the method gets it, a running player is waited for ----
+printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -warmdPackageDir ] && [ "${PKG_IGNORE:-0}" != 1 ] && echo player > "$2/start.exe"; shift; done\nexit 0\n' > "$TMP/UnityPkg"; chmod +x "$TMP/UnityPkg"
+pk() { ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && . "$HERE/lib/tune.sh" && detect_project >/dev/null 2>&1 && . "$HERE/lib/daemon.sh" && . "$HERE/adapters/unity.sh" \
+  && mkdir -p "$RUN" && export WARMD_UNITY="$TMP/UnityPkg" WARMD_NO_RAM_WAIT=1 && CFG_package_method=Game.Build.Player && CFG_package_dir=../Player \
+  && a_stop() { :; } && foreign_unity() { :; } && a_package ); echo "rc=$?"; }
+out="$(pk)"
+expect "the player goes into package_dir" '^OK [0-9]+s package in .*/Player$' "$out"
+expect "the method built there" '^player$' "$(tr -d '\r' < "$TMP/Player/start.exe" 2>/dev/null)"
+expect "no second folder" '^Player game$' "$(ls "$TMP" | grep -E '^(Player|game)' | paste -sd' ' -)"
+out="$(pk)"; expect "a second package overwrites the same folder" '^rc=0$' "$out"
+out="$(PKG_IGNORE=1 pk)"
+expect "a method that ignores the folder is red" '^FAIL [0-9]+s package: the method built nothing into .*/Player, it has to read -warmdPackageDir$' "$out"
+if [ "$OS" = win ]; then
+  cp /c/Windows/System32/PING.EXE "$TMP/Player/start.exe"; "$TMP/Player/start.exe" -n 5 127.0.0.1 >/dev/null 2>&1 & bg=$!
+  until tasklist //FI "IMAGENAME eq start.exe" //NH 2>/dev/null | grep -q start.exe; do nap 0.2; done
+  out="$( ( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && mkdir -p "$RUN" && WARMD_PACKAGE_POLL=1 package_wait_free "$TMP/Player" ); echo "rc=$?")"
+  wait $bg
+  expect "a running player is waited for, said in one line" '^WAIT start.exe runs from .*/Player, the package starts when it is closed$' "$out"
+  expect "and the package goes on when it is closed" '^rc=0$' "$out"
+  expect "nothing written meanwhile" '^0$' "$(ls "$TMP" | grep -c 'Player.')"
+fi
+
 if [ "$OS" = win ]; then
   # spawn hands back the system pid of the new process
   ( . "$HERE/lib/platform.sh"; SPAWN_PID="$TMP/sp.pid" spawn "$TMP/sp.log" "$(cygpath -u "$COMSPEC")" /c exit 0 )
