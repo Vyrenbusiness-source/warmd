@@ -11,7 +11,7 @@ Only the latest release gets fixes. Older tags stay available for pinning, but a
 
 ## Report a vulnerability
 
-Do not open a public issue. Report it privately through [GitHub security advisories](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/security/advisories/new).
+Do not open a public issue. Report it privately through [GitHub security advisories](https://github.com/Vyrenbusiness-source/warmd/security/advisories/new).
 
 Include the warmd version (the first line of `warmd status`), your Windows version, and the steps that show the problem. You get a first answer within 7 days. A confirmed problem is fixed in a new release and credited to you unless you ask not to be named.
 

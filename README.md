@@ -19,7 +19,7 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 </table>
 
 ```text
-/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents
+/plugin marketplace add Vyrenbusiness-source/warmd
 /plugin install warmd@warmd
 ```
 
@@ -27,10 +27,10 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 
 [Install](#install) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
-[![CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?color=d4442a)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/releases/latest)
+[![CI](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Vyrenbusiness-source/warmd?color=d4442a)](https://github.com/Vyrenbusiness-source/warmd/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1d1915)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents?style=social)](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents)
+[![Stars](https://img.shields.io/github/stars/Vyrenbusiness-source/warmd?style=social)](https://github.com/Vyrenbusiness-source/warmd)
 
 </div>
 
@@ -67,7 +67,7 @@ Also: time lapse for Unity tests (`--speed N`), screenshots and layout problems 
 
 ## Proof
 
-Real runs on Windows 10, nothing estimated. The [public CI](https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/actions/workflows/ci.yml) measures a fresh project on every push.
+Real runs on Windows 10, nothing estimated. The [public CI](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml) measures a fresh project on every push.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/speed-dark.png">
@@ -91,20 +91,20 @@ Task time is equal within the spread in both areas: the gain on small projects i
 Claude Code, as a plugin. It brings the hooks, the agent definitions and the `warmd` command for the agent, nothing to run in your project:
 
 ```text
-/plugin marketplace add Vyrenbusiness-source/warmd-fewer-tokens-faster-agents
+/plugin marketplace add Vyrenbusiness-source/warmd
 /plugin install warmd@warmd
 ```
 
 For Codex, Cursor or your own terminal, install the command. Git Bash:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Vyrenbusiness-source/warmd/main/install.sh | bash
 ```
 
 PowerShell, which also installs Git for Windows if it is missing:
 
 ```powershell
-irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd/main/install.ps1 | iex
 ```
 
 Then run `warmd init` once in your project. warmd detects the stack from its files, there is nothing to configure.

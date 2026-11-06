@@ -7,8 +7,8 @@
     "name": "Vyrenbusiness-source",
     "url": "https://github.com/Vyrenbusiness-source"
   },
-  "homepage": "https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents",
-  "repository": "https://github.com/Vyrenbusiness-source/warmd-fewer-tokens-faster-agents",
+  "homepage": "https://github.com/Vyrenbusiness-source/warmd",
+  "repository": "https://github.com/Vyrenbusiness-source/warmd",
   "license": "MIT",
   "keywords": ["unity", "godot", "tests", "tokens", "agents", "windows"],
   "agents": ["./agents/warmd-worker.md", "./agents/warmd-scout.md", "./agents/warmd-merge.md"]

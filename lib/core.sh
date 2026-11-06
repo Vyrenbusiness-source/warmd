@@ -367,7 +367,7 @@ run_bench() {
 
 # Nothing is ever sent by warmd. This prints a prefilled issue link, the user reads it and decides.
 common_feedback() {
-  local repo=Vyrenbusiness-source/warmd-fewer-tokens-faster-agents body
+  local repo=Vyrenbusiness-source/warmd body
   body="warmd $WARMD_VERSION, $OS, $KIND project
 
 What got faster or better, or what broke:
