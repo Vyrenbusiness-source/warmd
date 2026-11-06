@@ -167,7 +167,7 @@ auto_allowed() { # hook JSON
 auto_allowed_part() { # one command of a chain
   local s="$1" w='[^[:space:]]+'
   while [[ $s == [[:space:]]* ]]; do s="${s#?}"; done
-  while [[ $s =~ ^[A-Za-z_][A-Za-z0-9_]*=$w[[:space:]]+(.*)$ ]]; do s="${BASH_REMATCH[1]}"; done   # VAR=x before the command
+  while [[ $s =~ ^[A-Za-z_][A-Za-z0-9_]*=${w}[[:space:]]+(.*)$ ]]; do s="${BASH_REMATCH[1]}"; done   # VAR=x before the command
   [ -z "${s//[[:space:]]/}" ] && return 0   # the empty part between && or after the last ;
   [[ $s =~ ^([^[:space:]]*[/\\])?warmd(\.cmd)?[[:space:]]+(handoff|finish|note)([[:space:]]|$) ]] && return 0
   [[ $s =~ ^git([[:space:]]+-C[[:space:]]+$w)?[[:space:]]+(add|commit|push)([[:space:]]|$) ]] && return 0
