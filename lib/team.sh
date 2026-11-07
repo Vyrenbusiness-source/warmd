@@ -576,6 +576,10 @@ team_finish() {
   dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
+  # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
+  # so the next split frees its files once it is merged
+  local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\n' "$GIT_ROOT" ok >> "$common/warmd-batch-done"; fi
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
 }
 
