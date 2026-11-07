@@ -139,9 +139,16 @@ hook_index() { # common dir, shared checkout
   done
 }
 hook_task_of() { # absolute worktree -> REPLY = its task file
-  local i; REPLY=""
-  for i in "${!HOOK_TW[@]}"; do [ "${HOOK_TW[$i]}" = "$1" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }; done
-  return 1
+  # A reused worktree is named for its first task and keeps every old task file pointing at it: the branch names the task it holds now.
+  local i first="" g="" h=""
+  { IFS= read -r g < "$1/.git"; } 2>/dev/null; g="${g%$''}"; g="${g#gitdir: }"; [ -d "$1/.git" ] && g="$1/.git"
+  [ -n "$g" ] && { IFS= read -r h < "$g/HEAD"; } 2>/dev/null; h="${h%$''}"; h="${h#ref: refs/heads/warmd/}"
+  for i in "${!HOOK_TW[@]}"; do
+    [ "${HOOK_TW[$i]}" = "$1" ] || continue
+    REPLY="${HOOK_TF[$i]##*/}"; [ "${REPLY%.md}" = "$h" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }
+    [ -n "$first" ] || first="${HOOK_TF[$i]}"
+  done
+  REPLY="$first"; [ -n "$first" ]
 }
 hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGENT line to start or continue the task
   local tf="$2" st="${3:-}" name tier="" agent model note k v
