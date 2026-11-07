@@ -120,6 +120,13 @@ rm "$S"; "$WARMD" init --hooks >/dev/null; "$WARMD" init --no-hooks >/dev/null
 out="$(pre_json '"find / -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
 echo "$out" | grep -q '"permissionDecision":"deny"' && ok "find / is refused" || no "find / passed: $out"
 
+# a windowed Godot run without a time limit is refused, with timeout or --headless it passes
+out="$(pre './Godot_v4.7-stable_win64.exe --path . res://a.tscn --shot')"
+echo "$out" | grep -q '"permissionDecision":"deny"' && ok "windowed Godot run without a limit is refused" || no "windowed Godot run passed: $out"
+out="$(pre 'timeout 180 ./Godot_v4.7-stable_win64.exe --path . res://a.tscn --shot')"
+echo "$out" | grep -q '"permissionDecision":"deny"' && no "Godot run with timeout refused: $out" || ok "Godot run with timeout passes"
+out="$(pre './Godot_v4.7-stable_win64_console.exe --headless --path . --script res://t.gd')"
+echo "$out" | grep -q '"permissionDecision":"deny"' && no "headless Godot run refused: $out" || ok "headless Godot run passes"
 # the same heavy run on the same tree: three pass, the fourth is refused; a file change lets it run again
 RG="$TMP/rg"; mkdir -p "$RG" && git -C "$RG" init -q && echo a > "$RG/a" && git -C "$RG" add a && git -C "$RG" -c user.name=t -c user.email=t@t commit -qm i
 rgo=""; for i in 1 2 3 4; do rgo="$(pre_json "\"cd $RG && warmd check\"" | HOME="$TMP" XDG_CACHE_HOME="$TMP/c" "$WARMD" hook-pre)"; done
