@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd split` appending to a batch frees finished, merged tasks even when Godot left untracked `.uid`/`.import` files in their worktree; before, their files stayed owned and the new task failed with "already owned in this batch"
+
 ## [0.4.26] - 2026-11-06
 
 ### Fixed
@@ -26,7 +29,6 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ### Fixed
 - `warmd split`: only tasks still in the batch own files; a merged or pruned task no longer blocks a new task on the same files with "already owned in this batch"
 - `warmd split` no longer hands one worktree to two agents: a reused worktree forgets the "finished" mark of its previous task, so a later split in the same batch does not prune it as free
-- `warmd split` appending to a batch frees finished, merged tasks even when Godot left untracked `.uid`/`.import` files in their worktree; before, their files stayed owned and the new task failed with "already owned in this batch"
 
 ## [0.4.22] - 2026-11-06
 
