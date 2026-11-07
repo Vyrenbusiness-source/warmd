@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.32] - 2026-11-07
+
 ### Fixed
 - `warmd finish` marks its task finished in the batch, also when the coordinator stopped the agent and no stop hook ran; before, the merged task kept owning its files and the next split failed with "already owned in this batch"
 
@@ -295,7 +297,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.31...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.32...HEAD
+[0.4.32]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.31...v0.4.32
 [0.4.31]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.30...v0.4.31
 [0.4.30]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.29...v0.4.30
 [0.4.29]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.28...v0.4.29

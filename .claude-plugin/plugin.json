@@ -1,7 +1,7 @@
 {
   "name": "warmd",
   "displayName": "warmd",
-  "version": "0.4.31",
+  "version": "0.4.32",
   "description": "Your coding agent waits less and reads less: warm engine, only the tests your change reaches, only the error. Hooks, agent definitions and the warmd command.",
   "author": {
     "name": "Vyrenbusiness-source",
