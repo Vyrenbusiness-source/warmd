@@ -21,7 +21,7 @@ batch_resume() {
     case "$wn" in "$gn"/*) wt="$gp${wn#"$gn"}";; esac
     br="$(git -C "$wt" branch --show-current 2>/dev/null)"; [ -n "$br" ] && [ "$br" != "$base" ] || continue
     case "$out" in *"$wt"$'\n'*) continue;; esac
-    if [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then
+    if [ -z "$(wt_work "$wt")" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then
       ct="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; mt="$(date -r "$tf" +%s 2>/dev/null || echo 0)"
       [ "$mt" -gt "$ct" ] || continue   # merged or never started long ago: not open
     fi
