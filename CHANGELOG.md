@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- Godot: worktrees share the import cache. Before an `--import` (by an agent or by warmd) every import another checkout already made with the same `.import` settings and the same source md5 is copied instead of compressed again; 8192x4096 BPTC textures took minutes per worktree after every merge
+
 ## [0.4.30] - 2026-11-07
 
 ### Added

@@ -52,6 +52,7 @@ a_start_daemon() {
   rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/spawn.pid"
   export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
   # First start on a fresh checkout has to build the import cache
+  . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
   [ -d "$PROJECT/.godot" ] || "$exe" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
   SPAWN_PID="$RUN/spawn.pid" spawn "$RUN/warmd-daemon.log" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")"
   wait_ready 120
@@ -69,6 +70,7 @@ class_cache_fresh() {
 refresh_classes() {
   class_cache_fresh && return 0
   daemon_alive && a_kill_daemon
+  . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
   "$(godot_exe)" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
   return 0
 }
