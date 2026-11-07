@@ -460,7 +460,7 @@ hook_job() {
   fi
   bash "$WARMD_HOME/bin/warmd" finish --tokens "$tokens" --calls "$calls" --outcome "$outcome"
   hook_cool
-  printf '%s\t%s\n' "$here" "$outcome" >> "$common/warmd-batch-done"
+  printf '%s\t%s\t%s\n' "$here" "$outcome" "$(git -C "$here" branch --show-current 2>/dev/null)" >> "$common/warmd-batch-done"
   hook_merge "$common"
 }
 
