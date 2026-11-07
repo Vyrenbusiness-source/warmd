@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.31] - 2026-11-07
+
 ### Added
 - Godot: worktrees share the import cache. Before an `--import` (by an agent or by warmd) every import another checkout already made with the same `.import` settings and the same source md5 is copied instead of compressed again; 8192x4096 BPTC textures took minutes per worktree after every merge
 
@@ -290,7 +292,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.30...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.31...HEAD
+[0.4.31]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.30...v0.4.31
 [0.4.30]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.29...v0.4.30
 [0.4.29]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.28...v0.4.29
 [0.4.28]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.27...v0.4.28
