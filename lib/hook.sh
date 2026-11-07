@@ -65,6 +65,7 @@ hook_pre() {
   fi
   hook_engine_timeout "$cmd" && return 0
   hook_repeat_guard "$in" "$cmd" && return 0
+  hook_import_seed "$cmd"
   hook_wrappable "$cmd" || return 0
   hook_self_r
   # no permissionDecision on purpose: the user's own permission rules stay in charge of the rewritten command
@@ -106,6 +107,19 @@ hook_repeat_guard() { # hook json, command -> 0 when denied (decision printed)
   fi
   printf '%s %s %s\n' "$fp" "$n" "$now" > "$f"
   return 1
+}
+
+# Before a Godot import: copy imports another checkout already made (lib/godot_seed.sh), so a worktree does not
+# compress the same big textures again after a merge. Silent, never blocks the command.
+hook_import_seed() { # command
+  local c="$1" dir="" re_cd='^cd +"?([^"&]+)"? *&&' re_path='--path +"?([^" ]+)"?'
+  case "$c" in *[Gg]odot*--import*|*--import*[Gg]odot*) ;; *) return 0;; esac
+  if [[ $c =~ $re_cd ]]; then dir="${BASH_REMATCH[1]}"; dir="${dir%"${dir##*[! ]}"}"; else dir="$PWD"; fi
+  if [[ $c =~ $re_path ]] && [ "${BASH_REMATCH[1]}" != . ]; then dir="${BASH_REMATCH[1]}"; fi
+  [ -f "$dir/project.godot" ] || return 0
+  . "$WARMD_HOME/lib/godot_seed.sh" 2>/dev/null || return 0
+  godot_seed_imports "$dir" >/dev/null 2>&1 || true
+  return 0
 }
 
 hook_self() { hook_self_r; echo "$REPLY"; }

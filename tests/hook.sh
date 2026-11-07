@@ -364,5 +364,14 @@ xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"; XB="$X/.warmd-worktrees/r/b
 [ -f "$XB/t2.txt" ] && [ "$(git -C "$XB" branch --show-current)" = dev ] && echo "$xlog" | grep -q '^.* made .*base-dev for dev' && [ ! -f "$XC/warmd-batch" ] && ok "no worktree has the base: a clean one is made and merged into" || no "made base worktree: $xlog"
 [ "$(git -C "$X/r" branch --show-current)" = side ] && [ ! -f "$X/r/t2.txt" ] && ok "shared checkout still untouched" || no "shared checkout touched"
 
+# import cache seeding: a finished import of the same source and settings is copied, a changed source is not
+SA="$TMP/seed/a"; SB="$TMP/seed/b"; mkdir -p "$SA/.godot/imported" "$SA/t" "$SB/t"
+for x in "$SA" "$SB"; do echo '[gd_project]' > "$x/project.godot"; echo pix > "$x/t/s.webp"; printf '[deps]\nsource_file="res://t/s.webp"\ndest_files=["res://.godot/imported/s.webp-abc123.bptc.ctex"]\n' > "$x/t/s.webp.import"; done
+echo DATA > "$SA/.godot/imported/s.webp-abc123.bptc.ctex"; sm="$(md5sum "$SA/t/s.webp")"; printf 'source_md5="%s"\n' "${sm%% *}" > "$SA/.godot/imported/s.webp-abc123.md5"
+. "$HERE/lib/godot_seed.sh"; godot_seed_imports "$SB" "$SA"
+[ "$REPLY" = 1 ] && [ -f "$SB/.godot/imported/s.webp-abc123.bptc.ctex" ] && [ -f "$SB/.godot/imported/s.webp-abc123.md5" ] && ok "import seeding copies a matching import" || no "import seeding copied $REPLY"
+rm -rf "$SB/.godot"; echo other > "$SB/t/s.webp"; godot_seed_imports "$SB" "$SA"
+[ "$REPLY" = 0 ] && ok "import seeding skips a changed source" || no "changed source was seeded"
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "ALL OK" || { echo "$fails FAILED"; exit 1; }
