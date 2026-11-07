@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.30] - 2026-11-07
+
 ### Added
 - A Godot run with a window and no time limit (`timeout N`, `--quit-after`, `--quit`) is denied with the fix in the reason: agents left test windows open when a scene never quit
 
@@ -285,7 +287,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.29...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.30...HEAD
+[0.4.30]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.29...v0.4.30
 [0.4.29]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.28...v0.4.29
 [0.4.28]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.27...v0.4.28
 [0.4.27]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.26...v0.4.27
