@@ -293,7 +293,7 @@ hook_session() {
   fi
   batch="$common/warmd-batch"; donef="$common/warmd-batch-done"; log="$common/warmd-automerge.log"
   if [ -s "$batch" ]; then
-    [ -f "$donef" ] && while IFS='	' read -r wt l; do [ -n "$wt" ] && state[$wt]="$l"; done < "$donef"
+    [ -f "$donef" ] && while IFS='	' read -r wt l _; do [ -n "$wt" ] && state[$wt]="$l"; done < "$donef"
     base="$(hook_base "$main")"; base="${base%%|*}"; [ -n "$base" ] || base="$(git -C "$main" branch --show-current)"
     HOOK_PROJ="${HOOK_TF[0]%/.warmd/tasks/*}"
     if [ "$src" = compact ]; then echo "warmd: a batch runs (context compacted, agents may still run, start only the ones you do not see)."
