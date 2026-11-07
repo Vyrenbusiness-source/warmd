@@ -44,6 +44,8 @@ need_git() { [ -n "$GIT_ROOT" ] || { echo "FAIL needs a git repo"; exit 2; }; }
 worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_ROOT")"; }
 rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo "${r%/}"; }   # from git: string math breaks on Windows short paths
 
+# Work left in a worktree: tracked changes and new files, but not files the engine writes on its own (Godot .uid/.import next to every asset).
+wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^\?\? .*\.(uid|import)$'; }
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
@@ -451,7 +453,7 @@ batch_prune() { # common
   local wt keep="" base batch="$1/warmd-batch"; base="$(base_branch)"
   while IFS= read -r wt; do
     [ -d "$wt" ] || continue
-    if wt_finished "$1" "$wt" && [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then continue; fi
+    if wt_finished "$1" "$wt" && [ -z "$(wt_work "$wt")" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then continue; fi
     keep="$keep$wt"$'\n'
   done < "$batch"
   printf '%s' "$keep" > "$batch"
