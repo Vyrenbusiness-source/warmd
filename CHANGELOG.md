@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- A Godot run with a window needs `--audio-driver` (`Dummy` for tests), or it is denied with the fix: test windows played the game's sound on the user's speakers
+
 ## [0.4.32] - 2026-11-07
 
 ### Fixed

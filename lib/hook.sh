@@ -81,6 +81,11 @@ hook_engine_timeout() { # command -> 0 when denied (decision printed)
   local c=" $1 " godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /]godot[0-9.]* '
   [[ $c =~ $godot ]] || return 1
   case "$c" in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) return 1;; esac
+  # a test window plays the game's sound through the user's speakers: a windowed run states its audio driver
+  case "$c" in *"--audio-driver"*) ;; *)
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: a Godot run with a window plays sound on the speakers of the user. Add --audio-driver Dummy (a run that must be heard names its driver)."}}
+'
+    return 0;; esac
   case "$c" in *"timeout "*|*"--quit-after"*|*" --quit "*) return 1;; esac
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: a Godot run with a window needs an end, or the window stays open when the scene does not quit. Put timeout 180 in front of it (or add --quit-after <frames>)."}}\n'
   return 0
