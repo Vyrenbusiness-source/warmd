@@ -579,8 +579,7 @@ team_finish() {
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
   # so the next split frees its files once it is merged
   local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-  if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s	%s
-' "$GIT_ROOT" ok >> "$common/warmd-batch-done"; fi
+  if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\n' "$GIT_ROOT" ok >> "$common/warmd-batch-done"; fi
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
 }
 
