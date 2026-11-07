@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.27] - 2026-11-07
+
 ### Fixed
 - `warmd split` appending to a batch frees finished, merged tasks even when Godot left untracked `.uid`/`.import` files in their worktree; before, their files stayed owned and the new task failed with "already owned in this batch"
 
@@ -270,7 +272,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.26...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.27...HEAD
+[0.4.27]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.26...v0.4.27
 [0.4.26]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.25...v0.4.26
 [0.4.25]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.24...v0.4.25
 [0.4.24]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.23...v0.4.24
