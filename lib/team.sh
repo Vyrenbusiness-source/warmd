@@ -429,10 +429,16 @@ files_norm() { printf '%s' "$1" | tr '[:blank:]' ',' | tr -s ',' | sed 's/^,//; 
 # (an Agent call on the task removes that line again). warmd watch never wakes such a worktree.
 wt_finished() { # common worktree
   [ -f "$1/warmd-batch-done" ] || return 1
-  local w d; wt_norm_r "$2"; w="$REPLY"
+  # A line may name the branch its task held (third field): a worktree that holds another task's branch now is not
+  # finished, or a split prunes it as free while the new agent works there and hands it to a second agent.
+  local w d p b cur=""; wt_norm_r "$2"; w="$REPLY"
   while IFS= read -r d || [ -n "$d" ]; do
-    d="${d%%$'\t'*}"; [ -n "$d" ] || continue
-    wt_norm_r "$d"; [ "$REPLY" = "$w" ] && return 0
+    p="${d%%$'\t'*}"; [ -n "$p" ] || continue
+    wt_norm_r "$p"; [ "$REPLY" = "$w" ] || continue
+    b=""; case "$d" in *$'\t'*$'\t'*) b="${d##*$'\t'}";; esac
+    [ -n "$b" ] || return 0
+    [ -n "$cur" ] || cur="$(git -C "$2" branch --show-current 2>/dev/null)"
+    [ "$b" = "$cur" ] && return 0
   done < "$1/warmd-batch-done"
   return 1
 }
@@ -579,7 +585,7 @@ team_finish() {
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
   # so the next split frees its files once it is merged
   local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-  if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\n' "$GIT_ROOT" ok >> "$common/warmd-batch-done"; fi
+  if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\t%s\n' "$GIT_ROOT" ok "$br" >> "$common/warmd-batch-done"; fi
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
 }
 
