@@ -7,6 +7,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [0.4.29] - 2026-11-07
 
 ### Added
+- A Godot run with a window and no time limit (`timeout N`, `--quit-after`, `--quit`) is denied with the fix in the reason: agents left test windows open when a scene never quit
 - Repeat guard: a heavy run (engine, `warmd test/check/build/shot`, generators, `--bench`/`--shot`) with the same command on the same tree state runs at most 3 times (`WARMD_REPEAT_MAX`); the next one is denied with the reason. Agents ran the same check up to ten times without changing a file
 
 ## [0.4.28] - 2026-11-07
