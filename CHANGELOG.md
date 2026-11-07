@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd finish` marks its task finished in the batch, also when the coordinator stopped the agent and no stop hook ran; before, the merged task kept owning its files and the next split failed with "already owned in this batch"
+
 ## [0.4.31] - 2026-11-07
 
 ### Added
