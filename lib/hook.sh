@@ -63,10 +63,37 @@ hook_pre() {
       return 0
     fi
   fi
+  hook_repeat_guard "$in" "$cmd" && return 0
   hook_wrappable "$cmd" || return 0
   hook_self_r
   # no permissionDecision on purpose: the user's own permission rules stay in charge of the rewritten command
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"%s run -- %s"}}}\n' "$REPLY" "$cmd"
+}
+
+# Agents ran the same slow check ten times in a row without touching a file. A heavy run (engine, test, generator)
+# with the same command on the same tree state runs at most HOOK_REPEAT_MAX times, the next one is denied with the reason.
+# Tree state = HEAD + tracked/new files, without the .uid/.import an engine writes on its own. Entries expire after 2 hours.
+HOOK_REPEAT_MAX="${WARMD_REPEAT_MAX:-3}"
+hook_repeat_guard() { # hook json, command -> 0 when denied (decision printed)
+  local cmd="$2" dir="" re_cd='^cd +"?([^"&]+)"? *&&' heavy key fp f now n=0 t=0 old=""
+  heavy='([Gg]odot[^ ]*|warmd +(test|check|build|shot|bench)|gen_theme|beat_sync_check|--bench|--shot|--script +res://tests)'
+  [[ $cmd =~ $heavy ]] || return 1
+  if [[ $cmd =~ $re_cd ]]; then dir="${BASH_REMATCH[1]}"; dir="${dir%"${dir##*[! ]}"}"
+  else dir="$PWD"; fi
+  [ -n "$dir" ] && [ -d "$dir" ] || return 1
+  fp="$( { git -C "$dir" rev-parse HEAD 2>/dev/null; git -C "$dir" status --porcelain 2>/dev/null | grep -vE '\.(uid|import)$'; git -C "$dir" diff 2>/dev/null; } | cksum)"
+  fp="${fp%% *}"
+  key="$(printf '%s|%s' "$dir" "$cmd" | cksum)"; key="${key%% *}"
+  f="$CACHE_ROOT/repeat/$key"; now="$(date +%s)"
+  mkdir -p "$CACHE_ROOT/repeat" 2>/dev/null || return 1
+  [ -f "$f" ] && read -r old n t < "$f"
+  if [ "$old" = "$fp" ] && [ $((now - ${t:-0})) -lt 7200 ]; then n=$((n + 1)); else n=1; fi
+  if [ "$n" -gt "$HOOK_REPEAT_MAX" ]; then
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: this exact run already ran %s times and nothing changed since (same commit, no file edit). Its result will not differ: read the last output, change the code, or run something else."}}\n' "$HOOK_REPEAT_MAX"
+    return 0
+  fi
+  printf '%s %s %s\n' "$fp" "$n" "$now" > "$f"
+  return 1
 }
 
 hook_self() { hook_self_r; echo "$REPLY"; }
@@ -141,8 +168,10 @@ hook_index() { # common dir, shared checkout
 hook_task_of() { # absolute worktree -> REPLY = its task file
   # A reused worktree is named for its first task and keeps every old task file pointing at it: the branch names the task it holds now.
   local i first="" g="" h=""
-  { IFS= read -r g < "$1/.git"; } 2>/dev/null; g="${g%$''}"; g="${g#gitdir: }"; [ -d "$1/.git" ] && g="$1/.git"
-  [ -n "$g" ] && { IFS= read -r h < "$g/HEAD"; } 2>/dev/null; h="${h%$''}"; h="${h#ref: refs/heads/warmd/}"
+  { IFS= read -r g < "$1/.git"; } 2>/dev/null; g="${g%$'
+'}"; g="${g#gitdir: }"; [ -d "$1/.git" ] && g="$1/.git"
+  [ -n "$g" ] && { IFS= read -r h < "$g/HEAD"; } 2>/dev/null; h="${h%$'
+'}"; h="${h#ref: refs/heads/warmd/}"
   for i in "${!HOOK_TW[@]}"; do
     [ "${HOOK_TW[$i]}" = "$1" ] || continue
     REPLY="${HOOK_TF[$i]##*/}"; [ "${REPLY%.md}" = "$h" ] && { REPLY="${HOOK_TF[$i]}"; return 0; }

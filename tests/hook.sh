@@ -119,6 +119,13 @@ rm "$S"; "$WARMD" init --hooks >/dev/null; "$WARMD" init --no-hooks >/dev/null
 # find / walks /proc under Git Bash and leaks process handles: refused, a project find passes
 out="$(pre_json '"find / -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
 echo "$out" | grep -q '"permissionDecision":"deny"' && ok "find / is refused" || no "find / passed: $out"
+
+# the same heavy run on the same tree: three pass, the fourth is refused; a file change lets it run again
+RG="$TMP/rg"; mkdir -p "$RG" && git -C "$RG" init -q && echo a > "$RG/a" && git -C "$RG" add a && git -C "$RG" -c user.name=t -c user.email=t@t commit -qm i
+rgo=""; for i in 1 2 3 4; do rgo="$(pre_json "\"cd $RG && warmd check\"" | HOME="$TMP" XDG_CACHE_HOME="$TMP/c" "$WARMD" hook-pre)"; done
+echo "$rgo" | grep -q '"permissionDecision":"deny"' && ok "fourth identical heavy run is refused" || no "fourth identical run passed: $rgo"
+echo b > "$RG/a"; rgo="$(pre_json "\"cd $RG && warmd check\"" | HOME="$TMP" XDG_CACHE_HOME="$TMP/c" "$WARMD" hook-pre)"
+echo "$rgo" | grep -q '"permissionDecision":"deny"' && no "run after a file change was refused" || ok "a file change lets the run go again"
 out="$(pre_json '"find . -name x.png"' | WARMD_TEST_WIN=1 "$WARMD" hook-pre)"
 echo "$out" | grep -q 'deny' && no "project find refused: $out" || ok "find . passes"
 
