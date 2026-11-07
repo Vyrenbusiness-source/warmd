@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- A finished mark names the branch its task held: a worktree that a later split gave a new task no longer counts as finished from its old task's mark, so a split cannot prune it and hand it to a second agent while the first one works there
+
 ## [0.4.33] - 2026-11-07
 
 ### Added
