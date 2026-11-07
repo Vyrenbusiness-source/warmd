@@ -63,6 +63,7 @@ hook_pre() {
       return 0
     fi
   fi
+  hook_engine_timeout "$cmd" && return 0
   hook_repeat_guard "$in" "$cmd" && return 0
   hook_wrappable "$cmd" || return 0
   hook_self_r
@@ -73,6 +74,17 @@ hook_pre() {
 # Agents ran the same slow check ten times in a row without touching a file. A heavy run (engine, test, generator)
 # with the same command on the same tree state runs at most HOOK_REPEAT_MAX times, the next one is denied with the reason.
 # Tree state = HEAD + tracked/new files, without the .uid/.import an engine writes on its own. Entries expire after 2 hours.
+# A Godot run with a window and no end stays open when its scene never quits: agents left test windows behind.
+# A windowed run needs a time limit (timeout N, --quit-after N, or a --shot/--bench that quits on its own is not trusted).
+hook_engine_timeout() { # command -> 0 when denied (decision printed)
+  local c=" $1 " godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /]godot[0-9.]* '
+  [[ $c =~ $godot ]] || return 1
+  case "$c" in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) return 1;; esac
+  case "$c" in *"timeout "*|*"--quit-after"*|*" --quit "*) return 1;; esac
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: a Godot run with a window needs an end, or the window stays open when the scene does not quit. Put timeout 180 in front of it (or add --quit-after <frames>)."}}\n'
+  return 0
+}
+
 HOOK_REPEAT_MAX="${WARMD_REPEAT_MAX:-3}"
 hook_repeat_guard() { # hook json, command -> 0 when denied (decision printed)
   local cmd="$2" dir="" re_cd='^cd +"?([^"&]+)"? *&&' heavy key fp f now n=0 t=0 old=""

@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- A Godot run with a window and no time limit (`timeout N`, `--quit-after`, `--quit`) is denied with the fix in the reason: agents left test windows open when a scene never quit
+
 ## [0.4.29] - 2026-11-07
 
 ### Added
