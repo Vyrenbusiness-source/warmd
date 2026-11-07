@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- Session start in a batch names the task a reused worktree holds now (its `warmd/<task>` branch), not an older task that once ran there; after a restart the AGENT lines read the wrong task files
+
 ## [0.4.27] - 2026-11-07
 
 ### Fixed
