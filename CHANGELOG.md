@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd split`: a finished task (its agent stopped) no longer owns its files; a paused task blocked every new task on the same files with "already owned in this batch"
+
 ## [0.4.35] - 2026-11-08
 
 ### Fixed
