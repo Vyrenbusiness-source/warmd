@@ -12,7 +12,7 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.35
+WARMD_VERSION=0.4.36
 # Hooks of the Claude Code plugin pass --plugin. A project whose settings already hold warmd init hooks runs those, the
 # plugin's copy steps aside so no hook runs twice. Builtins only, this runs for every tool call.
 case "${1:-} ${2:-}" in
