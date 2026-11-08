@@ -131,7 +131,8 @@ shared_owned() { # file@owner words
   # Only tasks still in the batch own files: a task that left it (merged, pruned) frees its files for the next split.
   local batch live=" " wt
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-batch"
-  if [ -f "$batch" ]; then while IFS= read -r wt; do [ -d "$wt" ] && live="$live$(wt_task "$wt") "; done < "$batch"; fi
+  # A finished task (its agent stopped, warmd-batch-done) frees its files too: a paused task blocked the next split.
+  if [ -f "$batch" ]; then while IFS= read -r wt; do [ -d "$wt" ] && ! wt_finished "${batch%/warmd-batch}" "$wt" && live="$live$(wt_task "$wt") "; done < "$batch"; fi
   sed -n '/^## Who owns what/,/^## Findings/s/^- \([^:]*\): \(.*\)$/\1 \2/p' "$(shared_file)" 2>/dev/null | while read -r o fs; do
     [ "$fs" = none ] && continue
     if [ -f "$batch" ]; then case "$live" in *" $o "*) ;; *) continue;; esac; fi
