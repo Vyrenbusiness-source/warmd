@@ -144,7 +144,7 @@ batch_has() { # batchfile name
   local wt; [ -f "$1" ] || return 1
   while IFS= read -r wt; do
     [ -d "$wt" ] && [ "$(wt_task "$wt")" = "$2" ] || continue
-    [ -f "$1-done" ] && cut -f1 "$1-done" | grep -qxF "$wt" && return 1   # stopped: a new start takes a place
+    wt_finished "${1%/warmd-batch}" "$wt" && return 1   # stopped: a new start takes a place
     return 0
   done < "$1"
   return 1
@@ -175,12 +175,12 @@ wt_norm_r() { # path -> REPLY
 }
 
 team_running() { # batchfile
-  local wt n=0 done="$1-done" dl=""
+  local wt n=0
   [ -f "$1" ] || { echo 0; return; }
-  if [ -f "$done" ]; then dl="$(cut -f1 "$done" | while IFS= read -r wt; do [ -n "$wt" ] && wt_norm "$wt"; done)"; fi
+  # wt_finished, not the path alone: the finished line of the task a reused worktree held before does not count its new task out
   while IFS= read -r wt; do
     [ -n "$wt" ] || continue
-    [ -n "$dl" ] && printf '%s\n' "$dl" | grep -qxF "$(wt_norm "$wt")" && continue
+    wt_finished "${1%/warmd-batch}" "$wt" && continue
     n=$((n+1))
   done < "$1"
   echo "$n"
@@ -456,11 +456,17 @@ batch_done_forget() { # common worktree
 
 # When the next split appends to the batch, finished tasks whose work is merged (clean, nothing ahead of the base) leave it.
 # A finished task with unmerged work stays: the automatic merge after the last agent still needs it.
+# A worktree on another branch than its finished line names holds a new task: it stays and the stale line goes, or the
+# automatic merge counts the new task as done and ends the batch while its agent still works there.
 batch_prune() { # common
   local wt keep="" base batch="$1/warmd-batch"; base="$(base_branch)"
   while IFS= read -r wt; do
     [ -d "$wt" ] || continue
-    if wt_finished "$1" "$wt" && [ -z "$(wt_work "$wt")" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then continue; fi
+    if wt_finished "$1" "$wt"; then
+      [ -z "$(wt_work "$wt")" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ] && continue
+    else
+      batch_done_forget "$1" "$wt"
+    fi
     keep="$keep$wt"$'\n'
   done < "$batch"
   printf '%s' "$keep" > "$batch"
@@ -478,8 +484,9 @@ task_fields() {
 
 # A new batch starts clean: no worktrees, no finished or dead marks, and no queued lines of the batch before it.
 # An ESCALATE line of a task merged long ago stopped the first warmd watch of the next batch with exit 4.
+# warmd-batch-start marks its start: warmd batch-resume tells the tasks of this batch from older worktrees by it.
 batch_fresh() { # common
-  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-done" "$1/warmd-auto/queue"
+  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-done" "$1/warmd-auto/queue"; : > "$1/warmd-batch-start"
 }
 
 team_split() {

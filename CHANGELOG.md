@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- Godot: a project runner (`tests/run_*.gd`) that does not parse or compile is red, also when Godot ends with exit 0 and the script still prints its ok line (`Parse Error`, `Compile Error`, `Failed to load script` in its output); before, `warmd test` and `warmd check` reported green and cached it
+- A reused worktree whose finished line still names the branch of its previous task no longer counts as finished: the automatic merge does not end the batch while its new task runs, `warmd split` keeps it in the batch marker and drops the stale line; before, its agent got "a batch runs, this is the shared checkout" refusals
+- `warmd batch-resume` takes only the tasks of the latest batch (named in its shared brief, a task file from after the batch start, or an agent transcript that moved in the last 120 minutes); before, every old worktree with unmerged commits came back as open
+
 ## [0.4.36] - 2026-11-08
 
 ### Fixed
