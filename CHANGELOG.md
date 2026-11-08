@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.37] - 2026-11-08
+
 ### Fixed
 - Godot: a project runner (`tests/run_*.gd`) that does not parse or compile is red, also when Godot ends with exit 0 and the script still prints its ok line (`Parse Error`, `Compile Error`, `Failed to load script` in its output); before, `warmd test` and `warmd check` reported green and cached it
 - A reused worktree whose finished line still names the branch of its previous task no longer counts as finished: the automatic merge does not end the batch while its new task runs, `warmd split` keeps it in the batch marker and drops the stale line; before, its agent got "a batch runs, this is the shared checkout" refusals
@@ -322,7 +324,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.36...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...HEAD
+[0.4.37]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.36...v0.4.37
 [0.4.36]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.35...v0.4.36
 [0.4.35]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.34...v0.4.35
 [0.4.34]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.33...v0.4.34
