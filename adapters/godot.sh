@@ -27,13 +27,23 @@ godot_runners() {
     [ -f "$f" ] && grep -q '^extends SceneTree' "$f" && echo "$f"
   done
 }
+# A runner that does not parse or compile still ends with exit 0 (Godot even runs what it could load): its load errors count as red.
+GODOT_LOAD_ERR='(Parse|Compile) Error:|Failed to load script|Can.t load (the )?script|does not inherit from a MainLoop'
 run_runners() {
-  local exe="$1" f rc=0 n=0; shift
+  local exe="$1" f rc=0 n=0 out r bad; shift
+  out="$(mktemp)"
   for f in "$@"; do
     n=$((n + 1))
     echo "== ${f#"$PROJECT"/}"
-    timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" || { echo "FAIL runner ${f#"$PROJECT"/}"; rc=1; }
+    timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
+    cat "$out"
+    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/}"; rc=1
+    else
+      bad="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
+      [ -z "$bad" ] || { echo "FAIL runner ${f#"$PROJECT"/} does not load: $bad"; rc=1; }
+    fi
   done
+  rm -f "$out"
   [ $rc = 0 ] && echo "$n runners passed"
   return $rc
 }

@@ -65,6 +65,11 @@ func _initialize() -> void:
 expect "own runners are found and run" 'OK .*test' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 sed -i.bak 's/== 5/== 6/' tests/run_math.gd; rm tests/run_math.gd.bak
 expect "a failing runner is red" 'FAIL runner tests/run_math.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+git checkout -q tests/run_math.gd
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tvar x := \n\tquit(0)\n' > tests/run_broken.gd
+expect "a runner that does not parse is red" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
+expect "and its red is not cached as green" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
+rm tests/run_broken.gd
 cd "$TMP" || exit 1
 rm -rf "$TMP" 2>/dev/null
 exit $fails

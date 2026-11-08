@@ -495,7 +495,10 @@ hook_merge() { # common dir
   local common="$1" batch="$1/warmd-batch" done="$1/warmd-batch-done" lock="$1/warmd-automerge.lock" log="$1/warmd-automerge.log"
   local main wt br oc out rc pid keep="" first=1 merged=0 todo=()
   [ -s "$batch" ] || return 0
-  while read -r wt; do [ -z "$wt" ] || grep -qF "$wt	" "$done" 2>/dev/null || return 0; done < "$batch"
+  # Finished by wt_finished, not by the path alone: a reused worktree whose line names the branch of its previous task
+  # holds a new task that still runs, the batch is not over (it ended and dropped the running worktree from the marker).
+  declare -F wt_finished >/dev/null || . "$WARMD_HOME/lib/team.sh"
+  while read -r wt; do [ -z "$wt" ] || wt_finished "$common" "$wt" || return 0; done < "$batch"
   # One merge at a time: the lock holds the system pid of its merge (a job started through CIM lives in another session,
   # its shell pid means nothing here). A dead pid or a lock older than 60 minutes is stale.
   if [ -d "$lock" ]; then

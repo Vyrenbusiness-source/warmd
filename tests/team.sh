@@ -128,6 +128,40 @@ case "$own" in *"lobby.gd@busy"*) case "$own" in *"song.gd@paused"*) no "finishe
 out="$( ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; task_fields "t | keep |x| <= 49 | it works | a.gd, b.gd"; printf '%s;%s;%s' "$goal" "$check" "$files" ) )"
 case "$out" in *"keep |x| <= 49"*";"*"it works"*";"*"a.gd, b.gd"*) ok "a pipe inside the goal stays in the goal";; *) no "task_fields: $out";; esac
 
+# A reused worktree holds a new task while the done file still has the line of its previous one (other branch):
+# it stays in the batch, the stale line goes, and the automatic merge does not count it as done and end the batch
+P="$TMP/prunecase"; mkdir -p "$P"; ( cd "$P" && git init -q -b main . && git config user.name t && git config user.email t@example.com && printf '.warmd\n' > .gitignore && echo a > a && git add -A && git commit -qm i \
+  && git worktree add -q -b warmd/orbit-bahnen "$TMP/audio-map" && git worktree add -q -b warmd/other "$TMP/other-wt" && (cd "$TMP/other-wt" && echo o > o && git add o && git commit -qm o) )
+PC="$(git -C "$P" rev-parse --path-format=absolute --git-common-dir)"; PA="$(cd "$TMP/audio-map" && pwd)"; PO="$(cd "$TMP/other-wt" && pwd)"
+printf '%s\n%s\n' "$PA" "$PO" > "$PC/warmd-batch"
+printf '%s\tok\twarmd/orbit-career\n%s\tok\twarmd/other\n' "$PA" "$PO" > "$PC/warmd-batch-done"
+(cd "$P" && "$HERE/bin/warmd" hook-merge >/dev/null 2>&1)
+[ "$(cat "$PC/warmd-batch" 2>/dev/null)" = "$(printf '%s\n%s' "$PA" "$PO")" ] && [ ! -f "$PC/warmd-automerge.log" ] && ok "a stale finished line of a reused worktree does not end the batch" || no "hook-merge with a stale line: marker $(cat "$PC/warmd-batch" 2>/dev/null), log $(cat "$PC/warmd-automerge.log" 2>/dev/null | tail -2)"
+run="$( cd "$P" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; team_running "$PC/warmd-batch"; batch_prune "$PC" )"
+[ "$run" = 1 ] && ok "the new task of a reused worktree counts as running" || no "team_running with a stale line: $run"
+grep -qxF "$PA" "$PC/warmd-batch" && ok "prune keeps a reused worktree that holds a new task" || no "prune dropped the running worktree: $(cat "$PC/warmd-batch")"
+! grep -qF "$PA	" "$PC/warmd-batch-done" && grep -qF "$PO	" "$PC/warmd-batch-done" && ok "prune drops the stale finished line, keeps the valid one" || no "done file after prune: $(cat "$PC/warmd-batch-done")"
+
+# warmd batch-resume takes the tasks of the latest batch only: an old worktree with unmerged commits stays out,
+# one whose agent transcript moved recently comes in
+B="$TMP/resumecase"; mkdir -p "$B" "$TMP/transcripts"; cd "$B" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo '{ "name": "t", "scripts": { "test": "true" } }' > package.json; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+printf 'old | old work | o | old.txt\ntalk | talk work | t | talk.txt\n' > "$TMP/old.txt"
+WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/old.txt" > /dev/null 2>&1
+BW="$(dirname "$B")/.warmd-worktrees/resumecase"
+for n in old talk; do (cd "$BW/$n" && echo "$n" > "$n.txt" && git add -A && git commit -qm "$n"); done
+"$HERE/bin/warmd" batch-done > /dev/null 2>&1
+touch -d "-2 days" .warmd/tasks/old.md .warmd/tasks/talk.md
+printf 'cur | current work | c | cur.txt\n' > "$TMP/cur.txt"
+WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/cur.txt" > /dev/null 2>&1
+echo c > "$BW/cur/cur.txt"
+printf '{"type":"user","text":"Read C:\\\\x\\\\.warmd\\\\tasks\\\\talk.md and do it."}\n' > "$TMP/transcripts/t.jsonl"
+rm -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+out="$(WARMD_TRANSCRIPTS="$TMP/transcripts" "$HERE/bin/warmd" batch-resume 2>&1)"
+case "$out" in "OK batch marker rebuilt: 2 open: talk cur"|"OK batch marker rebuilt: 2 open: cur talk") ok "batch-resume takes the latest batch and a recently active task, not an old worktree";; *) no "batch-resume picked: $out";; esac
+cd "$TMP" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
