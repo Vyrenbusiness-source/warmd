@@ -102,6 +102,12 @@ printf '%s\tok\n%s\tok\n' "$(cd "$D/a" && pwd)" "$(cd "$D/b" && pwd)" > "$D/warm
 ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; batch_done_forget "$D" "$D/a" )
 if ! grep -q "/donecase/a" "$D/warmd-batch-done" && grep -q "/donecase/b" "$D/warmd-batch-done"; then ok "a reused worktree is no longer marked finished"; else no "batch_done_forget: $(cat "$D/warmd-batch-done")"; fi
 
+# A new batch drops the queued lines of the batch before it (a stale ESCALATE stopped the first watch with exit 4)
+F="$TMP/freshcase"; mkdir -p "$F/warmd-auto"
+echo "ESCALATE old: failed at the top tier" > "$F/warmd-auto/queue"; echo x > "$F/warmd-batch-done"; echo y > "$F/warmd-batch"
+( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; batch_fresh "$F" )
+if [ ! -e "$F/warmd-auto/queue" ] && [ ! -e "$F/warmd-batch-done" ] && [ -f "$F/warmd-batch" ] && [ ! -s "$F/warmd-batch" ]; then ok "a new batch starts without old queue lines"; else no "batch_fresh left: $(ls "$F" "$F/warmd-auto")"; fi
+
 # A goal may contain "|" itself: name first, files last, done check before it, the goal keeps the rest
 out="$( ( cd "$TMP" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1; . "$HERE/lib/team.sh"; task_fields "t | keep |x| <= 49 | it works | a.gd, b.gd"; printf '%s;%s;%s' "$goal" "$check" "$files" ) )"
 case "$out" in *"keep |x| <= 49"*";"*"it works"*";"*"a.gd, b.gd"*) ok "a pipe inside the goal stays in the goal";; *) no "task_fields: $out";; esac

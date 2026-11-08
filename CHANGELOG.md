@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- A new batch (`warmd split` without a running batch) drops the queued lines of the batch before it: an old `ESCALATE` line of a task merged long ago stopped the first `warmd watch` of the next batch with exit 4
+
 ## [0.4.34] - 2026-11-07
 
 ### Fixed
