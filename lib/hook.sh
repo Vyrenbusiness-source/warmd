@@ -512,35 +512,52 @@ hook_merge() { # common dir
   main="$(hook_mainwt "$common")"
   # The target is the base branch as base_branch sees it, never whatever branch the shared checkout stands on.
   # A base checked out in another worktree is merged there; without one a clean worktree for it is made.
-  local base full=0 ship="" ob proj tgt cfgfull
+  local base full=0 ship="" ob proj tgt="" cfgfull pre="" dirty
   IFS='|' read -r base cfgfull proj <<< "$(hook_base "$main")"
   [ -n "$base" ] || { echo "$(date '+%F %T') STOP no base branch found from $main, batch stays open" >> "$log"; hook_unlock; return 0; }
   # full=ci: this machine never runs the full suite, so no local merge gate either; warmd ship merges through CI.
   # Compared with origin too: a stale local base would count work already shipped as new and merge it again.
   [ "$cfgfull" = ci ] && full=1
   git -C "$main" fetch -q origin 2>/dev/null; ob="origin/$base"
-  if ! hook_base_wt "$common" "$main" "$base" "$proj" >> "$log" 2>&1; then
-    echo "$(date '+%F %T') STOP no checkout of $base and none could be made, batch stays open. Fix it, then run: warmd hook-merge" >> "$log"; hook_unlock; return 0
+  # Sorted against the base branch itself before any checkout is made or touched: a branch already in it is nothing new
+  while read -r wt; do
+    [ -n "$wt" ] || continue
+    oc="$(grep -F "$wt	" "$done" | tail -1 | cut -f2)"; br="$(git -C "$wt" branch --show-current 2>/dev/null)"
+    if [ "$oc" = escalated ]; then pre+="WAIT $br escalated, stays in the batch"$'\n'; keep="$keep$wt"$'\n'; continue; fi
+    [ "$oc" = ok ] || { pre+="SKIP $br: $oc"$'\n'; continue; }
+    { [ -z "$br" ] || git -C "$main" merge-base --is-ancestor "$br" "refs/heads/$base" 2>/dev/null; } && { pre+="SKIP $br: nothing new"$'\n'; continue; }
+    git -C "$main" rev-parse -q --verify "$ob" >/dev/null && git -C "$main" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { pre+="SKIP $br: already on $ob"$'\n'; continue; }
+    [ $full = 1 ] && { ship="$ship $br"; continue; }
+    todo+=("$br")
+  done < "$batch"
+  if [ ${#todo[@]} -gt 0 ]; then
+    if ! hook_base_wt "$common" "$main" "$base" "$proj" >> "$log" 2>&1; then
+      echo "$(date '+%F %T') STOP no checkout of $base and none could be made, batch stays open. Fix it, then run: warmd hook-merge" >> "$log"; hook_unlock; return 0
+    fi
+    tgt="$REPLY"
+    # Someone's work in progress in the base checkout: nothing merged, nothing touched (only the copies warmd itself
+    # renews, the daemon copy and Unity's .sln, are no one's work). An open merge there counts too.
+    dirty="$(git -C "$tgt" status --porcelain -uno 2>/dev/null | cut -c4- | grep -vE 'Assets/Editor/Warmd/|\.slnx?$' | head -5 | tr '\n' ' ')"
+    git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && dirty="${dirty}(an open merge) "
+    if [ -n "$dirty" ]; then
+      { echo "$(date '+%F %T') batch finished, merging into $base in $tgt"; printf '%s' "$pre"
+        echo "STOP the checkout of $base in $tgt is not ready: uncommitted changes in ${dirty% }, nothing merged and nothing touched, batch stays open. Commit them, then run: warmd hook-merge"; } >> "$log"
+      hook_unlock; return 0
+    fi
   fi
-  tgt="$REPLY"
   {
-    echo "$(date '+%F %T') batch finished, merging into $base in $tgt"
-    while read -r wt; do
-      [ -n "$wt" ] || continue
-      oc="$(grep -F "$wt	" "$done" | tail -1 | cut -f2)"; br="$(git -C "$wt" branch --show-current 2>/dev/null)"
-      if [ "$oc" = escalated ]; then echo "WAIT $br escalated, stays in the batch"; keep="$keep$wt"$'\n'; continue; fi
-      [ "$oc" = ok ] || { echo "SKIP $br: $oc"; continue; }
-      [ "$(git -C "$tgt" rev-list --count "HEAD..$br" 2>/dev/null || echo 0)" = 0 ] && { echo "SKIP $br: nothing new"; continue; }
-      git -C "$tgt" rev-parse -q --verify "$ob" >/dev/null && git -C "$tgt" merge-base --is-ancestor "$br" "$ob" 2>/dev/null && { echo "SKIP $br: already on $ob"; continue; }
-      [ $full = 1 ] && { ship="$ship $br"; continue; }
-      todo+=("$br")
-    done < "$batch"
+    if [ -n "$tgt" ]; then echo "$(date '+%F %T') batch finished, merging into $base in $tgt"; else echo "$(date '+%F %T') batch finished, nothing to merge into $base here"; fi
+    printf '%s' "$pre"
     # Several green branches: one warmd merge, one gate for all of them. Red or a conflict rolls all of them back, then
     # they go one by one, so only the bad one stays out. One branch goes the single way at once.
+    # Exit 3: red but not rolled back (a commit made meanwhile): nothing more is merged on top of it.
     if [ ${#todo[@]} -gt 1 ]; then
       out="$(cd "$tgt" && WARMD_BASE=1 WARMD_BASE_BRANCH="$base" WARMD_NO_PACKAGE=1 WARMD_MERGE_ATOMIC=1 bash "$WARMD_HOME/bin/warmd" merge "${todo[@]}" 2>&1)"; rc=$?
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       if [ "$rc" = 0 ]; then merged=1; todo=()
+      elif [ "$rc" = 3 ]; then
+        echo "STOP a red merge into $base in $tgt was not rolled back (FAIL line above says why), nothing more merged, batch stays open. Check it, then run: warmd hook-merge"
+        hook_unlock; return 0
       elif echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
         echo "STOP the checkout of $base in $tgt is not ready, batch stays open. Fix it, then run: warmd hook-merge"
         hook_unlock; return 0
@@ -551,6 +568,10 @@ hook_merge() { # common dir
       git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && git -C "$tgt" merge --abort 2>/dev/null
       echo "$out" | grep -E '^(OK|FAIL)' | head -3
       [ "$rc" = 0 ] && merged=1
+      if [ "$rc" = 3 ]; then
+        echo "STOP a red merge into $base in $tgt was not rolled back (FAIL line above says why), nothing more merged, batch stays open. Check it, then run: warmd hook-merge"
+        hook_unlock; return 0
+      fi
       if [ "$rc" != 0 ] && [ $first = 1 ] && echo "$out" | grep -qE 'only from a checkout|uncommitted changes'; then
         echo "STOP the checkout of $base in $tgt is not ready, batch stays open. Fix it, then run: warmd hook-merge"
         hook_unlock; return 0
@@ -562,13 +583,13 @@ hook_merge() { # common dir
       auto_queue "$common" "SHIP batch done, full=ci merges through CI: warmd ship$ship"
     fi
     # The merge gate warmed an engine in the base checkout: it would hold gigabytes and a slot for nobody
-    [ $full = 1 ] || echo "$(date '+%F %T') base checkout: $(cd "$tgt" && bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"
+    [ $full = 1 ] || [ -z "$tgt" ] || echo "$(date '+%F %T') base checkout: $(cd "$tgt" && bash "$WARMD_HOME/bin/warmd" stop --idle 2>&1 | tail -1)"
     if [ -n "$keep" ]; then
       printf '%s' "$keep" > "$batch"; : > "$done"; echo "OK merged, batch waits for the escalated tasks"
     else
       rm -f "$batch" "$done"; echo "OK batch ended"
       # The finished worktrees left the batch: their engine caches go back to the disk
-      (cd "$tgt" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" disk --free 2>&1 | tail -1)
+      (cd "${tgt:-$main}" && WARMD_BASE=1 bash "$WARMD_HOME/bin/warmd" disk --free 2>&1 | tail -1)
     fi
   } >> "$log" 2>&1
   hook_unlock
