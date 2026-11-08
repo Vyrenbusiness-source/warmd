@@ -366,6 +366,41 @@ xlog="$(cat "$XC/warmd-automerge.log" 2>/dev/null)"; XB="$X/.warmd-worktrees/r/b
 [ -f "$XB/t2.txt" ] && [ "$(git -C "$XB" branch --show-current)" = dev ] && echo "$xlog" | grep -q '^.* made .*base-dev for dev' && [ ! -f "$XC/warmd-batch" ] && ok "no worktree has the base: a clean one is made and merged into" || no "made base worktree: $xlog"
 [ "$(git -C "$X/r" branch --show-current)" = side ] && [ ! -f "$X/r/t2.txt" ] && ok "shared checkout still untouched" || no "shared checkout touched"
 
+# ---- the automatic merge never takes work away: a dirty base, a commit, an edit or a push during the gate, a merged branch ----
+G="$TMP/guard"
+guard() { # name, gate script: $GR the base checkout at $GH with an origin, warmd/<name> one commit ahead, the batch marker for it
+  GR="$G/$1/r"; mkdir -p "$GR"; git init -q --bare -b main "$G/$1/o.git"
+  ( cd "$GR" && git init -q -b main . && git config user.name t && git config user.email t@example.com && git config core.autocrlf false \
+    && printf '%s\n' "$2" > gate.sh && printf 'gate=sh gate.sh\n' > warmd.conf && printf '.warmd\n' > .gitignore && echo one > notes.txt \
+    && git add -A && git commit -qm init && git remote add origin "$G/$1/o.git" && git push -q -u origin main \
+    && git worktree add -q -b "warmd/$1" "$G/$1/w" main && cd "$G/$1/w" && echo "$1" > "$1.txt" && git add -A && git commit -qm "$1" )
+  GC="$(git -C "$GR" rev-parse --path-format=absolute --git-common-dir)"; GH="$(git -C "$GR" rev-parse HEAD)"
+  printf '%s\n' "$G/$1/w" > "$GC/warmd-batch"; printf '%s\tok\n' "$G/$1/w" > "$GC/warmd-batch-done"
+}
+glog() { cat "$GC/warmd-automerge.log" 2>/dev/null; }
+guard dirty 'true'; echo wip >> "$GR/notes.txt"
+(cd "$GR" && "$WARMD" hook-merge)
+glog | grep -q '^STOP the checkout of main in .* is not ready: uncommitted changes in notes.txt, nothing merged and nothing touched' \
+  && [ "$(git -C "$GR" rev-parse HEAD)" = "$GH" ] && grep -q '^wip$' "$GR/notes.txt" && [ ! -f "$GR/dirty.txt" ] && [ -s "$GC/warmd-batch" ] \
+  && ok "uncommitted change in the base checkout: merge refused, the change and HEAD kept, batch stays" || no "dirty base: $(glog) $(git -C "$GR" log --oneline -3)"
+guard moved 'git commit -q --allow-empty -m human && echo wip >> notes.txt; exit 1'
+(cd "$GR" && "$WARMD" hook-merge)
+[ "$(git -C "$GR" log -1 --format=%s)" = human ] && [ "$(git -C "$GR" log -1 --format=%s HEAD^)" = "Merge warmd/moved" ] && grep -q '^wip$' "$GR/notes.txt" \
+  && glog | grep -q '^FAIL merge warmd/moved: .*not rolled back: main moved to' && glog | grep -q '^STOP a red merge into main' && [ -s "$GC/warmd-batch" ] \
+  && ok "a commit made during the red gate: no reset, the commit and the edit stay, batch stays" || no "HEAD moved: $(glog) $(git -C "$GR" log --oneline -3)"
+guard edit 'echo wip >> notes.txt; exit 1'
+(cd "$GR" && "$WARMD" hook-merge)
+[ "$(git -C "$GR" rev-parse HEAD)" = "$GH" ] && [ ! -f "$GR/edit.txt" ] && grep -q '^wip$' "$GR/notes.txt" && glog | grep -q '^FAIL merge warmd/edit: .*kept uncommitted .*notes.txt' \
+  && ok "an edit made during the red gate: rolled back to the start, the edit stays" || no "edit during gate: $(glog) $(git -C "$GR" status --short)"
+guard pushed 'git push -q origin HEAD:main; exit 1'
+(cd "$GR" && "$WARMD" hook-merge)
+[ "$(git -C "$GR" log -1 --format=%s)" = "Merge warmd/pushed" ] && git -C "$GR" merge-base --is-ancestor origin/main HEAD && glog | grep -q 'not rolled back: its upstream already has' \
+  && ok "a merge pushed during the red gate: no rollback behind the upstream" || no "pushed during gate: $(glog) $(git -C "$GR" log --oneline -3)"
+guard done 'exit 1'; git -C "$GR" merge -q --no-ff -m pre warmd/done; GH="$(git -C "$GR" rev-parse HEAD)"; echo wip >> "$GR/notes.txt"
+(cd "$GR" && "$WARMD" hook-merge)
+glog | grep -q '^SKIP warmd/done: nothing new$' && ! glog | grep -qE '^(STOP|FAIL)|merging into' && [ "$(git -C "$GR" rev-parse HEAD)" = "$GH" ] && grep -q '^wip$' "$GR/notes.txt" \
+  && [ ! -f "$GC/warmd-batch" ] && [ ! -e "$G/done/.warmd-worktrees" ] && ok "an already merged branch: nothing new, nothing touched, batch ended" || no "already merged: $(glog) $(git -C "$GR" status --short)"
+
 # import cache seeding: a finished import of the same source and settings is copied, a changed source is not
 SA="$TMP/seed/a"; SB="$TMP/seed/b"; mkdir -p "$SA/.godot/imported" "$SA/t" "$SB/t"
 for x in "$SA" "$SB"; do echo '[gd_project]' > "$x/project.godot"; echo pix > "$x/t/s.webp"; printf '[deps]\nsource_file="res://t/s.webp"\ndest_files=["res://.godot/imported/s.webp-abc123.bptc.ctex"]\n' > "$x/t/s.webp.import"; done

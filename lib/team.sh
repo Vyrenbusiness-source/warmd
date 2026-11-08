@@ -653,13 +653,29 @@ red_lines() { # output head|tail
   else printf '%s\n' "$1" | "${2:-tail}" -3 | tr '\n' ' ' | cut -c1-200; fi
 }
 
+# The rollback of a red or conflicting merge: back to $1, the HEAD this merge started from, only while HEAD is still $2, the
+# last commit this merge made. Nothing is touched (REPLY says why) when someone committed meanwhile, when the rollback
+# would leave the base behind its upstream (a commit of the merge was pushed), or when a local change sits in a file the
+# merge changed. reset --keep, never --hard: an edit made during the gate in any other file stays.
+merge_rollback() { # start, last commit of this merge
+  local head up cur
+  head="$(git -C "$GIT_ROOT" rev-parse -q --verify HEAD 2>/dev/null)"; cur="$(git -C "$GIT_ROOT" branch --show-current)"
+  [ "$head" = "$1" ] && return 0
+  [ "$head" = "$2" ] || { REPLY="$cur moved to $(git -C "$GIT_ROOT" rev-parse --short HEAD) during the merge (a commit made meanwhile), it stays as it is: revert the merge by hand if it must go"; return 1; }
+  up="$(git -C "$GIT_ROOT" rev-parse -q --verify '@{upstream}' 2>/dev/null || git -C "$GIT_ROOT" rev-parse -q --verify "refs/remotes/origin/$cur" 2>/dev/null)"
+  if [ -n "$up" ] && git -C "$GIT_ROOT" merge-base --is-ancestor "$up" "$head" 2>/dev/null && ! git -C "$GIT_ROOT" merge-base --is-ancestor "$up" "$1" 2>/dev/null; then
+    REPLY="its upstream already has commits of this merge, a rollback would leave $cur behind it: revert the merge by hand if it must go"; return 1
+  fi
+  git -C "$GIT_ROOT" reset -q --keep "$1" 2>/dev/null || { REPLY="local changes in files the merge changed, nothing reset: revert the merge by hand if it must go"; return 1; }
+}
+
 # merge <branch>: only into the base branch, only from a clean tree, then the fastest checks. Red rolls back.
 # warmd merge <branch>... [--no-gate]: every branch merged one after the other (one commit each), then ONE gate over all of
 # them and one player build, not one per branch. Red rolls every branch of the call back. A conflict stops at its branch:
 # resolve it, warmd merge --continue merges the branches after it. --no-gate is for an integration the user released.
 team_merge() {
   need_git
-  local base out m br start="" nogate=0 cont=0 brs=() merged=() q="$STATE/merge.queue" i rest
+  local base out m br start="" mine="" nogate=0 cont=0 brs=() merged=() new=() q="$STATE/merge.queue" i rest
   for m in "$@"; do case "$m" in --no-gate) nogate=1;; --continue) cont=1;; -*) echo "FAIL unknown option $m"; return 2;; *) brs+=("$m");; esac; done
   [ $cont = 1 ] || [ ${#brs[@]} -gt 0 ] || { echo "warmd merge <branch>... [--no-gate], after a resolved conflict: warmd merge --continue"; return 2; }
   base="$(base_branch)"
@@ -673,12 +689,19 @@ team_merge() {
     git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q --no-edit -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} || { echo "FAIL cannot commit the resolved merge of $br"; return 1; }
     merged+=("$br"); rm -f "$q"
   else
+    for br in "${brs[@]}"; do git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br, nothing done"; return 2; }; done
+    # A branch already in HEAD holds nothing new: skipped before anything in the checkout is touched
+    for br in "${brs[@]}"; do
+      if git -C "$GIT_ROOT" merge-base --is-ancestor "$br" HEAD 2>/dev/null; then echo "SKIP $br: nothing new"; else new+=("$br"); fi
+    done
+    [ ${#new[@]} -gt 0 ] || { echo "OK nothing to merge"; return 0; }
+    brs=("${new[@]}")
     git -C "$GIT_ROOT" status --porcelain -uno | grep -qE '\.sln[x]?$' && git -C "$GIT_ROOT" checkout -q -- '*.sln*' 2>/dev/null
     # The daemon copy warmd renewed (unity_sync) is no one's work in progress: the merge commit takes it along
     [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -v 'Assets/Editor/Warmd/')" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
-    for br in "${brs[@]}"; do git -C "$GIT_ROOT" rev-parse --verify -q "$br" >/dev/null || { echo "FAIL unknown branch $br, nothing done"; return 2; }; done
     start="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   fi
+  mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   for i in "${!brs[@]}"; do
     br="${brs[$i]}"
     out="$(git -C "$GIT_ROOT" merge --no-ff -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} "$br" 2>&1)" || {
@@ -687,10 +710,13 @@ team_merge() {
         echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files of $br${merged[0]:+ (merged before it: ${merged[*]})}, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160
       else
         # WARMD_MERGE_ATOMIC=1 (the batch merge of the hooks): a conflict rolls back all, nobody is there to resolve it
-        git -C "$GIT_ROOT" merge --abort 2>/dev/null; git -C "$GIT_ROOT" reset -q --hard "$start"
-        echo "FAIL merge $br: $(echo "$out" | grep -m1 -E 'CONFLICT|error|fatal' | cut -c1-160), nothing merged"
+        git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null && git -C "$GIT_ROOT" merge --abort 2>/dev/null
+        m="$(echo "$out" | grep -m1 -E 'CONFLICT|error|fatal' | cut -c1-160)"
+        merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $m, not rolled back: $REPLY"; return 3; }
+        echo "FAIL merge $br: $m, nothing merged"
       fi
       return 1; }
+    mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
     echo "$out" | grep -q "Already up to date" && continue
     merged+=("$br")
   done
@@ -699,15 +725,24 @@ team_merge() {
   # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
   if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
   br="${merged[*]}"; export WARMD_DIFF_BASE="$start"
-  mfail() { echo "FAIL merge $br: $*"; git -C "$GIT_ROOT" reset -q --hard "$start"; return 1; }
-  m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --check "$start" HEAD 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return 1; }
+  # Red rolls back to the start of this merge, never further and never over a commit made meanwhile (merge_rollback).
+  # Not rolled back: exit 3, the caller stops merging on top of it.
+  mfail() {
+    merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $*; not rolled back: $REPLY"; return 3; }
+    local left; left="$(git -C "$GIT_ROOT" status --porcelain -uno | cut -c4- | head -5 | tr '\n' ' ')"
+    echo "FAIL merge $br: $*${left:+; kept uncommitted (written by the gate or by someone meanwhile): ${left% }}"; return 1
+  }
+  m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --check "$start" HEAD 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return; }
   if [ $nogate = 1 ]; then :
   elif [ -n "$CFG_gate" ]; then
-    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return 1; fi
-  elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return 1; fi
-  if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return 1; }; fi
-  # What the gate wrote (world outputs, the renewed daemon copy) goes into the last merge commit
-  if [ -n "$(git -C "$GIT_ROOT" status --porcelain -uno)" ]; then git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q --amend --no-edit || { mfail "cannot commit what the gate wrote"; return 1; }; fi
+    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
+  elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
+  if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
+  # What the gate wrote (world outputs, the renewed daemon copy) goes into the last merge commit, only into this merge's
+  # own commit: a commit made meanwhile is never amended
+  if [ -n "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] && [ "$(git -C "$GIT_ROOT" rev-parse HEAD)" = "$mine" ]; then
+    git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q --amend --no-edit || { mfail "cannot commit what the gate wrote"; return; }
+  fi
   echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD)$([ $nogate = 1 ] && echo ", no gate (--no-gate)"), not pushed"
   rm -f "$MERGELOCK" "$MERGELOCK.win"; unset WARMD_IN_MERGE WARMD_DIFF_BASE
   merge_package

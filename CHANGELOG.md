@@ -4,6 +4,12 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.38] - 2026-11-08
+
+### Fixed
+- The automatic merge no longer takes work away from the base checkout. A red gate rolled back with `git reset --hard` to the HEAD from before the merge, so a commit made (and pushed) during the gate and every uncommitted edit were gone, and the base was left behind its upstream. The rollback now goes back only to the HEAD this merge started from, only while HEAD is still the merge's own commit, never behind the upstream, and with `reset --keep`, so edits in other files stay; otherwise nothing is touched, the merge says "not rolled back" and the batch stays open without merging more on top. A commit made during a green gate is no longer amended
+- The automatic merge refuses a base checkout with uncommitted changes (or an open merge) before it merges anything and leaves it untouched; branches already in the base branch are skipped with "nothing new" before any checkout is made or touched, also in `warmd merge`
+
 ## [0.4.37] - 2026-11-08
 
 ### Fixed
@@ -324,7 +330,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.38...HEAD
+[0.4.38]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...v0.4.38
 [0.4.37]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.36...v0.4.37
 [0.4.36]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.35...v0.4.36
 [0.4.35]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.34...v0.4.35
