@@ -79,6 +79,20 @@ expect "a new class_name under a path with a space marks the cache stale" '^stal
 echo 'Brandnew' >> "$G/.godot/global_script_class_cache.cfg"
 expect "a known class_name keeps the cache fresh" '^fresh$' "$(fresh)"
 
+# ---- godot: a runner that does not parse or compile is red, also when the engine ends with exit 0 ----
+GR="$TMP/godot-runners"; mkdir -p "$GR/tests"; printf 'extends SceneTree\n' > "$GR/tests/run_login.gd"
+# Stub engine: exit 0 always, prints what Godot 4 prints for a broken script when GODOT_STUB_OUT says so
+printf '#!/usr/bin/env bash\nprintf "Godot Engine v4.7.stable\\n%%b" "${GODOT_STUB_OUT:-}"\nexit 0\n' > "$TMP/godot-stub"; chmod +x "$TMP/godot-stub"
+runners() { GODOT_STUB_OUT="$1" bash -c "CFG_idle_min=5; . '$HERE/lib/platform.sh'; . '$HERE/adapters/godot.sh'; PROJECT='$GR'; TIMEOUT=30; run_runners '$TMP/godot-stub' '$GR/tests/run_login.gd'; echo rc=\$?"; }
+out="$(runners 'SCRIPT ERROR: Parse Error: Expected end of statement\n   at: GDScript::reload (res://tests/run_login.gd:12)\nERROR: Failed to load script "res://tests/run_login.gd" with error "Parse error".\n')"
+expect "a runner with a parse error is red although Godot exits 0" 'FAIL runner tests/run_login.gd does not load: SCRIPT ERROR: Parse Error' "$out"
+expect "its run returns non-zero, so no green is cached" '^rc=1$' "$out"
+out="$(runners 'SCRIPT ERROR: Compile Error: Identifier not found: SyncClock\nERROR: Failed to load script "res://tests/run_login.gd" with error "Compilation failed".\n=== 27 ok, 0 fehlgeschlagen ===\n')"
+expect "a runner that does not compile is red although it printed its ok line" 'FAIL runner tests/run_login.gd does not load: SCRIPT ERROR: Compile Error' "$out"
+out="$(runners '=== Ergebnis: 3 bestanden, 0 fehlgeschlagen ===\n')"
+expect "a clean runner stays green" '1 runners passed' "$out"
+expect "a clean runner returns 0" '^rc=0$' "$out"
+
 # ---- split: files split by spaces stay separate entries, "lib bin" is not the path "libbin" ----
 mkdir -p "$TMP/sp" && cd "$TMP/sp" || exit 1
 git init -q -b main .; git config user.name t; git config user.email t@example.com

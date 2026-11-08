@@ -171,7 +171,7 @@ warmd merge warmd/a warmd/b warmd/c
 Ends the batch, so the shared checkout opens again.
 
 ### warmd batch-resume
-Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Use it when the marker was lost while agents still work.
+Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Only tasks of the latest batch count: named in its shared brief, a task file from after the batch start, or an agent transcript that moved in the last 120 minutes; worktrees of earlier batches with unmerged commits stay out. Use it when the marker was lost while agents still work.
 
 ### warmd perf
 Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline. The load time is the median of at least 5 loads after one discarded warm-up load, alternating with a tiny reference page from memory: when the reference loads slower than at `--save` (a busy CI runner), that difference is taken out before the compare. A regression needs a second measurement before it fails.
