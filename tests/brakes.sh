@@ -104,6 +104,15 @@ printf '{"type":"user","message":"Read C:/x/.warmd/tasks/b.md"}\n{"message":"API
 if "$WARMD" watch --once | grep -q 'DEAD b'; then echo "FAIL an agent with commits counts as dead"; fails=$((fails+1)); else echo "ok   an agent with commits is not dead"; fi
 "$WARMD" batch-done > /dev/null
 
+# (3b) words like "Rate-Limit" or "billing" in files the agent read are no death
+"$WARMD" split one.txt > /dev/null
+rm -f "$WARMD_TRANSCRIPTS/p/"*.jsonl
+printf '{"type":"user","message":"Read C:/x/.warmd/tasks/a.md and do it."}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"Bei Rate-Limit (2 pro Minute) Countdown. p.append(billing_address_collection, auto); authentication_error"}]}}
+' > "$WARMD_TRANSCRIPTS/p/s3.jsonl"
+if "$WARMD" watch --once | grep -q 'DEAD a'; then echo "FAIL spec text in a tool result counts as an API error"; fails=$((fails+1)); else echo "ok   spec text in a tool result is no death"; fi
+"$WARMD" batch-done > /dev/null
+
 # (n) waiting starts no process: a queued run polls for hours, and under Git Bash every sleep is a new process that some
 # Windows machines never give back (64 starts a second ate 40 GB in 40 minutes). Wait loops use nap, nap uses no program.
 out="$(grep -nE '(^|[;{ ]|then |else |do )sleep [0-9."$]' "$HERE"/lib/core.sh "$HERE"/lib/daemon.sh "$HERE"/lib/tune.sh "$HERE"/lib/team.sh "$HERE"/lib/platform.sh "$HERE"/lib/ship.sh "$HERE"/lib/hook.sh "$HERE"/adapters/unity.sh "$HERE"/adapters/web.sh | grep -v 'sleep "\$1"$')"
