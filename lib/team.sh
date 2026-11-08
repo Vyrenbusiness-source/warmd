@@ -475,6 +475,12 @@ task_fields() {
   check="${rest##*|}"; goal="${rest%|*}"
 }
 
+# A new batch starts clean: no worktrees, no finished or dead marks, and no queued lines of the batch before it.
+# An ESCALATE line of a task merged long ago stopped the first warmd watch of the next batch with exit 4.
+batch_fresh() { # common
+  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-done" "$1/warmd-auto/queue"
+}
+
 team_split() {
   need_git
   local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
@@ -499,7 +505,7 @@ team_split() {
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
-  [ $append = 1 ] || { : > "$batch"; rm -f "$batch-dead" "$batch-done"; }
+  [ $append = 1 ] || batch_fresh "${batch%/warmd-batch}"
   while IFS= read -r line <&3; do
     task_fields "$line"
     name="$(trim "$name")"; goal="$(trim "$goal")"; check="$(trim "$check")"; files="$(files_norm "$files")"
