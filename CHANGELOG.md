@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- The automatic merge no longer takes work away from the base checkout. A red gate rolled back with `git reset --hard` to the HEAD from before the merge, so a commit made (and pushed) during the gate and every uncommitted edit were gone, and the base was left behind its upstream. The rollback now goes back only to the HEAD this merge started from, only while HEAD is still the merge's own commit, never behind the upstream, and with `reset --keep`, so edits in other files stay; otherwise nothing is touched, the merge says "not rolled back" and the batch stays open without merging more on top. A commit made during a green gate is no longer amended
+- The automatic merge refuses a base checkout with uncommitted changes (or an open merge) before it merges anything and leaves it untouched; branches already in the base branch are skipped with "nothing new" before any checkout is made or touched, also in `warmd merge`
+
 ## [0.4.37] - 2026-11-08
 
 ### Fixed
