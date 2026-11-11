@@ -356,7 +356,9 @@ agent_dead() { # worktree name -> reason
   [ -d "$root" ] || return 1
   f="$(find "$root" -name '*.jsonl' -mmin -1440 -exec grep -lF "tasks/$name.md" {} + 2>/dev/null | head -1)"
   [ -n "$f" ] || return 1
-  grep -oiE '(API Error|credit balance|billing|usage limit|rate.?limit|overloaded|authentication_error|invalid.?api.?key)[^"\]{0,80}' "$f" | head -1 | grep .
+  # Only a real API error counts: its text starts a JSON string ("API Error: ...", "Credit balance is too low ...").
+  # Words like "rate limit" or "billing" inside files the agent read (tool results, specs) are not a death.
+  grep -oE '"(API Error|Credit balance is too low|Invalid API key|Please run /login)[^"\]{0,80}' "$f" | head -1 | cut -c2- | grep .
 }
 
 # watch_drain <common> <batch>: the queued lines for the session. 3 when one starts an agent (AGENT), 4 when only a human
