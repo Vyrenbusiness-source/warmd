@@ -25,6 +25,11 @@ printf 'class_name Fresh\nextends RefCounted\n\nstatic func one() -> int:\n\tret
 printf 'extends WarmdTest\n\nfunc test_fresh() -> void:\n\tassert_eq(Fresh.one(), 1)\n' > test/test_fresh.gd
 expect "a new class_name works without a manual restart" '2 passed, 0 failed' "$("$WARMD" test)"
 rm fresh.gd test/test_fresh.gd
+# A merged branch moved a class_name script: the class cache still names the old path until it is renewed
+mkdir lib; git mv score.gd lib/score.gd; git commit -qm move
+expect "a moved class_name script compiles" 'scripts parse' "$("$WARMD" build)"
+expect "its tests run after the move" '1 passed, 0 failed' "$("$WARMD" test)"
+git mv lib/score.gd score.gd; git commit -qm back; rmdir lib
 mkdir raw; touch raw/.gdignore; printf 'func broken(:\n' > raw/vendor.gd
 expect "a .gdignore folder is skipped" 'scripts parse' "$("$WARMD" build)"
 rm -rf raw
