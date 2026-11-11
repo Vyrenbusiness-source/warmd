@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.40] - 2026-11-11
+
+### Fixed
+- The hook no longer refuses a project script run (`bash tools/x.sh`) with "a Godot run with a window plays sound" when every Godot call in that script names `--audio-driver`. The script is read (also after `cd dir &&`); a script without a Godot call is not judged at all. A script with a Godot call without a driver, a direct Godot call without a driver and an unreadable script are still refused. A `grep`, `tasklist`, `ls` or `echo` that only names godot as a pattern or a file (`tasklist | grep -i godot`) is no Godot run either; only a real call of the Godot executable counts
+
 ## [0.4.39] - 2026-11-11
 
 ### Fixed
@@ -336,7 +341,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.39...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.40...HEAD
+[0.4.40]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.39...v0.4.40
 [0.4.39]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.38...v0.4.39
 [0.4.38]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...v0.4.38
 [0.4.37]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.36...v0.4.37

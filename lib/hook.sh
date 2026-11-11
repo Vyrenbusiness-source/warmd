@@ -114,7 +114,19 @@ hook_script_quiet() { # command -> status as above
 
 hook_engine_timeout() { # command -> 0 when denied (decision printed)
   local c=" $1 " godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /]godot[0-9.]* '
-  [[ $c =~ $godot ]] || return 1
+  # only a real call counts: a grep/tasklist/ls/echo that names godot as a pattern or a file is no Godot run
+  local seg w ran=1 rest="$c"
+  rest="${rest//&&/;}"; rest="${rest//||/;}"; rest="${rest//|/;}"; rest="${rest//&/;}"
+  local IFS_OLD="$IFS"; IFS=';'
+  for seg in $rest; do
+    IFS="$IFS_OLD"
+    seg="${seg#"${seg%%[![:space:]]*}"}"; w="${seg%%[[:space:]]*}"; w="${w##*/}"
+    case "$w" in grep|egrep|fgrep|rg|pgrep|findstr|tasklist|taskkill|pkill|echo|printf|ls|dir|cat|where|which|stat|find|rm|cp|mv|test|type|wc|head|tail|sed|awk|tee|powershell|Get-Process|Stop-Process) IFS=';'; continue;; esac
+    [[ " $seg " =~ $godot ]] && ran=0
+    IFS=';'
+  done
+  IFS="$IFS_OLD"
+  [ "$ran" = 0 ] || return 1
   case "$c" in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) return 1;; esac
   # a test window plays the game's sound through the user's speakers: a windowed run states its audio driver
   local drv=0 sq=3

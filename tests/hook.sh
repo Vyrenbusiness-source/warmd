@@ -145,6 +145,13 @@ out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe bash tools/none.sh")"
 echo "$out" | grep -q '"permissionDecision":"deny"' && no "script without a Godot call refused: $out" || ok "script without a Godot call passes"
 out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe bash tools/missing.sh")"
 echo "$out" | grep -q 'speakers' && ok "unreadable script is judged by the command text" || no "missing script passed: $out"
+# a grep/tasklist/ls that only names godot is no Godot run; a real call after it still is
+for c in 'tasklist | grep -i godot' 'ls /tmp ; tasklist | grep -i godot' 'ls Godot_v4.7-stable_win64.exe && echo ok'; do
+  out="$(pre "$c")"
+  echo "$out" | grep -q '"permissionDecision":"deny"' && no "godot as a pattern refused: $c" || ok "godot as a pattern passes: $c"
+done
+out="$(pre 'tasklist | grep -i godot ; timeout 180 ./Godot_v4.7-stable_win64.exe --path . res://a.tscn')"
+echo "$out" | grep -q 'speakers' && ok "real Godot call after a grep is still refused" || no "loud call after grep passed: $out"
 # the same heavy run on the same tree: three pass, the fourth is refused; a file change lets it run again
 RG="$TMP/rg"; mkdir -p "$RG" && git -C "$RG" init -q && echo a > "$RG/a" && git -C "$RG" add a && git -C "$RG" -c user.name=t -c user.email=t@t commit -qm i
 rgo=""; for i in 1 2 3 4; do rgo="$(pre_json "\"cd $RG && warmd check\"" | HOME="$TMP" XDG_CACHE_HOME="$TMP/c" "$WARMD" hook-pre)"; done
