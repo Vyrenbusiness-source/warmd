@@ -81,8 +81,8 @@ hook_pre() {
 # Returns 0 when every Godot call in it names --audio-driver, 1 when one does not, 2 when it calls no Godot,
 # 3 when the command is no readable script run (the caller then judges the command text alone).
 hook_script_quiet() { # command -> status as above
-  local c="$1" re='(^|[;&| ])(bash|sh)( +-[A-Za-z-]+)* +([^ -][^ ]*)' re_cd='(^|[;&] *)cd +"?([^"&;]+)"? *&&'
-  local godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /"]godot[0-9.]* ' dir="$PWD" f line cur="" vars=" " n=0 bad=0 v name
+  local c="$1" re='(^|[;&| ])(bash|sh)( +-[A-Za-z-]+)* +([^ -][^ ]*)' re_cd='(^|[;&[:space:]])cd +"?([^"&;]+)"? *&&'
+  local godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /"]godot[0-9.]* ' dir="$PWD" f line cur="" bs vars=" " n=0 bad=0 v name
   [[ $c =~ $re ]] || return 3
   f="${BASH_REMATCH[4]}"; f="${f%\"}"; f="${f#\"}"
   if [[ $c =~ $re_cd ]]; then dir="${BASH_REMATCH[2]}"; dir="${dir%"${dir##*[! ]}"}"; fi
@@ -92,8 +92,9 @@ hook_script_quiet() { # command -> status as above
     line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in "#"*|"") continue;; esac
     cur="$cur $line"
-    case "$line" in *\) cur="${cur%\}"; continue;; esac
-    line="$cur"; cur=""
+    bs='\'
+    if [[ $line == *"$bs" ]]; then cur="${cur%"$bs"}"; continue; fi
+    line="${cur# }"; cur=""
     if [[ $line =~ ^([A-Za-z_][A-Za-z_0-9]*)= ]]; then   # a variable that holds a Godot path
       name="${BASH_REMATCH[1]}"
       [[ " $line " =~ $godot ]] && vars="$vars$name "
@@ -101,7 +102,7 @@ hook_script_quiet() { # command -> status as above
     fi
     v=0
     [[ " $line " =~ $godot ]] && v=1
-    for name in $vars; do case "$line" in *"\$$name"*|*"\${$name}"*) v=1;; esac; done
+    for name in $vars; do [[ $line == *'$'"$name"* || $line == *'${'"$name"'}'* ]] && v=1; done
     [ "$v" = 1 ] || continue
     case " $line " in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) continue;; esac
     n=$((n + 1))
