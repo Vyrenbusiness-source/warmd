@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.39] - 2026-11-11
+
+### Fixed
+- Godot: a branch that moves a `class_name` script no longer turns the build, `warmd check` and the merge gate red with `Class "X" hides a global script class`. The class cache in `.godot/global_script_class_cache.cfg` still named the old path, so the compile saw the class twice. Before every compile and test run warmd now compares the cache with the scripts on disk (a cached path that is gone, a `class_name` script missing or at another path; `.gdignore` and hidden folders are skipped) and renews it with one `--import`. A "hides a global script class" error the check did not foresee is retried once after an import and counts as red only when it stays; a difference an import does not clear (two scripts with one `class_name`) is noted and does not cost an import on every build
+
 ## [0.4.38] - 2026-11-08
 
 ### Fixed
@@ -330,7 +335,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.38...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.39...HEAD
+[0.4.39]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.38...v0.4.39
 [0.4.38]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...v0.4.38
 [0.4.37]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.36...v0.4.37
 [0.4.36]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.35...v0.4.36
