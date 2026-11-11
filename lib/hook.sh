@@ -90,7 +90,7 @@ hook_script_quiet() { # command -> status as above
   [ -f "$f" ] && [ -r "$f" ] || return 3
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line#"${line%%[![:space:]]*}"}"
-    case "$line" in "#"*|"") continue;; esac
+    case "$line" in "#"*|""|"echo "*|"printf "*) continue;; esac
     cur="$cur $line"
     bs='\'
     if [[ $line == *"$bs" ]]; then cur="${cur%"$bs"}"; continue; fi
