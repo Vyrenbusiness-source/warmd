@@ -129,6 +129,22 @@ out="$(pre './Godot_v4.7-stable_win64_console.exe --headless --path . --script r
 echo "$out" | grep -q '"permissionDecision":"deny"' && no "headless Godot run refused: $out" || ok "headless Godot run passes"
 out="$(pre 'timeout 180 ./Godot_v4.7-stable_win64.exe --path . res://a.tscn --shot')"
 echo "$out" | grep -q '"permissionDecision":"deny"' && ok "windowed Godot run without an audio driver is refused" || no "loud Godot run passed: $out"
+# a project script that calls Godot is read: every call names an audio driver -> passes, one without -> refused
+SC="$TMP/sc"; mkdir -p "$SC/tools"
+printf '%s
+' '#!/bin/bash' 'G=${GODOT:-/x/Godot_v4.7-stable_win64_console.exe}' '# "$G" in a comment' 'timeout 400 "$G" --path . --audio-driver Dummy ' '  --write-movie a.avi res://a.tscn' > "$SC/tools/quiet.sh"
+printf '%s
+' '#!/bin/bash' 'G=${GODOT:-/x/Godot_v4.7-stable_win64_console.exe}' '"$G" --headless --path . --import' 'timeout 400 "$G" --path . res://a.tscn' > "$SC/tools/loud.sh"
+printf '%s
+' '#!/bin/bash' 'echo "Godot_v4.7-stable_win64.exe is not run here"' > "$SC/tools/none.sh"
+out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe timeout 500 bash tools/quiet.sh rally")"
+echo "$out" | grep -q '"permissionDecision":"deny"' && no "script with an audio driver refused: $out" || ok "script whose Godot calls name a driver passes"
+out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe timeout 500 bash tools/loud.sh rally")"
+echo "$out" | grep -q 'speakers' && ok "script with a Godot call without a driver is refused" || no "loud script passed: $out"
+out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe bash tools/none.sh")"
+echo "$out" | grep -q '"permissionDecision":"deny"' && no "script without a Godot call refused: $out" || ok "script without a Godot call passes"
+out="$(pre "cd $SC && GODOT=./Godot_v4.7-stable_win64.exe bash tools/missing.sh")"
+echo "$out" | grep -q 'speakers' && ok "unreadable script is judged by the command text" || no "missing script passed: $out"
 # the same heavy run on the same tree: three pass, the fourth is refused; a file change lets it run again
 RG="$TMP/rg"; mkdir -p "$RG" && git -C "$RG" init -q && echo a > "$RG/a" && git -C "$RG" add a && git -C "$RG" -c user.name=t -c user.email=t@t commit -qm i
 rgo=""; for i in 1 2 3 4; do rgo="$(pre_json "\"cd $RG && warmd check\"" | HOME="$TMP" XDG_CACHE_HOME="$TMP/c" "$WARMD" hook-pre)"; done
