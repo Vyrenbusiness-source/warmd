@@ -76,8 +76,59 @@ touch -d '2020-01-01' "$G/.godot/global_script_class_cache.cfg" 2>/dev/null || t
 printf 'class_name Brandnew\nextends Node\n' > "$G/new.gd"
 fresh() { bash -c "CFG_idle_min=5; . '$HERE/adapters/godot.sh'; PROJECT='$G'; class_cache_fresh" && echo fresh || echo stale; }
 expect "a new class_name under a path with a space marks the cache stale" '^stale$' "$(fresh)"
-echo 'Brandnew' >> "$G/.godot/global_script_class_cache.cfg"
+printf 'list=[{\n"base": &"Node",\n"class": &"Brandnew",\n"icon": "",\n"path": "res://new.gd"\n}]\n' > "$G/.godot/global_script_class_cache.cfg"
 expect "a known class_name keeps the cache fresh" '^fresh$' "$(fresh)"
+mkdir -p "$G/raw" "$G/.hidden"; touch "$G/raw/.gdignore"; printf 'class_name Vendored\n' > "$G/raw/v.gd"; printf 'class_name Hidden\n' > "$G/.hidden/h.gd"
+expect "a class_name in a .gdignore or hidden folder is not expected in the cache" '^fresh$' "$(fresh)"
+mkdir -p "$G/sub"; mv "$G/new.gd" "$G/sub/new.gd"
+expect "a moved class_name script marks the cache stale" '^stale$' "$(fresh)"
+
+# ---- godot: a class cache that still names a moved script is renewed before the compile, "hides a global script class" is red only when it stays ----
+GB="$TMP/godot-moved"; GS="$TMP/godot-moved-stub"; mkdir -p "$GB/scripts/ui" "$GS"; cd "$GB" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+printf 'config_version=5\n[application]\nconfig/name="m"\n' > project.godot; printf '.warmd\n.godot\n' > .gitignore
+printf 'class_name OrbitPreview\nextends Node\n' > scripts/ui/orbit_preview.gd
+git add -A; git commit -qm init
+# Stub engine: --import rebuilds the class cache from the scripts on disk and counts itself; the compile job fails with
+# Godot's line while the cache names a script that is gone, while $GS/needs_import exists or while STUB_HIDES is set
+cat > "$GS/godot" <<'STUB'
+#!/usr/bin/env bash
+S="$(dirname "$0")"; P=""; imp=0
+while [ $# -gt 0 ]; do case "$1" in --path) P="$2"; shift;; --import) imp=1;; esac; shift; done
+C="$P/.godot/global_script_class_cache.cfg"
+if [ $imp = 1 ]; then
+  echo x >> "$S/imports"; rm -f "$S/needs_import"; mkdir -p "$P/.godot"
+  { echo 'list=[{'; grep -r -m1 -H --include='*.gd' --exclude-dir='.?*' '^class_name ' "$P" | while IFS= read -r l; do r="${l#"$P"/}"; printf '"class": &"%s",\n"path": "res://%s"\n' "${l##*class_name }" "${r%%:*}"; done; echo '}]'; } > "$C"
+  exit 0
+fi
+id="$(sed -n 's/^id=//p' "$WARMD_DIR/job.txt" | tr -d '\r')"; stale=0
+while IFS= read -r p; do [ -f "$P/${p#res://}" ] || stale=1; done < <(sed -n 's/^"path": "\(.*\)"$/\1/p' "$C" 2>/dev/null)
+if [ $stale = 1 ] || [ -f "$S/needs_import" ] || [ -n "${STUB_HIDES:-}" ]; then
+  echo 'SCRIPT ERROR: Parse Error: Class "OrbitPreview" hides a global script class.'
+  printf '%s FAIL\nscripts/orbit/orbit_preview.gd does not parse\n' "$id" > "$WARMD_DIR/result.txt"; exit 0
+fi
+printf '%s OK\n1 scripts parse\n' "$id" > "$WARMD_DIR/result.txt"
+STUB
+chmod +x "$GS/godot"
+WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1; rm -f "$GS/imports"
+expect "the stub engine built a class cache with the old path" 'res://scripts/ui/orbit_preview.gd' "$(cat .godot/global_script_class_cache.cfg 2>&1)"
+mkdir -p scripts/orbit; git mv scripts/ui/orbit_preview.gd scripts/orbit/orbit_preview.gd; git commit -qm move
+imports() { if [ -f "$GS/imports" ]; then wc -l < "$GS/imports" | tr -d ' '; else echo 0; fi; }
+out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+expect "a cache that names the moved script is renewed, the compile is green" 'scripts parse' "$out"
+refuse "no hides error reaches the build" 'hides a global script class|FAIL' "$out"
+expect "it took one import" '^1$' "$(imports)"
+WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
+expect "a fresh cache costs no import" '^1$' "$(imports)"
+touch "$GS/needs_import"
+out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+expect "a hides error the check did not foresee: one import, then green" 'scripts parse' "$out"
+expect "that retry says why" 'class cache named a script twice' "$out"
+expect "the retry took one import" '^2$' "$(imports)"
+out="$(STUB_HIDES=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"; rc=$?
+expect "a hides error that stays after the import is red" 'does not parse' "$out"
+[ "$rc" != 0 ] && ok "its build exits non-zero" || no "its build exits 0"
+expect "it is retried once, not in a loop" '^3$' "$(imports)"
 
 # ---- godot: a runner that does not parse or compile is red, also when the engine ends with exit 0 ----
 GR="$TMP/godot-runners"; mkdir -p "$GR/tests"; printf 'extends SceneTree\n' > "$GR/tests/run_login.gd"

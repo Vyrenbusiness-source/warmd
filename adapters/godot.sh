@@ -68,21 +68,72 @@ a_start_daemon() {
   wait_ready 120
 }
 
-# A new class_name is only known after an import, an edit to an old one reloads in place
-class_cache_fresh() {
-  local cache="$PROJECT/.godot/global_script_class_cache.cfg" f
-  [ -f "$cache" ] || return 1
-  # A read loop, not for-in over find: a project path with a space stays one path
-  while IFS= read -r f; do
-    if grep -q '^class_name ' "$f" && ! grep -q "$(sed -n 's/^class_name \([A-Za-z0-9_]*\).*/\1/p' "$f" | head -1)" "$cache"; then return 1; fi
-  done < <(find "$PROJECT" -name '*.gd' -newer "$cache" -not -path '*/.godot/*' 2>/dev/null)
+# A new class_name is only known after an import, an edit to an old one reloads in place. The class cache also goes stale
+# when a branch moves a class_name script: the cache still names the old path, and the compile sees the class twice
+# ("Class X hides a global script class"). class_cache_drift prints one line per difference between the class_name
+# scripts on disk and .godot/global_script_class_cache.cfg, nothing when they agree. Three process starts, whatever the
+# project size: this PC pays for every one.
+class_cache_drift() {
+  local cache="$PROJECT/.godot/global_script_class_cache.cfg" line rel cls p
+  local -a skip=() mine=()
+  local -A have=()
+  [ -d "$PROJECT/.godot" ] || { echo "no import yet"; return 0; }
+  [ -f "$cache" ] || cache=/dev/null   # no cache is an empty one: stale only once a script has a class_name
+  # Godot skips a folder with a .gdignore and every hidden one: their scripts are never in the cache
+  while IFS= read -r p; do skip+=("${p%.gdignore}"); done < <(find "$PROJECT" \( -name .gdignore -print \) -o \( -name '.?*' -prune \) 2>/dev/null)
+  while IFS= read -r line; do
+    line="${line%$'\r'}"; rel="${line#"$PROJECT"/}"; cls="${rel#*:}"; rel="${rel%%:*}"
+    [[ $cls =~ ^class_name[[:space:]]+([A-Za-z0-9_]+) ]] || continue
+    for p in "${skip[@]}"; do [[ "$PROJECT/$rel" == "$p"* ]] && continue 2; done
+    mine+=("${BASH_REMATCH[1]}|res://$rel")
+  done < <(grep -r -m1 -H -E --include='*.gd' --exclude-dir='.?*' '^class_name[[:space:]]' "$PROJECT" 2>/dev/null)
+  while IFS='|' read -r cls p; do
+    [ -n "$cls" ] || continue
+    have["$cls"]="$p"
+    [[ $p == res://* ]] && [ ! -f "$PROJECT/${p#res://}" ] && echo "$cls: cache names $p, which is gone"
+  done < <(awk -F'"' '/^"class":/{c=$4} /^"path":/{print c"|"$4; c=""}' "$cache" | tr -d '\r')
+  for line in "${mine[@]}"; do
+    cls="${line%%|*}"; p="${line#*|}"
+    [ "${have[$cls]:-}" = "$p" ] || echo "$cls: $p is not in the cache${have[$cls]:+ (cache: ${have[$cls]})}"
+  done
+  return 0
 }
+class_cache_fresh() { [ -z "$(class_cache_drift)" ]; }
+# refresh_classes [force]: an import rebuilds the cache. A difference the import did not clear (two scripts with one
+# class_name) is the code's error, the compile reports it: it is noted and does not cost an import on every build.
 refresh_classes() {
-  class_cache_fresh && return 0
+  local drift mark="$RUN/class_drift.txt"
+  drift="$(class_cache_drift)"
+  if [ "${1:-}" != force ]; then
+    [ -z "$drift" ] && return 0
+    [ -f "$mark" ] && [ "$drift" = "$(cat "$mark" 2>/dev/null)" ] && return 0
+  fi
   daemon_alive && a_kill_daemon
   . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
   "$(godot_exe)" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
+  drift="$(class_cache_drift)"
+  if [ -n "$drift" ]; then printf '%s\n' "$drift" > "$mark" 2>/dev/null; else rm -f "$mark"; fi
   return 0
+}
+# class_retry <command...>: "hides a global script class" comes from a class cache that names a script twice. Its run
+# is repeated once after an import, and only a run that still says so counts as red.
+CLASS_HIDES='hides a global script class'
+class_retry() {
+  local out rc t0; out="$(mktemp)"; t0="$(mktemp)"   # t0: a log newer than it was written by this run
+  "$@" > "$out" 2>&1; rc=$?
+  # The engine's own lines land in a log, not in the output: a one-shot's last.log, the warm daemon's log
+  local hit=0 lg
+  grep -q "$CLASS_HIDES" "$out" && hit=1
+  [ $rc = 0 ] || for lg in "$RUN/last.log" "$RUN/warmd-daemon.log"; do
+    [ -f "$lg" ] && [ "$lg" -nt "$t0" ] && tail -50 "$lg" | grep -q "$CLASS_HIDES" && hit=1
+  done
+  if [ $hit = 1 ]; then
+    echo "(class cache named a script twice: import, then once more)"
+    refresh_classes force
+    "$@" > "$out" 2>&1; rc=$?
+  fi
+  cat "$out"; rm -f "$out" "$t0"
+  return $rc
 }
 
 # job_oneshot <kind> [key=value...]: one engine start, one job, no daemon. Same scripts, same result format.
@@ -107,7 +158,7 @@ a_build() {
   if ls "$PROJECT"/*.csproj >/dev/null 2>&1 && command -v dotnet >/dev/null 2>&1; then
     run_bounded "dotnet build" bash -c "cd '$PROJECT' && dotnet build --nologo -v q" || return 1
   fi
-  run_job compile
+  class_retry run_job compile
 }
 
 a_test() {
@@ -133,7 +184,7 @@ a_test() {
       # A filter picks runners by name; one that names none (warmd check passes changed file names) runs the whole set, runners are suites
       for r in "${runners[@]}"; do [ -n "$filter" ] && [[ "${r##*/}" =~ $filter ]] && pick+=("$r"); done
       [ ${#pick[@]} -gt 0 ] || pick=("${runners[@]}")
-      slot_take; cached "runners|${pick[*]##*/}" run_bounded test run_runners "$exe" "${pick[@]}"
+      slot_take; cached "runners|${pick[*]##*/}" run_bounded test class_retry run_runners "$exe" "${pick[@]}"
       return
     fi
   fi
