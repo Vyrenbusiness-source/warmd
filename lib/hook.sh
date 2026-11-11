@@ -77,15 +77,56 @@ hook_pre() {
 # Tree state = HEAD + tracked/new files, without the .uid/.import an engine writes on its own. Entries expire after 2 hours.
 # A Godot run with a window and no end stays open when its scene never quits: agents left test windows behind.
 # A windowed run needs a time limit (timeout N, --quit-after N, or a --shot/--bench that quits on its own is not trusted).
+# A project script run (bash/sh <file>): read it and look at its Godot calls.
+# Returns 0 when every Godot call in it names --audio-driver, 1 when one does not, 2 when it calls no Godot,
+# 3 when the command is no readable script run (the caller then judges the command text alone).
+hook_script_quiet() { # command -> status as above
+  local c="$1" re='(^|[;&| ])(bash|sh)( +-[A-Za-z-]+)* +([^ -][^ ]*)' re_cd='(^|[;&[:space:]])cd +"?([^"&;]+)"? *&&'
+  local godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /"]godot[0-9.]* ' dir="$PWD" f line cur="" bs vars=" " n=0 bad=0 v name
+  [[ $c =~ $re ]] || return 3
+  f="${BASH_REMATCH[4]}"; f="${f%\"}"; f="${f#\"}"
+  if [[ $c =~ $re_cd ]]; then dir="${BASH_REMATCH[2]}"; dir="${dir%"${dir##*[! ]}"}"; fi
+  case "$f" in /*|[A-Za-z]:*) ;; *) f="$dir/$f";; esac
+  [ -f "$f" ] && [ -r "$f" ] || return 3
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in "#"*|""|"echo "*|"printf "*) continue;; esac
+    cur="$cur $line"
+    bs='\'
+    if [[ $line == *"$bs" ]]; then cur="${cur%"$bs"}"; continue; fi
+    line="${cur# }"; cur=""
+    if [[ $line =~ ^([A-Za-z_][A-Za-z_0-9]*)= ]]; then   # a variable that holds a Godot path
+      name="${BASH_REMATCH[1]}"
+      [[ " $line " =~ $godot ]] && vars="$vars$name "
+      continue
+    fi
+    v=0
+    [[ " $line " =~ $godot ]] && v=1
+    for name in $vars; do [[ $line == *'$'"$name"* || $line == *'${'"$name"'}'* ]] && v=1; done
+    [ "$v" = 1 ] || continue
+    case " $line " in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) continue;; esac
+    n=$((n + 1))
+    case "$line" in *"--audio-driver"*) ;; *) bad=1;; esac
+  done < "$f"
+  [ "$n" = 0 ] && return 2
+  return "$bad"
+}
+
 hook_engine_timeout() { # command -> 0 when denied (decision printed)
   local c=" $1 " godot='[Gg]odot[^ ]*\.(exe|x86_64)|[ /]godot[0-9.]* '
   [[ $c =~ $godot ]] || return 1
   case "$c" in *" --headless "*|*" --import "*|*"--export"*|*" --version "*|*" --help "*) return 1;; esac
   # a test window plays the game's sound through the user's speakers: a windowed run states its audio driver
-  case "$c" in *"--audio-driver"*) ;; *)
+  local drv=0 sq=3
+  case "$c" in *"--audio-driver"*) drv=1;; esac
+  hook_script_quiet "$c"; sq=$?
+  [ "$sq" = 2 ] && return 1   # a script without a Godot call: nothing to judge
+  [ "$sq" = 0 ] && drv=1
+  [ "$drv" = 1 ] || {
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: a Godot run with a window plays sound on the speakers of the user. Add --audio-driver Dummy (a run that must be heard names its driver)."}}
 '
-    return 0;; esac
+    return 0
+  }
   case "$c" in *"timeout "*|*"--quit-after"*|*" --quit "*) return 1;; esac
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: a Godot run with a window needs an end, or the window stays open when the scene does not quit. Put timeout 180 in front of it (or add --quit-after <frames>)."}}\n'
   return 0
