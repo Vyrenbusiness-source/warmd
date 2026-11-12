@@ -759,10 +759,21 @@ team_merge() {
     if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
   if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
-  # What the gate wrote (world outputs, the renewed daemon copy) goes into the last merge commit, only into this merge's
-  # own commit: a commit made meanwhile is never amended
+  # What the gate wrote (world outputs, the renewed daemon copy, .uid) goes into the last merge commit, only into this
+  # merge's own commit: a commit made meanwhile is never amended. Any other change in the checkout was made by someone
+  # meanwhile: it stays uncommitted and is named, never taken into the merge commit.
   if [ -n "$(git -C "$GIT_ROOT" status --porcelain -uno)" ] && [ "$(git -C "$GIT_ROOT" rev-parse HEAD)" = "$mine" ]; then
-    git -C "$GIT_ROOT" add -u && git -C "$GIT_ROOT" commit -q --amend --no-edit || { mfail "cannot commit what the gate wrote"; return; }
+    local f own=() foreign=() wo; wo=" ${CFG_world_outputs//,/ } "
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case "$f" in Assets/Editor/Warmd/*|*.uid) own+=("$f"); continue;; esac
+      for m in $wo; do case "$f" in "$m"|"$m"/*) own+=("$f"); continue 2;; esac; done
+      foreign+=("$f")
+    done < <(git -C "$GIT_ROOT" diff --name-only HEAD)
+    if [ ${#own[@]} -gt 0 ]; then
+      git -C "$GIT_ROOT" add -u -- "${own[@]}" && git -C "$GIT_ROOT" commit -q --amend --no-edit || { mfail "cannot commit what the gate wrote"; return; }
+    fi
+    [ ${#foreign[@]} -eq 0 ] || echo "WARN not in the merge commit, changed in the checkout meanwhile and left uncommitted: ${foreign[*]:0:5}"
   fi
   echo "OK $(secs)s merged $br as $(git -C "$GIT_ROOT" rev-parse --short HEAD)$([ $nogate = 1 ] && echo ", no gate (--no-gate)"), not pushed"
   rm -f "$MERGELOCK" "$MERGELOCK.win"; unset WARMD_IN_MERGE WARMD_DIFF_BASE
