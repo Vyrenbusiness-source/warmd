@@ -550,6 +550,7 @@ team_split() {
       # A reused worktree may still carry the "finished" line of its previous task: the new task is not finished,
       # or the next split prunes it as free and hands the same worktree to a second agent.
       batch_done_forget "${batch%/warmd-batch}" "$wt"
+      rm -f "${batch%/warmd-batch}/warmd-auto/done/$name"
       [ -f "${batch%/warmd-batch}/warmd-batch-dropped" ] && { grep -v "^$name	" "${batch%/warmd-batch}/warmd-batch-dropped" > "$batch-dropped.t"; mv -f "$batch-dropped.t" "${batch%/warmd-batch}/warmd-batch-dropped"; }   # split again: wanted again
       prewarm "$wt"
     fi
@@ -603,6 +604,8 @@ team_finish() {
   fi
   shared_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   ledger_finish "$@" || return $?
+  # DONE with an outcome other than failed or escalated: the task waits for the merge. No stop may escalate or restart it.
+  case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; mkdir -p "$fb" && : > "$fb/${br#warmd/}";; esac
   finish_stop_runs
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
