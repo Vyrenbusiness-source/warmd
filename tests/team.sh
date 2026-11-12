@@ -178,6 +178,16 @@ out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge --no-gate war
 [ $rc != 0 ] && [ "$(cat other.txt)" = mine ] && echo "$out" | grep -q 'other.txt' && ok "another untracked file still blocks, FAIL line names it" || no "other file: rc=$rc $out"
 cd "$TMP" || exit 1
 
+# warmd merge: a change made in the checkout while the gate runs is not taken into the merge commit (a .uid the gate wrote is)
+MF="$TMP/mf"; mkdir -p "$MF"; cd "$MF" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo a > a.txt; echo orig > foreign.txt; git add -A; git commit -qm init
+git checkout -q -b warmd/f; echo f > f.txt; git add f.txt; git commit -qm f; git checkout -q main
+printf 'gate=sh gate.sh\n' > warmd.conf; printf 'echo edited > foreign.txt\n' > gate.sh; git add warmd.conf gate.sh; git commit -qm conf
+out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge warmd/f 2>&1)"; rc=$?
+[ $rc = 0 ] && ! git show --stat --format= HEAD | grep -q foreign.txt && [ "$(cat foreign.txt)" = edited ] && echo "$out" | grep -q 'WARN.*foreign.txt' && ok "an edit made during the gate stays out of the merge commit and is named" || no "foreign edit: rc=$rc $out; $(git show --stat --format= HEAD)"
+cd "$TMP" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

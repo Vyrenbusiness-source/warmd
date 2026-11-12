@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.47] - 2026-11-12
+
+### Fixed
+- `warmd merge` no longer takes edits made in the checkout while the gate runs into the merge commit: only what the gate wrote (`Assets/Editor/Warmd/`, `.uid`, `world_outputs`) is amended in, any other change stays uncommitted and is named in a `WARN` line
+
 ## [0.4.46] - 2026-11-12
 
 ### Fixed
