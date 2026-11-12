@@ -45,7 +45,7 @@ worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_
 rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo "${r%/}"; }   # from git: string math breaks on Windows short paths
 
 # Work left in a worktree: tracked changes and new files, but not files the engine writes on its own (Godot .uid/.import next to every asset).
-wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^\?\? .*\.(uid|import)$'; }
+wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^(\?\?| M) .*\.(uid|import)$'; }   # also a tracked .uid Godot rewrote
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
@@ -595,7 +595,7 @@ team_finish() {
   finish_stop_runs
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
-  dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
+  dirty="$(wt_work "$GIT_ROOT" | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
