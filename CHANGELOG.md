@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- `warmd drop <task> [reason] [--delete] [--force]` cancels one task of a running batch: it leaves the batch (so `warmd watch` stops waking it, `warmd status`, the batch guard and the automatic merge ignore it, and the batch can end), frees its files, drops its queued ESCALATE or AGENT line and is recorded as dropped, not failed. The branch stays unless `--delete`, which removes the worktree and branch only when there are no commits outside the base and no uncommitted files, otherwise it refuses and changes nothing
+
 ## [0.4.42] - 2026-11-12
 
 ### Fixed
