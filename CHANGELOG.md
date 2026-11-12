@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.48] - 2026-11-12
+
+### Fixed
+- `warmd split` never silently reuses the old branch of a finished task with the same name: a branch without commits missing from base is deleted or moved to the current base (also its reused worktree), a branch with unmerged commits or uncommitted changes is refused with a `GAP` line naming it, suggesting a new task name or `warmd drop <task> --delete`
+
 ## [0.4.47] - 2026-11-12
 
 ### Fixed
