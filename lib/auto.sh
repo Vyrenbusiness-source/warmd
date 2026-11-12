@@ -40,6 +40,7 @@ auto_agent_start() { # hook JSON -> 0 when it was an Agent call
     name="${p##*/}"; name="${name%.md}"; root="${p%/.warmd/tasks/*}"
     common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
     [ -e "$common/warmd-auto/paused/$name" ] && rm -f "$common/warmd-auto/paused/$name"   # auto_dir without a subshell
+    rm -f "$common/warmd-auto/done/$name"   # a new agent on the task: it is not done any more
     # a fresh agent on a task that went to a human: the old ESCALATE line no longer stands
     if [ -s "$common/warmd-auto/queue" ]; then
       local ql qk=""; while IFS= read -r ql || [ -n "$ql" ]; do [[ $ql == "ESCALATE $name:"* ]] || qk="$qk$ql"$'\n'; done < "$common/warmd-auto/queue"
@@ -66,7 +67,7 @@ auto_drain() { # common -> prints the lines that may go and keeps the held ones,
   local q line name out="" keep=""; q="$(auto_dir "$1")/queue"
   [ -s "$q" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in "AGENT "*:*) name="${line#AGENT }"; name="${name%%:*}"; auto_busy "$1" "$name" && { keep="$keep$line"$'\n'; continue; };; esac
+    case "$line" in "AGENT "*:*) name="${line#AGENT }"; name="${name%%:*}"; [ -f "$(auto_dir "$1")/done/$name" ] && continue; auto_busy "$1" "$name" && { keep="$keep$line"$'\n'; continue; };; esac
     out="$out$line"$'\n'
   done < "$q"
   printf '%s' "$keep" > "$q"
@@ -104,6 +105,8 @@ auto_queued() { # worktree
 auto_stop() { # common name worktree outcome
   local common="$1" name="$2" wt="$3" outcome="$4" m tf proj out
   m="$(auto_dir "$common")/paused/$name"
+  # Reported DONE by warmd finish: it waits for the merge, no escalation and no restart line
+  [ -f "$(auto_dir "$common")/done/$name" ] && { auto_pause "$common" "$name"; echo ok; return 0; }
   # Waiting for a slot is no failure: the task stays open like a handoff, the same tier continues
   case "$outcome" in failed|escalated) auto_queued "$wt" && { auto_pause "$common" "$name"; echo handoff; return 0; };; esac
   [ "$outcome" = ok ] && auto_red "$wt" && outcome=failed

@@ -210,5 +210,16 @@ printf 'hh | add hh | hh.txt exists | hh.txt\n' > "$TMP/hh.txt"; WARMD_NO_PREWAR
 sha="$(git -C "$W/hh" rev-parse --short HEAD)"
 grep -q "^- test all: green at $sha, " "$C/warmd-handoff/hh.md" 2>/dev/null && ok "handoff note lists the green run with commit and time" || no "handoff note: $(cat "$C/warmd-handoff/hh.md" 2>/dev/null)"
 
+# A task that reported DONE (warmd finish, outcome ok) is never restarted: no escalation at its stop, no queued AGENT line
+cd "$R" || exit 1
+mkdir -p "$C/warmd-auto/done"; : > "$C/warmd-auto/done/dn"
+out="$(bash -c '. "$1/lib/platform.sh"; . "$1/lib/auto.sh"; auto_stop "$2" dn "$3" failed' _ "$HERE" "$C" "$W/hh" 2>&1)"
+[ "$out" = ok ] && ok "a stop of a DONE task never escalates" || no "auto_stop of a DONE task: $out"
+echo 'AGENT dn: subagent_type=warmd-worker model=x prompt="restart"' >> "$C/warmd-auto/queue"; echo 'AGENT other: subagent_type=warmd-worker model=x prompt="go"' >> "$C/warmd-auto/queue"
+out="$(bash -c '. "$1/lib/platform.sh"; . "$1/lib/auto.sh"; auto_drain "$2"' _ "$HERE" "$C" 2>&1)"
+{ ! echo "$out" | grep -q '^AGENT dn:' && echo "$out" | grep -q '^AGENT other:'; } && ok "watch never prints a restart line for a DONE task" || no "drain: $out"
+rm -f "$C/warmd-auto/queue"
+( cd "$W/hh" && "$WARMD" finish >/dev/null 2>&1 ); [ -f "$C/warmd-auto/done/hh" ] && ok "warmd finish marks the task DONE" || no "finish left no done marker"
+
 cd /; rm -rf "$TMP" "$(dirname "$R")/.warmd-worktrees" 2>/dev/null
 [ $fails = 0 ] && echo "auto: all ok" || { echo "auto: $fails failed"; exit 1; }
