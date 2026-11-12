@@ -45,7 +45,7 @@ worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_
 rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo "${r%/}"; }   # from git: string math breaks on Windows short paths
 
 # Work left in a worktree: tracked changes and new files, but not files the engine writes on its own (Godot .uid/.import next to every asset).
-wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^\?\? .*\.(uid|import)$'; }
+wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^(\?\?| M) .*\.(uid|import)$|^\?\? \.?godot/|^\?\? .*/\.godot/'; }   # also a tracked .uid Godot rewrote
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
 wt_free() { # path
   local p="$1" rel; rel="$(rel_project)"
@@ -576,7 +576,7 @@ agent_state() { # worktree [base]
   br="$(git -C "$wt" branch --show-current 2>/dev/null)"; [ -n "$br" ] || return 0
   [ -n "$base" ] || base="$(base_branch)"
   sha="$(git -C "$wt" rev-parse --short HEAD 2>/dev/null)"; ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo '?')"
-  dirty="$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  dirty="$(wt_work "$wt" | wc -l | tr -d ' ')"
   printf ' State: %s at %s, %s ahead of %s, %s uncommitted. Stop the previous agent of this task first, never two in one worktree.' "$br" "$sha" "$ahead" "$base" "$dirty"
 }
 
@@ -595,7 +595,7 @@ team_finish() {
   finish_stop_runs
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
-  dirty="$(git -C "$GIT_ROOT" status --porcelain | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
+  dirty="$(wt_work "$GIT_ROOT" | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
@@ -639,7 +639,7 @@ team_board() {
       printf '%-26s %-22s %s\n' "$(basename "$path" | cut -c1-26)" "$(echo "$br" | cut -c1-22)" "folder missing, drop it: git worktree prune"; continue
     fi
     age=$(( ($(date +%s) - ct) / 60 ))
-    dirty="$(git -C "$path" status --porcelain | wc -l | tr -d ' ')"
+    dirty="$(wt_work "$path" | wc -l | tr -d ' ')"
     ahead="$(git -C "$path" rev-list --count "$base..HEAD" 2>/dev/null || echo '?')"
     printf '%-26s %-22s %5sm %6s %6s\n' "$(basename "$path" | cut -c1-26)" "$(echo "$br" | cut -c1-22)" "$age" "$dirty" "$ahead"
   done
@@ -700,7 +700,7 @@ team_merge() {
     brs=("${new[@]}")
     git -C "$GIT_ROOT" status --porcelain -uno | grep -qE '\.sln[x]?$' && git -C "$GIT_ROOT" checkout -q -- '*.sln*' 2>/dev/null
     # The daemon copy warmd renewed (unity_sync) is no one's work in progress: the merge commit takes it along
-    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -v 'Assets/Editor/Warmd/')" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
+    [ -z "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -vE 'Assets/Editor/Warmd/|^ M .*\.uid$')" ] || { echo "FAIL uncommitted changes, nothing done"; return 2; }
     start="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   fi
   mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
@@ -731,7 +731,7 @@ team_merge() {
   # Not rolled back: exit 3, the caller stops merging on top of it.
   mfail() {
     merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $*; not rolled back: $REPLY"; return 3; }
-    local left; left="$(git -C "$GIT_ROOT" status --porcelain -uno | cut -c4- | head -5 | tr '\n' ' ')"
+    local left; left="$(git -C "$GIT_ROOT" status --porcelain -uno | grep -vE '^ M .*\.uid$' | cut -c4- | head -5 | tr '\n' ' ')"
     echo "FAIL merge $br: $*${left:+; kept uncommitted (written by the gate or by someone meanwhile): ${left% }}"; return 1
   }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --check "$start" HEAD 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return; }

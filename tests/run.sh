@@ -248,6 +248,11 @@ wtf="$(dirname "$PWD")/.warmd-worktrees/app/footer"
 echo x > "$wtf/open.txt"; git -C "$wtf" add open.txt
 expect "handoff refuses uncommitted work" 'commit your work first' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
 git -C "$wtf" commit -qm wip
+echo u > "$wtf/g.gd.uid"; git -C "$wtf" add g.gd.uid; git -C "$wtf" commit -qm uid; echo v > "$wtf/g.gd.uid"; echo n > "$wtf/h.gd.uid"; echo i > "$wtf/h.gd.import"
+expect "handoff ignores Godot .uid/.import byproducts" 'AGENT footer:' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+echo t > "$wtf/open.txt"; git -C "$wtf" commit -qam x 2>/dev/null; echo more >> "$wtf/open.txt"
+expect "handoff still refuses a changed tracked file next to .uid files" 'commit your work first' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+git -C "$wtf" checkout -q -- open.txt g.gd.uid; rm -f "$wtf/h.gd.uid" "$wtf/h.gd.import"
 out="$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
 expect "handoff prints the line for a fresh agent" 'AGENT footer:.*continue from there' "$out"
 note="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-handoff/footer.md"

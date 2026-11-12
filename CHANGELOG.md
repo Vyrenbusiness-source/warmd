@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd handoff` and the `warmd finish` uncommitted count no longer count Godot import byproducts as work: a tracked `.uid` file Godot rewrote on import (and new `.uid`/`.import` files) does not trigger "commit your work first". `warmd watch`, the agent restart line ("N uncommitted"), `warmd status` and the merge gate ("uncommitted changes") ignore them too. A real change to any other tracked file still counts everywhere
+
 ## [0.4.40] - 2026-11-11
 
 ### Fixed
