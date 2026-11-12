@@ -16,7 +16,7 @@ team_handoff() {
   [ -n "$name" ] && [ -n "$done_text" ] && [ -n "$next_text" ] || { echo "warmd handoff <name> \"what is done\" \"what is next\""; return 2; }
   dir="$(handoff_dir)"
   [ -f "$dir/$name.task" ] || { echo "FAIL unknown task $name"; return 2; }
-  [ -n "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -vE '\.sln[x]?$')" ] && { echo "FAIL commit your work first, a handoff must not lose anything"; return 1; }
+  [ -n "$(git -C "$GIT_ROOT" status --porcelain -uno | grep -vE '\.sln[x]?$|^ M .*\.uid$')" ] && { echo "FAIL commit your work first, a handoff must not lose anything"; return 1; }
   task="$(sed -n 1p "$dir/$name.task")"; tier="$(sed -n 2p "$dir/$name.task")"
   note="$dir/$name.md"
   round=$(( $(grep -c '^## Handoff' "$note" 2>/dev/null || true) + 1 ))
