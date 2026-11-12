@@ -72,6 +72,31 @@ wt_fresh() { # path name
   [ "$(git -C "$p" rev-parse HEAD)" = "$(git -C "$p" rev-parse "$base")" ] && return 0
   git -C "$p" checkout -q -B "warmd/$2" "$base"
 }
+# A task name that was used before must never silently reuse its old branch: work not in base is refused, a merged or stale branch starts again at base.
+wt_old_gap() { # name: prints a GAP line and returns 1 when the old branch/worktree of this name holds work base does not have
+  local name="$1" br="warmd/$1" base ahead wt dirty=""; base="$(base_branch)"
+  git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/$br" >/dev/null || return 0
+  ahead="$(git -C "$GIT_ROOT" rev-list --count "$base..$br" 2>/dev/null || echo 0)"
+  wt="$(git -C "$GIT_ROOT" worktree list --porcelain | awk -v b="refs/heads/$br" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')"
+  [ -n "$wt" ] && [ -d "$wt" ] && dirty="$(git -C "$wt" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/|\.(uid|import)$')"
+  if [ "${ahead:-0}" -gt 0 ] || [ -n "$dirty" ]; then
+    echo "GAP $name: branch $br already exists with ${ahead:-0} commit(s) not in $base${dirty:+ and uncommitted changes}. Use a new task name or: warmd drop $name --delete"
+    return 1
+  fi
+}
+# The branch of an earlier task has nothing base lacks: it is deleted or moved to base, so the new task starts on current code.
+wt_old_renew() { # name
+  local name="$1" br="warmd/$1" base wt; base="$(base_branch)"
+  wt="$(worktree_dir)/$name"
+  if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/$br" >/dev/null; then
+    local at; at="$(git -C "$GIT_ROOT" worktree list --porcelain | awk -v b="refs/heads/$br" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')"
+    if [ -n "$at" ] && [ -d "$at" ]; then git -C "$at" checkout -q -B "$br" "$base" 2>/dev/null || return 1
+    elif [ -d "$wt" ]; then git -C "$wt" checkout -q -B "$br" "$base" 2>/dev/null || return 1
+    else git -C "$GIT_ROOT" branch -q -D "$br" 2>/dev/null; fi
+  elif [ -d "$wt" ]; then git -C "$wt" checkout -q -B "$br" "$base" 2>/dev/null || return 1
+  fi
+  return 0
+}
 wt_reuse() { # name
   local name="$1" p br base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
   # A worktree that already holds this task's branch keeps it and its commits: earlier work is never reset.
@@ -522,6 +547,7 @@ team_split() {
       done
     fi
     [ -n "$check" ] || { echo "GAP $name: no done check"; bad=1; }
+    if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then wt_old_gap "$name" || bad=1; fi
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
@@ -543,6 +569,7 @@ team_split() {
         echo "WAIT $name: disk short, $REPLY. Split it again when space is free"; waited=$((waited+1)); running=$((running-1)); continue
       fi
     fi
+    if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then wt_old_renew "$name" || { echo "FAIL worktree $name: old branch warmd/$name could not move to $(base_branch)"; return 1; }; fi
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
     if [ -n "$files" ] && [ "$files" != none ]; then

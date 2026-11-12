@@ -156,5 +156,27 @@ out="$("$WARMD" drop dr gone --delete --force 2>&1)"
 expect "drop --delete --force throws work away, the last drop ends the batch" 'OK dr dropped \(gone\).*batch ended' "$out"
 [ ! -f "$common/warmd-batch" ] && echo "ok   an emptied batch ends" || { echo "FAIL the batch marker is still there"; fails=$((fails+1)); }
 
+# (9) a task name used before never silently reuses its old branch
+S="$TMP/stale"; mkdir -p "$S/app"; cd "$S/app" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo '{ "name": "t" }' > package.json; printf '.warmd
+' > .gitignore; printf 'agents=3
+' > warmd.conf
+git add -A; git commit -qm init
+git branch warmd/oldm; git branch warmd/oldu
+git checkout -q warmd/oldu; echo u > u.txt; git add u.txt; git commit -qm unmerged; git checkout -q main
+for i in 1 2 3; do echo "$i" > "m$i.txt"; git add -A; git commit -qm "m$i"; done
+printf 'oldm | redo | y | src/o.ts
+' > sm.txt
+out="$("$WARMD" split sm.txt 2>&1)"
+expect "a stale merged branch is recreated" 'OK 1 tasks split' "$out"
+[ "$(git rev-parse warmd/oldm)" = "$(git rev-parse main)" ] && echo "ok   the recreated branch sits at base" || { echo "FAIL warmd/oldm is not at main"; fails=$((fails+1)); }
+printf 'oldu | redo | y | src/u.ts
+' > su.txt
+out="$("$WARMD" split su.txt 2>&1)"
+expect "a stale branch with unmerged commits is refused" 'GAP oldu: branch warmd/oldu .*1 commit.*new task name.*warmd drop oldu --delete' "$out"
+[ "$(git rev-list --count main..warmd/oldu)" = 1 ] && echo "ok   the unmerged branch is untouched" || { echo "FAIL unmerged branch changed"; fails=$((fails+1)); }
+cd "$TMP/app" || exit 1
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "OK brakes" || { echo "FAIL brakes: $fails"; exit 1; }
