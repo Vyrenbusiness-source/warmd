@@ -354,7 +354,7 @@ hook_session() {
     while IFS= read -r wt; do
       wt="${wt%$'\r'}"; [ -n "$wt" ] || continue; n=$((n+1))
       br=""; dirty=0
-      while IFS= read -r l; do case "$l" in "# branch.head "*) br="${l#\# branch.head }";; \#*) ;; ?*) dirty=$((dirty+1));; esac; done < <(git -C "$wt" status --porcelain=v2 --branch 2>/dev/null)
+      while IFS= read -r l; do case "$l" in "# branch.head "*) br="${l#\# branch.head }";; \#*) ;; "? "*.uid|"? "*.import|"? "*.godot/*|"1 .M "*.uid) ;; ?*) dirty=$((dirty+1));; esac; done < <(git -C "$wt" status --porcelain=v2 --branch 2>/dev/null)
       ahead="$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null)" || ahead='?'
       if [ -n "${state[$wt]:-}" ]; then echo "- ${br:-$wt}: done (${state[$wt]}), $ahead ahead, $dirty uncommitted"
       else
@@ -590,7 +590,7 @@ hook_merge() { # common dir
     tgt="$REPLY"
     # Someone's work in progress in the base checkout: nothing merged, nothing touched (only the copies warmd itself
     # renews, the daemon copy and Unity's .sln, are no one's work). An open merge there counts too.
-    dirty="$(git -C "$tgt" status --porcelain -uno 2>/dev/null | cut -c4- | grep -vE 'Assets/Editor/Warmd/|\.slnx?$' | head -5 | tr '\n' ' ')"
+    dirty="$(git -C "$tgt" status --porcelain -uno 2>/dev/null | grep -vE '^ M .*\.uid$' | cut -c4- | grep -vE 'Assets/Editor/Warmd/|\.slnx?$' | head -5 | tr '\n' ' ')"
     git -C "$tgt" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && dirty="${dirty}(an open merge) "
     if [ -n "$dirty" ]; then
       { echo "$(date '+%F %T') batch finished, merging into $base in $tgt"; printf '%s' "$pre"
