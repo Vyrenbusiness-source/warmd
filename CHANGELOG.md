@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd merge` (and so the automatic merge at the end of a batch) no longer fails with "untracked working tree files would be overwritten" when Godot created a `.uid` or `.import` file in the base checkout that the incoming branch tracks: those import byproducts are removed first, Godot regenerates them. Any other untracked file that would be overwritten still stops the merge, and the FAIL line now lists the file names
+
 ## [0.4.41] - 2026-11-12
 
 ### Fixed
