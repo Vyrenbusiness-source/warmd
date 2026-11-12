@@ -132,6 +132,19 @@ git -C "$d" checkout -q test/test_other.gd
 echo 'x' >> "$d/project.godot"
 expect "gd: project settings select all" '^ALL\|\|project\.godot' "$(sel "$d" gd)"
 
+# gd: runners tests/run_*.gd (extends SceneTree) are tests: a changed source selects the runner that loads it, a changed runner selects itself
+d="$(fixture gd gdrun)"
+mkdir -p "$d/tests"
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tvar s = preload("res://core/leaf.gd")\n\tquit(0)\n' > "$d/tests/run_leaf_tests.gd"
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(0)\n' > "$d/tests/run_other_tests.gd"
+git -C "$d" add -A; git -C "$d" commit -qm runners
+echo '# edit' >> "$d/core/leaf.gd"
+out="$(sel "$d" gd)"
+expect "gd runner: a changed source selects the runner that loads it" 'tests/run_leaf_tests\.gd' "$out"
+git -C "$d" checkout -q core/leaf.gd
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(0)\n# edit\n' > "$d/tests/run_other_tests.gd"
+expect "gd runner: a changed runner selects itself" '^SOME\|tests/run_other_tests\.gd\|' "$(sel "$d" gd)"
+
 rm -rf "$TMP" 2>/dev/null
 echo
 [ $fails = 0 ] && echo "affected: all green" || echo "affected: $fails failed"
