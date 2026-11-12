@@ -16,7 +16,8 @@ OWN_JOB="proof godot"   # tests/<name>.sh with a CI job of its own
 MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
 guard() {
   local ci="$HERE/.github/workflows/ci.yml" groups f n s c
-  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '')"
+  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '
+')"
   [ -n "$groups" ] || { no "guard: ci.yml has no self-test matrix group list"; return; }
   for f in "$HERE"/tests/*.sh; do
     n="${f##*/}"; n="${n%.sh}"
@@ -248,6 +249,11 @@ wtf="$(dirname "$PWD")/.warmd-worktrees/app/footer"
 echo x > "$wtf/open.txt"; git -C "$wtf" add open.txt
 expect "handoff refuses uncommitted work" 'commit your work first' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
 git -C "$wtf" commit -qm wip
+echo u > "$wtf/g.gd.uid"; git -C "$wtf" add g.gd.uid; git -C "$wtf" commit -qm uid; echo v > "$wtf/g.gd.uid"; echo n > "$wtf/h.gd.uid"; echo i > "$wtf/h.gd.import"
+expect "handoff ignores Godot .uid/.import byproducts" 'AGENT footer:' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+echo t > "$wtf/open.txt"; git -C "$wtf" commit -qam x 2>/dev/null; echo more >> "$wtf/open.txt"
+expect "handoff still refuses a changed tracked file next to .uid files" 'commit your work first' "$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
+git -C "$wtf" checkout -q -- open.txt g.gd.uid; rm -f "$wtf/h.gd.uid" "$wtf/h.gd.import"
 out="$(cd "$wtf" && "$WARMD" handoff footer 'parser done' 'write tests')"
 expect "handoff prints the line for a fresh agent" 'AGENT footer:.*continue from there' "$out"
 note="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-handoff/footer.md"
