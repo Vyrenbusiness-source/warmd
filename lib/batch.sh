@@ -25,6 +25,7 @@ batch_resume() {
     case "$out" in *"$wt"$'\n'*) continue;; esac
     # A reused worktree keeps the task files of every task it held: its branch names the task it holds now
     [ -f "${tf%/*}/${br#warmd/}.md" ] && tf="${tf%/*}/${br#warmd/}.md"
+    grep -q "^${br#warmd/}	" "$common/warmd-batch-dropped" 2>/dev/null && continue   # warmd drop: not wanted any more
     batch_recent "$common" "${br#warmd/}" "$tf" || continue
     if [ -z "$(wt_work "$wt")" ] && [ "$(git -C "$wt" rev-list --count "$base..HEAD" 2>/dev/null || echo 1)" = 0 ]; then
       ct="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo 0)"; mt="$(date -r "$tf" +%s 2>/dev/null || echo 0)"
