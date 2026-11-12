@@ -162,6 +162,22 @@ out="$(WARMD_TRANSCRIPTS="$TMP/transcripts" "$HERE/bin/warmd" batch-resume 2>&1)
 case "$out" in "OK batch marker rebuilt: 2 open: talk cur"|"OK batch marker rebuilt: 2 open: cur talk") ok "batch-resume takes the latest batch and a recently active task, not an old worktree";; *) no "batch-resume picked: $out";; esac
 cd "$TMP" || exit 1
 
+# warmd merge: untracked Godot byproducts (.uid/.import) the branch tracks are cleared, any other untracked file blocks and is named
+MG="$TMP/mg"; mkdir -p "$MG"; cd "$MG" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo a > a.txt; git add a.txt; git commit -qm init
+git checkout -q -b warmd/imp; mkdir -p tests; echo 'uid://x' > tests/t.gd.uid; echo imp > tests/t.import; echo n > new.txt
+git add -A; git commit -qm imp; git checkout -q main
+echo 'uid://local' > tests/t.gd.uid 2>/dev/null || { mkdir -p tests; echo 'uid://local' > tests/t.gd.uid; }; echo local > tests/t.import
+out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge --no-gate warmd/imp 2>&1)"; rc=$?
+[ $rc = 0 ] && [ "$(cat tests/t.gd.uid)" = 'uid://x' ] && [ -f new.txt ] && ok "untracked .uid/.import the branch tracks do not block the merge" || no "byproduct merge rc=$rc: $out"
+git reset -q --hard HEAD~1 2>/dev/null; git reset -q --hard main 2>/dev/null
+git checkout -q -b warmd/oth main; echo b > other.txt; git add other.txt; git commit -qm oth; git checkout -q main
+git reset -q --hard "$(git merge-base main warmd/oth)"; echo mine > other.txt
+out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge --no-gate warmd/oth 2>&1)"; rc=$?
+[ $rc != 0 ] && [ "$(cat other.txt)" = mine ] && echo "$out" | grep -q 'other.txt' && ok "another untracked file still blocks, FAIL line names it" || no "other file: rc=$rc $out"
+cd "$TMP" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

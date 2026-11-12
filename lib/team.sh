@@ -44,6 +44,16 @@ need_git() { [ -n "$GIT_ROOT" ] || { echo "FAIL needs a git repo"; exit 2; }; }
 worktree_dir() { echo "$(dirname "$GIT_ROOT")/.warmd-worktrees/$(basename "$GIT_ROOT")"; }
 rel_project() { local r; r="$(git -C "$PROJECT" rev-parse --show-prefix)"; echo "${r%/}"; }   # from git: string math breaks on Windows short paths
 
+# Godot import byproducts (.uid/.import) untracked in the base checkout that the incoming branch tracks would block
+# the merge. Godot regenerates them, so they are removed first. Any other untracked file is left alone.
+merge_clear_byproducts() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    git -C "$GIT_ROOT" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && continue
+    rm -f -- "$GIT_ROOT/$f"
+  done < <(git -C "$GIT_ROOT" ls-tree -r --name-only "$1" 2>/dev/null | grep -E '\.(uid|import)$')
+}
 # Work left in a worktree: tracked changes and new files, but not files the engine writes on its own (Godot .uid/.import next to every asset).
 wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^(\?\?| M) .*\.(uid|import)$|^\?\? \.?godot/|^\?\? .*/\.godot/'; }   # also a tracked .uid Godot rewrote
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
@@ -706,6 +716,7 @@ team_merge() {
   mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   for i in "${!brs[@]}"; do
     br="${brs[$i]}"
+    merge_clear_byproducts "$br"
     out="$(git -C "$GIT_ROOT" merge --no-ff -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} "$br" 2>&1)" || {
       if [ "${WARMD_MERGE_ATOMIC:-0}" != 1 ] && git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null; then
         printf '%s\n%s\n%s\n%s\n' "$start" "$nogate" "${brs[*]:$((i+1))}" "${merged[*]}" > "$q"
@@ -714,6 +725,10 @@ team_merge() {
         # WARMD_MERGE_ATOMIC=1 (the batch merge of the hooks): a conflict rolls back all, nobody is there to resolve it
         git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null && git -C "$GIT_ROOT" merge --abort 2>/dev/null
         m="$(echo "$out" | grep -m1 -E 'CONFLICT|error|fatal' | cut -c1-160)"
+        # "untracked working tree files would be overwritten": the header alone says nothing, name the files
+        local fl; fl="$(echo "$out" | grep -E '^[[:space:]]+[^[:space:]]' | grep -vE '^[[:space:]]*(Please|Aborting)' | sed 's/^[[:space:]]*//' | head -5 | tr '
+' ' ')"
+        [ -z "$fl" ] || m="${m%:}: ${fl% }"
         merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $m, not rolled back: $REPLY"; return 3; }
         echo "FAIL merge $br: $m, nothing merged"
       fi
