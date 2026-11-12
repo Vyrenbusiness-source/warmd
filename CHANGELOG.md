@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.43] - 2026-11-12
+
+### Added
+- `warmd drop <task> [reason] [--delete] [--force]` cancels one task of a running batch: it leaves the batch (so `warmd watch` stops waking it, `warmd status`, the batch guard and the automatic merge ignore it, and the batch can end), frees its files, drops its queued ESCALATE or AGENT line and is recorded as dropped, not failed. The branch stays unless `--delete`, which removes the worktree and branch only when there are no commits outside the base and no uncommitted files, otherwise it refuses and changes nothing
+
 ## [0.4.42] - 2026-11-12
 
 ### Fixed
@@ -351,7 +356,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.42...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.43...HEAD
+[0.4.43]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.42...v0.4.43
 [0.4.42]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.41...v0.4.42
 [0.4.41]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.40...v0.4.41
 [0.4.40]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.39...v0.4.40

@@ -170,6 +170,13 @@ warmd merge warmd/a warmd/b warmd/c
 ### warmd batch-done
 Ends the batch, so the shared checkout opens again.
 
+### warmd drop
+Cancels one task of a running batch that is not wanted any more. Syntax: `warmd drop <task> [reason] [--delete] [--force]`. The task leaves the batch: `warmd watch` stops waking it, `warmd status`, the batch guard and the automatic merge no longer count it, its files are free for the next split, and its queued ESCALATE or AGENT line is removed. It is recorded as dropped with the reason in `warmd-batch-dropped`, never as failed. The last drop of a batch ends it; when the tasks left are all finished, the automatic merge goes. The branch stays unless `--delete`: then the worktree and the branch (also on `origin`) are removed, but only when the branch has no commits that are not in the base and the worktree has no uncommitted files; otherwise it refuses with the reason and changes nothing. `--force` throws that work away. Split the task again and it is wanted again.
+```text
+warmd drop trace-sound "user does not want it" --delete
+OK trace-sound dropped (user does not want it): worktree and branch warmd/trace-sound removed, watch and automerge ignore it
+```
+
 ### warmd batch-resume
 Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Only tasks of the latest batch count: named in its shared brief, a task file from after the batch start, or an agent transcript that moved in the last 120 minutes; worktrees of earlier batches with unmerged commits stay out. Use it when the marker was lost while agents still work.
 

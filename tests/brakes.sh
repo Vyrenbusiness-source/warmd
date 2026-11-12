@@ -126,5 +126,35 @@ out="$(bash -c '. "$1/lib/platform.sh"; . "$1/lib/core.sh" 2>/dev/null; . "$1/li
 expect "a queued run sees held places without starting a program" '^held held$' "$(echo "$out" | head -1)"
 expect "a queued run sees a free place without starting a program" '^half free$' "$(echo "$out" | tail -1)"
 
+# (r) warmd drop: one task leaves a running batch, dropped and not failed
+"$WARMD" batch-done > /dev/null
+printf 'agents=5\n' > warmd.conf
+printf 'dp | p | y | src/dp.ts\ndq | q | y | src/dq.ts\ndr | r | y | src/dr.ts\n' > drops.txt
+"$WARMD" split drops.txt > /dev/null
+(cd "$wts/dq" && mkdir -p src && echo q > src/dq.ts && git add -A && git commit -qm q)
+echo wip > "$wts/dr/dirty.txt"
+out="$("$WARMD" drop nope 2>&1)"; expect "drop of an unknown task fails" 'FAIL no task nope' "$out"
+out="$("$WARMD" drop dq "not wanted" --delete 2>&1)"
+expect "drop --delete refuses unmerged commits" 'FAIL dq has 1 commit' "$out"
+expect "a refused drop changes nothing" '/dq$' "$(cat "$common/warmd-batch")"
+out="$("$WARMD" drop dr "no longer needed" --delete 2>&1)"
+expect "drop --delete refuses uncommitted work" 'FAIL dr has 1 uncommitted' "$out"
+out="$("$WARMD" drop dp "user does not want it" --delete 2>&1)"
+expect "drop prints one OK line" '^OK dp dropped \(user does not want it\): worktree and branch warmd/dp removed' "$out"
+if grep -q '/dp$' "$common/warmd-batch"; then echo "FAIL a dropped task stays in the batch"; fails=$((fails+1)); else echo "ok   a dropped task leaves the batch"; fi
+expect "the other tasks stay" '/dq$' "$(cat "$common/warmd-batch")"
+[ ! -d "$wts/dp" ] && echo "ok   drop --delete removes the worktree" || { echo "FAIL the worktree of dp is still there"; fails=$((fails+1)); }
+if git rev-parse -q --verify refs/heads/warmd/dp > /dev/null; then echo "FAIL the branch of dp is still there"; fails=$((fails+1)); else echo "ok   drop --delete removes the branch"; fi
+if grep -q '^- dp:' "$common/warmd-shared.md"; then echo "FAIL a dropped task still owns files"; fails=$((fails+1)); else echo "ok   a dropped task owns nothing"; fi
+expect "the drop is recorded with its reason" '^dp.*user does not want it' "$(cat "$common/warmd-batch-dropped")"
+out="$("$WARMD" drop dq 2>&1)"
+expect "drop without --delete keeps the branch" 'OK dq dropped: branch warmd/dq kept' "$out"
+if git rev-parse -q --verify refs/heads/warmd/dq > /dev/null; then echo "ok   the kept branch is there"; else echo "FAIL the branch of dq is gone"; fails=$((fails+1)); fi
+out="$("$WARMD" watch --once 2>&1)"
+expect "watch never wakes a dropped task" '^OK all worktrees moved' "$out"
+out="$("$WARMD" drop dr gone --delete --force 2>&1)"
+expect "drop --delete --force throws work away, the last drop ends the batch" 'OK dr dropped \(gone\).*batch ended' "$out"
+[ ! -f "$common/warmd-batch" ] && echo "ok   an emptied batch ends" || { echo "FAIL the batch marker is still there"; fails=$((fails+1)); }
+
 rm -rf "$TMP"
 [ "$fails" = 0 ] && echo "OK brakes" || { echo "FAIL brakes: $fails"; exit 1; }

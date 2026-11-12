@@ -498,7 +498,7 @@ task_fields() {
 # An ESCALATE line of a task merged long ago stopped the first warmd watch of the next batch with exit 4.
 # warmd-batch-start marks its start: warmd batch-resume tells the tasks of this batch from older worktrees by it.
 batch_fresh() { # common
-  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-done" "$1/warmd-auto/queue"; : > "$1/warmd-batch-start"
+  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-dropped" "$1/warmd-batch-done" "$1/warmd-auto/queue"; : > "$1/warmd-batch-start"
 }
 
 team_split() {
@@ -550,6 +550,7 @@ team_split() {
       # A reused worktree may still carry the "finished" line of its previous task: the new task is not finished,
       # or the next split prunes it as free and hands the same worktree to a second agent.
       batch_done_forget "${batch%/warmd-batch}" "$wt"
+      [ -f "${batch%/warmd-batch}/warmd-batch-dropped" ] && { grep -v "^$name	" "${batch%/warmd-batch}/warmd-batch-dropped" > "$batch-dropped.t"; mv -f "$batch-dropped.t" "${batch%/warmd-batch}/warmd-batch-dropped"; }   # split again: wanted again
       prewarm "$wt"
     fi
     printf '%s\n' "$tier" > "$STATE/tasks/$name.tier"
