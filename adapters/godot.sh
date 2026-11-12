@@ -29,15 +29,36 @@ godot_runners() {
 }
 # A runner that does not parse or compile still ends with exit 0 (Godot even runs what it could load): its load errors count as red.
 GODOT_LOAD_ERR='(Parse|Compile) Error:|Failed to load script|Can.t load (the )?script|does not inherit from a MainLoop'
+# Why a runner failed, for the FAIL line: exit code, timeout, Windows crash code, and whether it printed a success marker first.
+runner_why() {
+  local r="$1" out="$2" t="$3" sig="" ok=""
+  case "$r" in
+    124|137) echo "timeout after ${t}s"; return;;
+    3221225477|-1073741819) sig="0xC0000005 access violation";;
+    3221225725|-1073741571) sig="0xC00000FD stack overflow";;
+    3221226505|-1073740791) sig="0xC0000409 fast fail";;
+    3221225501|-1073741795) sig="0xC000001D illegal instruction";;
+    13[0-9]|14[0-9]) sig="signal $((r - 128))";;
+  esac
+  [ -n "$sig" ] && { echo "crashed: $sig, exit $r"; return; }
+  tr -d '' < "$out" | grep -qE '^ALL OK|^=== .* 0 fehlgeschlagen ===|^FAILED: 0' && ok=" after success output"
+  echo "exit $r$ok"
+}
+# Per-runner timeout: a line "# warmd: timeout=300" in the first 10 lines of the runner, else TIMEOUT
+runner_timeout() {
+  local t; t="$(head -n 10 "$1" | tr -d '\r' | sed -n 's/^#[[:space:]]*warmd:[[:space:]]*timeout=\([0-9][0-9]*\).*/\1/p' | head -1)"
+  echo "${t:-$TIMEOUT}"
+}
 run_runners() {
-  local exe="$1" f rc=0 n=0 out r bad; shift
+  local exe="$1" f rc=0 n=0 out r bad t; shift
   out="$(mktemp)"
   for f in "$@"; do
     n=$((n + 1))
     echo "== ${f#"$PROJECT"/}"
-    timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
+    t="$(runner_timeout "$f")"
+    timeout "$t" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
     cat "$out"
-    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/}"; rc=1
+    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))"; rc=1
     else
       bad="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
       [ -z "$bad" ] || { echo "FAIL runner ${f#"$PROJECT"/} does not load: $bad"; rc=1; }
