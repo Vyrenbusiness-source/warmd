@@ -41,7 +41,7 @@ runner_why() {
     13[0-9]|14[0-9]) sig="signal $((r - 128))";;
   esac
   [ -n "$sig" ] && { echo "crashed: $sig, exit $r"; return; }
-  tr -d '' < "$out" | grep -qE '^ALL OK|^=== .* 0 fehlgeschlagen ===|^FAILED: 0' && ok=" after success output"
+  tr -d '\r' < "$out" | grep -qE '^ALL OK|^=== .* 0 fehlgeschlagen ===|^FAILED: 0' && ok=" after success output"
   echo "exit $r$ok"
 }
 # Per-runner timeout: a line "# warmd: timeout=300" in the first 10 lines of the runner, else TIMEOUT
