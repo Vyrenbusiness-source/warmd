@@ -4,6 +4,11 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.41] - 2026-11-12
+
+### Fixed
+- `warmd handoff` and the `warmd finish` uncommitted count no longer count Godot import byproducts as work: a tracked `.uid` file Godot rewrote on import (and new `.uid`/`.import` files) does not trigger "commit your work first". A real change to any other tracked file still does
+
 ## [0.4.40] - 2026-11-11
 
 ### Fixed
@@ -341,7 +346,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.40...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.41...HEAD
+[0.4.41]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.40...v0.4.41
 [0.4.40]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.39...v0.4.40
 [0.4.39]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.38...v0.4.39
 [0.4.38]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.37...v0.4.38
