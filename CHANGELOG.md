@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd watch` no longer ends with an AGENT restart line for a task that already reported DONE with `warmd finish` (outcome ok) and only waits for the merge. `warmd finish` marks the task; its stop no longer escalates it, a queued AGENT line for it is dropped, and a new agent started on the task clears the mark
+
 ## [0.4.43] - 2026-11-12
 
 ### Added
