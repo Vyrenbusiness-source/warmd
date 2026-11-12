@@ -24,7 +24,7 @@ godot_exe() {
 godot_runners() {
   local f
   for f in "$PROJECT"/tests/run_*.gd "$PROJECT"/test/run_*.gd; do
-    [ -f "$f" ] && grep -q '^extends SceneTree' "$f" && echo "$f"
+    [ -f "$f" ] && grep -qE '^[[:space:]]*(@tool[[:space:]]+)?(class_name[[:space:]]+[A-Za-z0-9_]+[[:space:]]+)?extends[[:space:]]+SceneTree' "$f" && echo "$f"
   done
 }
 # A runner that does not parse or compile still ends with exit 0 (Godot even runs what it could load): its load errors count as red.
@@ -187,6 +187,11 @@ a_test() {
       slot_take; cached "runners|${pick[*]##*/}" run_bounded test class_retry run_runners "$exe" "${pick[@]}"
       return
     fi
+  fi
+  # Never a silent green: no GUT, no gdUnit4, no runner and no WarmdTest class means nothing can run
+  if ! grep -rqs --include='*.gd' -e 'extends WarmdTest' -e 'extends "res://addons/warmd/warmd_test.gd"' "$PROJECT" --exclude-dir=.godot --exclude-dir=addons; then
+    echo "WARN no tests found: no GUT, no gdUnit4, no WarmdTest class and no tests/run_*.gd that extends SceneTree. Nothing ran"
+    return 0
   fi
   cached "test|$filter" run_job test "filter=$filter"
 }

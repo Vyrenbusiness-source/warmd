@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- `warmd check` in a Godot project with its own `tests/run_*.gd` runners (extends SceneTree) now treats them as tests: a changed source selects the runners that load it, a changed or new runner selects itself, and a runner with `class_name` before `extends` is found. A Godot project with no test of any kind prints `WARN no tests found ... Nothing ran` instead of a silent green
+
 ## [0.4.44] - 2026-11-12
 
 ### Fixed
