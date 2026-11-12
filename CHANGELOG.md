@@ -4,6 +4,12 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.46] - 2026-11-12
+
+### Fixed
+- A failing Godot test runner now says why: `FAIL runner <file> (exit N)`, `(timeout after Ns)`, `(crashed: 0xC0000005 access violation, exit N)` for Windows crash codes and signals, and `(exit N after success output)` when it printed `ALL OK` / `0 fehlgeschlagen` / `FAILED: 0` before the non-zero exit
+- A runner can set its own timeout with `# warmd: timeout=300` in its first 10 lines (default stays `WARMD_TIMEOUT`, 900s), so a realtime audio test is not killed while the machine is busy
+
 ## [0.4.45] - 2026-11-12
 
 ### Fixed
