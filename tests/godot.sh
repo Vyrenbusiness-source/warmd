@@ -76,8 +76,8 @@ expect "a runner that does not parse is red" 'FAIL runner tests/run_broken.gd' "
 expect "and its red is not cached as green" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
 rm tests/run_broken.gd
 # A runner whose extends line carries class_name is found too; no test of any kind is a WARN, never a silent green
-printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(0)\n' > tests/run_cn.gd
-expect "a runner with class_name before extends is found" '== tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(1)\n' > tests/run_cn.gd
+expect "a runner with class_name before extends is found" 'FAIL runner tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 rm tests/run_cn.gd tests/run_math.gd
 expect "no test of any kind is a WARN, not green" 'WARN no tests found' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 cd "$TMP" || exit 1
