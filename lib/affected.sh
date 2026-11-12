@@ -269,7 +269,7 @@ EOF
 
 read -r -d '' AFF_AWK_GD <<'EOF' || true
 function isgd(f) { return f ~ /\.(gd|tscn|tres)$/ }
-function istest(f,  b) { b = bname(f); return (b ~ /^test_.*\.gd$/ && f !~ /(^|\/)addons\//) }
+function istest(f,  b) { b = bname(f); return ((b ~ /^test_.*\.gd$/ || (b ~ /^run_.*\.gd$/ && f ~ /(^|\/)tests?\//)) && f !~ /(^|\/)addons\//) }
 function rres(p,   q) { q = norm(p); if (q == "\001") return ""; return (q in ex) ? q : "" }
 BEGIN {
   loadlist()
@@ -393,7 +393,7 @@ affected_select() {
     js) prog="$AFF_AWK_JS"; test_re='\.(test|spec)\.[A-Za-z]+$'; ignore_re='^$';;
     py) prog="$AFF_AWK_PY"; test_re='(^|/)(test_[^/]*|[^/]*_test)\.py$'; ignore_re='(^|/)__pycache__/|\.pyc$';;
     cs) prog="$AFF_AWK_CS"; test_re='^$'; ignore_re='\.cs\.meta$|(^|/)(obj|bin)/';;
-    gd) prog="$AFF_AWK_GD"; test_re='(^|/)test_[^/]*\.gd$'; ignore_re='\.gd\.uid$|\.import$';;
+    gd) prog="$AFF_AWK_GD"; test_re='(^|/)test_[^/]*\.gd$|(^|/)tests?/run_[^/]*\.gd$'; ignore_re='\.gd\.uid$|\.import$';;
     *) rm -rf "$tmp"; AFF_MODE=ALL; AFF_REASON="unknown language $lang"; return 0;;
   esac
   # Jest snapshots belong to their test file
