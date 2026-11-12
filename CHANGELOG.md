@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.45] - 2026-11-12
+
 ### Fixed
 - `warmd check` in a Godot project with its own `tests/run_*.gd` runners (extends SceneTree) now treats them as tests: a changed source selects the runners that load it, a changed or new runner selects itself, and a runner with `class_name` before `extends` is found. A Godot project with no test of any kind prints `WARN no tests found ... Nothing ran` instead of a silent green
 
@@ -364,7 +366,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.44...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.45...HEAD
+[0.4.45]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.44...v0.4.45
 [0.4.44]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.43...v0.4.44
 [0.4.43]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.42...v0.4.43
 [0.4.42]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.41...v0.4.42
