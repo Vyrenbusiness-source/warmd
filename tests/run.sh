@@ -11,7 +11,7 @@ no() { echo "FAIL $1"; fails=$((fails+1)); }
 # Suites: core is the inline part of this file, unity is tests/fixtures/unity/check.sh, every other name is tests/<name>.sh.
 # CI runs them as parallel jobs, one per group of the self-test matrix in .github/workflows/ci.yml, balanced by the
 # "time <suite>" lines this file prints. Every suite sits in exactly one group, the guard below fails otherwise.
-SUITES="core ledger digest affected perf tune layout docs hook auto team generic install map ship brakes audit gain slim unity bars daemon"
+SUITES="core ledger digest affected perf tune layout docs hook bgwait auto team generic install map ship brakes audit gain slim unity bars daemon"
 OWN_JOB="proof godot"   # tests/<name>.sh with a CI job of its own
 MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
 guard() {
