@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.49] - 2026-11-13
+
 ### Fixed
 - An agent that ends its turn to wait for its own background command (a script started with `run_in_background`, no warmd run) no longer counts as stopped: nothing is recorded for that turn, so `warmd watch` does not report `OK batch ended` and the automatic merge does not take the half-done branch when the other tasks finish. The stop is recorded when the agent comes back and ends for real; a last message with the `DONE` line of `warmd finish` always counts as the end
 
@@ -385,7 +387,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.45...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...HEAD
+[0.4.49]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.45...v0.4.49
 [0.4.45]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.44...v0.4.45
 [0.4.44]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.43...v0.4.44
 [0.4.43]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.42...v0.4.43
