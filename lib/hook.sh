@@ -378,12 +378,21 @@ hook_session() {
 # Tokens: input, cache write, cache read and output summed over every turn of the agent. A turn is written as one line per
 # content block, all with the same message id and usage: each id counts once.
 # Outcome from the agent's last text: ESCALATE: line -> escalated, AGENT line -> handoff, else ok.
+# waiting:<id>: the turn ended while a background command of the agent (Bash run_in_background) still runs: its result line
+# named the id, no task notification for that id came back and the agent did not stop it. The agent returns with the
+# notification, so this is no stop. A DONE line of warmd finish in the last text wins: the task is over, whatever still runs.
 HOOK_PY_TRANSCRIPT='
 import json, re, sys
 h = json.load(sys.stdin)
 p = h.get("agent_transcript_path") or h.get("transcript_path") or ""
 pat = re.compile(r"((?:[A-Za-z]:)?[^\s\"<>|]*[\/]\.warmd[\/]tasks[\/]([A-Za-z0-9_.-]+)\.md)")
-task = None; usage = {}; calls = set(); text = ""; seen_assistant = False
+task = None; usage = {}; calls = set(); text = ""; seen_assistant = False; bg = []
+bg_start = re.compile(r"^\s*Command running in background with ID: ([A-Za-z0-9_-]+)")
+bg_end = re.compile(r"<task-id>\s*([A-Za-z0-9_-]+)\s*</task-id>")
+def flat(c):
+    if isinstance(c, str):
+        return c
+    return " ".join(flat(b.get("text") or b.get("content") or "") for b in (c or []) if isinstance(b, dict))
 for line in open(p, encoding="utf-8", errors="replace"):
     try:
         e = json.loads(line)
@@ -396,6 +405,16 @@ for line in open(p, encoding="utf-8", errors="replace"):
         r = pat.search(s)
         if r:
             task = (r.group(2), r.group(1).replace("\\", "/"))
+    if e.get("type") == "user":
+        for b in c if isinstance(c, list) else []:
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                for i in bg_start.findall(flat(b.get("content"))):
+                    if i not in bg:
+                        bg.append(i)
+        if bg:
+            for i in bg_end.findall(flat(c)):
+                if i in bg:
+                    bg.remove(i)
     if e.get("type") == "assistant":
         seen_assistant = True
         if m.get("usage"):
@@ -403,6 +422,9 @@ for line in open(p, encoding="utf-8", errors="replace"):
         for b in c if isinstance(c, list) else []:
             if b.get("type") == "tool_use":
                 calls.add(b.get("id"))
+                for v in (b.get("input") or {}).values() if bg else []:
+                    if isinstance(v, str) and v in bg:
+                        bg.remove(v)
             elif b.get("type") == "text" and b.get("text", "").strip():
                 text = b["text"]
 if not task:
@@ -419,6 +441,8 @@ import os
 if os.environ.get("WARMD_LASTMSG") and text.strip():
     open(os.environ["WARMD_LASTMSG"], "w", encoding="utf-8").write(text.strip() + "\n")
 out = "escalated" if re.search(r"(?m)^\s*ESCALATE:", text) else "handoff" if re.search(r"(?m)^\s*AGENT \S+:", text) else "ok"
+if out == "ok" and bg and not re.search(r"(?m)^[\s`]*DONE warmd/", text):
+    out = "waiting:" + bg[-1]
 print("\t".join([task[0], task[1], tok, str(len(calls)), out, ctx]))
 '
 
@@ -506,6 +530,10 @@ hook_job() {
   # An agent ends its turn to wait for its own background run (a Bash call may take 600 s, a queued Unity run longer).
   # While that run works or waits in a queue, nothing is recorded: no stop, no escalation, the engine stays; the agent comes back.
   if wt_run_active "$here"; then echo "$(date '+%F %T') $name: its warmd run still works or waits here, no stop recorded"; return 0; fi
+  # The same for a background command of its own that is no warmd run (a measurement script, a build): the turn ended, the
+  # task did not. Recorded as a stop, the task counted as finished: the batch ended with the next agent's stop and the
+  # automatic merge took the half-done branch.
+  case "$outcome" in waiting:*) echo "$(date '+%F %T') $name: its own background command still runs (${outcome#waiting:}), no stop recorded"; return 0;; esac
   outcome="$(auto_stop "$common" "$name" "$here" "$outcome")"   # failed or red: next tier queued for warmd watch
   if [ "$outcome" = handoff ]; then   # a fresh agent continues, the task is not done
     git remote get-url origin >/dev/null 2>&1 && git push -q -u origin HEAD 2>/dev/null

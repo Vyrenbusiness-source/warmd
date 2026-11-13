@@ -4,6 +4,9 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- An agent that ends its turn to wait for its own background command (a script started with `run_in_background`, no warmd run) no longer counts as stopped: nothing is recorded for that turn, so `warmd watch` does not report `OK batch ended` and the automatic merge does not take the half-done branch when the other tasks finish. The stop is recorded when the agent comes back and ends for real; a last message with the `DONE` line of `warmd finish` always counts as the end
+
 ## [0.4.48] - 2026-11-12
 
 ### Fixed
