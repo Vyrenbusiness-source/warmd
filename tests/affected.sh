@@ -131,6 +131,21 @@ expect "gd: the dynamic load keeps the real hit" 'test_top\.gd' "$out"
 git -C "$d" checkout -q test/test_other.gd
 echo 'x' >> "$d/project.godot"
 expect "gd: project settings select all" '^ALL\|\|project\.godot' "$(sel "$d" gd)"
+git -C "$d" checkout -q project.godot core/leaf.gd
+# untracked files nobody references (editor/agent settings, scratch images) do not force a full run
+mkdir -p "$d/.claude" "$d/store"; echo '{}' > "$d/.claude/settings.local.json"; echo x > "$d/store/sheet.jpg"
+echo '# edit' >> "$d/core/other.gd"
+out="$(sel "$d" gd)"
+expect "gd: untracked unreferenced files keep the selection narrow" '^SOME\|test/test_other\.gd\|' "$out"
+refuse "gd: untracked noise does not select all" '^ALL' "$out"
+git -C "$d" checkout -q core/other.gd
+refuse "gd: only untracked noise never selects all" '^ALL' "$(sel "$d" gd)"
+echo '{}' > "$d/package.json"
+expect "gd: an untracked manifest still selects all" '^ALL\|\|package\.json' "$(sel "$d" gd)"
+rm -rf "$d/.claude" "$d/store" "$d/package.json"
+echo x > "$d/notes.cfg"; git -C "$d" add notes.cfg; git -C "$d" commit -qm notes; echo y >> "$d/notes.cfg"
+expect "gd: a tracked unreferenced file still selects all" '^ALL\|\|notes\.cfg' "$(sel "$d" gd)"
+git -C "$d" reset -q --hard HEAD~1
 
 # gd: runners tests/run_*.gd (extends SceneTree) are tests: a changed source selects the runner that loads it, a changed runner selects itself
 d="$(fixture gd gdrun)"
