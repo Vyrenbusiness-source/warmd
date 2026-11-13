@@ -4,6 +4,12 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.50] - 2026-11-13
+
+### Fixed
+
+- Test selection: a new, untracked file that nothing references (agent settings such as `.claude/settings.local.json`, scratch images) no longer forces the whole suite. Tracked files and config-like names (`package.json`, `project.godot`, `tsconfig*.json`, ...) still select all. In a Godot project this cut a merge gate from all 78 runners to the affected ones.
+
 ## [0.4.49] - 2026-11-13
 
 ### Fixed
@@ -387,7 +393,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...HEAD
+[0.4.50]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...v0.4.50
 [0.4.49]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.45...v0.4.49
 [0.4.45]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.44...v0.4.45
 [0.4.44]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.43...v0.4.44

@@ -323,6 +323,7 @@ BEGIN {
 EOF
 
 read -r -d '' AFF_AWK_CLOSE <<'EOF' || true
+function manifest(f,  b) { b = tolower(f); sub(/^.*\//, "", b); return (b ~ /^(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|jsconfig\.json|project\.godot|export_presets\.cfg|.*\.csproj|.*\.sln|pyproject\.toml|setup\.cfg|requirements.*\.txt|pytest\.ini|tox\.ini|warmd\.conf|\.babelrc.*|\.env.*)$/) }
 function risky(f,  b) { b = tolower(f); return (b ~ /(setup|config|conftest|global|mock|fixture|polyfill|jest|vitest|karma|babel|webpack|vite|rollup|eslint)/) }
 BEGIN {
   while ((getline l < EDGES) > 0) {
@@ -333,10 +334,16 @@ BEGIN {
     else if (t == "C") cls[a[2]] = cls[a[2]] " " a[3]
     else if (t == "E") { dst[a[3]] = 1; rc[a[3]]++; rev[a[3], rc[a[3]]] = a[2] }
   }
+  if (UNT != "") while ((getline f < UNT) > 0) if (f != "") unt[f] = 1
   while ((getline f < CHG) > 0) {
     if (f == "") continue
     nchg++
-    if (!(f in node) && !(f in dst)) { print "ALL\t" f " is not part of the graph"; exit }
+    if (!(f in node) && !(f in dst)) {
+      # A new, untracked file that nothing references cannot change a test result (dynamic loaders
+      # are selected below anyway); tracked files and config-like names still select all.
+      if ((f in unt) && !risky(f) && !manifest(f)) continue
+      print "ALL\t" f " is not part of the graph"; exit
+    }
     if ((f in node) && !(f in dst) && !(f in test) && risky(f)) { print "ALL\t" f " looks like shared configuration"; exit }
     if (!(f in vis)) { vis[f] = 1; q[++qn] = f }
   }
@@ -365,6 +372,14 @@ aff_changed() {
   # warmd merge of several branches commits each one: its gate compares with the commit before the first (WARMD_DIFF_BASE)
   if [ -n "${WARMD_DIFF_BASE:-}" ]; then mb="$WARMD_DIFF_BASE"; else mb="$(git -C "$GIT_ROOT" merge-base HEAD "$base" 2>/dev/null || git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null)"; fi
   prefix="$(git -C "$PROJECT" rev-parse --show-prefix)"   # from git: string math breaks on symlinked and short temp paths
+  # untracked files also go to $AFF_UNTRACKED (if set): outside the graph they do not force a full run
+  if [ -n "${AFF_UNTRACKED:-}" ]; then
+    git -C "$GIT_ROOT" ls-files -o --exclude-standard | tr -d '\r' | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if [ -n "$prefix" ]; then case "$f" in "$prefix"*) f="${f#"$prefix"}";; *) continue;; esac; fi
+      echo "$f"
+    done > "$AFF_UNTRACKED"
+  fi
   { [ -n "$mb" ] && git -C "$GIT_ROOT" diff --name-only --no-renames "$mb" 2>/dev/null; git -C "$GIT_ROOT" ls-files -o --exclude-standard; } | tr -d '\r' | sort -u | while IFS= read -r f; do
     [ -n "$f" ] || continue
     if [ -n "$prefix" ]; then case "$f" in "$prefix"*) f="${f#"$prefix"}";; *) continue;; esac; fi
@@ -387,7 +402,7 @@ affected_select() {
   local tmp edges prog test_re ignore_re del gate=0 f rc line
   AFF_MODE=""; AFF_FILES=""; AFF_REASON=""; AFF_CLASSES=""
   tmp="$(mktemp -d)"; edges="$tmp/edges"
-  aff_changed > "$tmp/changed.all"
+  AFF_UNTRACKED="$tmp/untracked" aff_changed > "$tmp/changed.all"
   aff_list "$@" > "$tmp/list"
   case "$lang" in
     js) prog="$AFF_AWK_JS"; test_re='\.(test|spec)\.[A-Za-z]+$'; ignore_re='^$';;
@@ -432,7 +447,7 @@ $prog" < /dev/null > "$edges";;
   esac
   rc=$?
   if [ $rc -ne 0 ]; then rm -rf "$tmp"; AFF_MODE=ALL; AFF_REASON="graph could not be built"; return 0; fi
-  line="$(awk -v EDGES="$edges" -v CHG="$tmp/changed" "$AFF_AWK_CLOSE" < /dev/null)"
+  line="$(awk -v EDGES="$edges" -v CHG="$tmp/changed" -v UNT="$tmp/untracked" "$AFF_AWK_CLOSE" < /dev/null)"
   AFF_MODE="$(printf '%s\n' "$line" | head -1 | cut -f1)"
   case "$AFF_MODE" in
     ALL) AFF_REASON="$(printf '%s\n' "$line" | head -1 | cut -f2)";;
