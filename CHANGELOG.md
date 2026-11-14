@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.4.51] - 2026-11-14
+
 ### Fixed
 
 - Godot: a new or moved `class_name` script is now found in every warmd worktree, so the class cache (`.godot/global_script_class_cache.cfg`) is renewed with one import before the compile. The search for `class_name` scripts skipped every file when a folder above the project starts with a dot (warmd's own `.warmd-worktrees`): `grep --exclude-dir` matched that folder in the project path. After `git merge main` brought new classes, `warmd check` reported them as `does not parse` until a manual `godot --import`. An unchanged cache still costs no import
@@ -397,7 +399,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...HEAD
+[0.4.51]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...v0.4.51
 [0.4.50]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...v0.4.50
 [0.4.49]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.45...v0.4.49
 [0.4.45]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.44...v0.4.45
