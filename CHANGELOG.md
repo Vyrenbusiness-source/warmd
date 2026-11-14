@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- `warmd merge` (and the automatic batch merge) no longer stops at a `project.godot` conflict that parallel branches cause by each adding an entry to the same one-line list (`locale/translations=PackedStringArray(...)`, `editor_plugins/enabled`, any `key=PackedStringArray("...")`). When every conflicted file is a `project.godot` and every differing line pair in its conflict blocks is the same list key on both sides, the lists are joined three-way (HEAD's order kept, the branch's new entries appended, an entry one side removed from the base stays out), the file is staged and the merge goes on with one `resolved project.godot list <key>: +n entries` line. CRLF and the diff3 conflict style are kept. Any other conflict still stops as before. Chosen over a git merge driver: that needs a `.gitattributes` entry in every project plus git config in every clone, replaces git's whole-file merge for all of `project.godot` and runs in every manual merge and rebase too
+
 ## [0.4.51] - 2026-11-14
 
 ### Fixed
