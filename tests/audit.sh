@@ -82,9 +82,18 @@ mkdir -p "$G/raw" "$G/.hidden"; touch "$G/raw/.gdignore"; printf 'class_name Ven
 expect "a class_name in a .gdignore or hidden folder is not expected in the cache" '^fresh$' "$(fresh)"
 mkdir -p "$G/sub"; mv "$G/new.gd" "$G/sub/new.gd"
 expect "a moved class_name script marks the cache stale" '^stale$' "$(fresh)"
+# A project below a hidden folder (warmd's own .warmd-worktrees): grep --exclude-dir matched that folder as a suffix of the
+# project path, found no script at all, and a cache without a new class_name counted as fresh
+G="$TMP/.warmd-worktrees/game"; mkdir -p "$G/.godot" "$G/raw"; touch "$G/raw/.gdignore"; printf 'class_name Vendored\n' > "$G/raw/v.gd"
+printf 'list=[{\n"base": &"Node",\n"class": &"Old",\n"icon": "",\n"path": "res://old.gd"\n}]\n' > "$G/.godot/global_script_class_cache.cfg"
+printf 'class_name Old\nextends Node\n' > "$G/old.gd"
+expect "below a hidden folder a known class_name keeps the cache fresh" '^fresh$' "$(fresh)"
+printf 'class_name CampaignHud\r\nextends CanvasLayer\r\n' > "$G/campaign_hud.gd"
+expect "below a hidden folder a new class_name marks the cache stale" '^stale$' "$(fresh)"
 
 # ---- godot: a class cache that still names a moved script is renewed before the compile, "hides a global script class" is red only when it stays ----
-GB="$TMP/godot-moved"; GS="$TMP/godot-moved-stub"; mkdir -p "$GB/scripts/ui" "$GS"; cd "$GB" || exit 1
+GB="$TMP/.warmd-worktrees/godot-moved"; GS="$TMP/godot-moved-stub";   # below a hidden folder, as every warmd worktree
+ mkdir -p "$GB/scripts/ui" "$GS"; cd "$GB" || exit 1
 git init -q -b main .; git config user.name t; git config user.email t@example.com
 printf 'config_version=5\n[application]\nconfig/name="m"\n' > project.godot; printf '.warmd\n.godot\n' > .gitignore
 printf 'class_name OrbitPreview\nextends Node\n' > scripts/ui/orbit_preview.gd
@@ -98,11 +107,17 @@ while [ $# -gt 0 ]; do case "$1" in --path) P="$2"; shift;; --import) imp=1;; es
 C="$P/.godot/global_script_class_cache.cfg"
 if [ $imp = 1 ]; then
   echo x >> "$S/imports"; rm -f "$S/needs_import"; mkdir -p "$P/.godot"
-  { echo 'list=[{'; grep -r -m1 -H --include='*.gd' --exclude-dir='.?*' '^class_name ' "$P" | while IFS= read -r l; do r="${l#"$P"/}"; printf '"class": &"%s",\n"path": "res://%s"\n' "${l##*class_name }" "${r%%:*}"; done; echo '}]'; } > "$C"
+  { echo 'list=[{'; (cd "$P" && grep -r -m1 -H --include='*.gd' --exclude-dir='.?*' '^class_name ' .) | while IFS= read -r l; do r="${l#./}"; printf '"class": &"%s",\n"path": "res://%s"\n' "${l##*class_name }" "${r%%:*}"; done; echo '}]'; } > "$C"
   exit 0
 fi
 id="$(sed -n 's/^id=//p' "$WARMD_DIR/job.txt" | tr -d '\r')"; stale=0
 while IFS= read -r p; do [ -f "$P/${p#res://}" ] || stale=1; done < <(sed -n 's/^"path": "\(.*\)"$/\1/p' "$C" 2>/dev/null)
+# A class_name script the cache does not name: Godot's "Identifier not found", which no retry catches
+while IFS= read -r l; do
+  grep -q "^\"path\": \"res://${l#./}\"\$" "$C" 2>/dev/null && continue
+  echo 'SCRIPT ERROR: Compile Error: Identifier not found'
+  printf '%s FAIL\n%s does not parse\n' "$id" "${l#./}" > "$WARMD_DIR/result.txt"; exit 0
+done < <(cd "$P" && grep -rl -m1 --include='*.gd' --exclude-dir='.?*' '^class_name ' .)
 if [ $stale = 1 ] || [ -f "$S/needs_import" ] || [ -n "${STUB_HIDES:-}" ]; then
   echo 'SCRIPT ERROR: Parse Error: Class "OrbitPreview" hides a global script class.'
   printf '%s FAIL\nscripts/orbit/orbit_preview.gd does not parse\n' "$id" > "$WARMD_DIR/result.txt"; exit 0
@@ -129,6 +144,15 @@ out="$(STUB_HIDES=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"; rc=$?
 expect "a hides error that stays after the import is red" 'does not parse' "$out"
 [ "$rc" != 0 ] && ok "its build exits non-zero" || no "its build exits 0"
 expect "it is retried once, not in a loop" '^3$' "$(imports)"
+# git merge main brings a new class_name script: the cache is renewed before the compile, one import, then green
+git checkout -q -b side; mkdir -p scripts/campaign; printf 'class_name CampaignHud\nextends CanvasLayer\n' > scripts/campaign/campaign_hud.gd
+git add -A; git commit -qm hud; git checkout -q main; git merge -q --no-edit side
+out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+expect "a merged new class_name is in the cache before the compile, green" 'scripts parse' "$out"
+refuse "no parse error for the merged class_name script" 'does not parse|FAIL' "$out"
+expect "the merge took one import" '^4$' "$(imports)"
+WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
+expect "the next build costs no import" '^4$' "$(imports)"
 
 # ---- godot: a runner that does not parse or compile is red, also when the engine ends with exit 0 ----
 GR="$TMP/godot-runners"; mkdir -p "$GR/tests"; printf 'extends SceneTree\n' > "$GR/tests/run_login.gd"
