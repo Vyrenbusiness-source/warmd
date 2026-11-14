@@ -54,6 +54,95 @@ merge_clear_byproducts() {
     rm -f -- "$GIT_ROOT/$f"
   done < <(git -C "$GIT_ROOT" ls-tree -r --name-only "$1" 2>/dev/null | grep -E '\.(uid|import)$')
 }
+# A merge stopped by a conflict: when every conflicted file is a Godot project.godot and every conflict block in it is one
+# single-line list on both sides (key=PackedStringArray(...), the same key, e.g. locale/translations or
+# editor_plugins/enabled), the lists are joined three-way: HEAD's order stays, an entry the branch added is appended, an
+# entry one side removed from the common base stays out. The file is staged and the merge committed. REPLY holds one
+# "resolved <file> list <key>: +n entries" line per block. Any other conflict (other files, other lines, a block of
+# more than one line, a value that is no plain string list) returns 1 and touches nothing.
+merge_godot_lists() { # branch
+  local f files out rep="" tmp i k n
+  files="$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)"
+  [ -n "$files" ] || return 1
+  while IFS= read -r f; do
+    case "$f" in project.godot|*/project.godot) ;; *) return 1;; esac
+    # A content conflict only: ours and theirs both exist (modify/delete is no list to join)
+    git -C "$GIT_ROOT" ls-files -u -- "$f" | awk '{print $3}' | sort -u | tr -d '\n' | grep -qE '^1?23$' || return 1
+  done <<< "$files"
+  tmp="$(mktemp -d)" || return 1
+  # Every file is joined into $tmp first: one block that is no list leaves all of them as git left them
+  i=0
+  while IFS= read -r f; do
+    i=$((i+1))
+    git -C "$GIT_ROOT" show ":1:$f" > "$tmp/base" 2>/dev/null || : > "$tmp/base"
+    # BINMODE=3: gawk of Git for Windows drops the CR of a CRLF file on read otherwise
+    out="$(awk -v BINMODE=3 -v res="$tmp/res.$i" "$(cat <<'AWK'
+function plist(v, arr,   n, s) {   # PackedStringArray("a", "b") -> arr[1..n] (quoted tokens), -1 when it is no plain string list
+  if (v !~ /^PackedStringArray\(.*\)$/) return -1
+  s = substr(v, 19, length(v) - 19); n = 0
+  while (s != "") {
+    if (!match(s, /^"([^"\\]|\\.)*"/)) return -1
+    arr[++n] = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1)
+    if (s == "") break
+    if (!match(s, /^[ ]*,[ ]*/)) return -1
+    s = substr(s, RLENGTH + 1)
+  }
+  return n
+}
+function keyof(l) { return (l ~ /^[A-Za-z0-9_\/.-]+=PackedStringArray\(/) ? substr(l, 1, index(l, "=") - 1) : "" }
+function has(arr, n, t,   i) { for (i = 1; i <= n; i++) if (arr[i] == t) return 1; return 0 }
+function bad(why) { print "NO " why; failed = 1; exit 1 }
+{ file = (FILENAME == ARGV[1]) ? 1 : 2; cr = sub(/\r$/, "") ? "\r" : "" }
+file == 1 { if ($0 ~ /^\[.*\]$/) bsec = $0; else if (index($0, "=")) bval[bsec SUBSEP substr($0, 1, index($0, "=") - 1)] = substr($0, index($0, "=") + 1); next }
+st == 0 && /^<<<<<<< / { st = 1; no = 0; nt = 0; next }
+st == 0 { if ($0 ~ /^\[.*\]$/) sec = $0; out[++nl] = $0 cr; next }
+st == 1 && /^\|\|\|\|\|\|\| / { st = 2; next }
+st != 0 && st != 3 && /^=======$/ { st = 3; next }
+st == 1 { OL[++no] = $0; OC[no] = cr; next }
+st == 2 { next }
+# A block: both sides line by line, the same line count. An equal line stays, a differing pair must be one list of the
+# same key; git folds nearby changes into one block, so a block may hold both lists and the lines between them.
+st == 3 && /^>>>>>>> / {
+  st = 0; joined = 0
+  if (no != nt) bad("sides of a different line count")
+  for (j = 1; j <= no; j++) {
+    if (OL[j] == TL[j]) { if (OL[j] ~ /^\[.*\]$/) sec = OL[j]; out[++nl] = OL[j] OC[j]; continue }
+    k = keyof(OL[j])
+    if (k == "" || k != keyof(TL[j])) bad("no list of the same key on both sides")
+    split("", A); split("", B); split("", O)
+    na = plist(substr(OL[j], length(k) + 2), A); nb = plist(substr(TL[j], length(k) + 2), B)
+    if (na < 0 || nb < 0) bad(k " is no plain string list")
+    no2 = 0; if ((sec SUBSEP k) in bval) { no2 = plist(bval[sec SUBSEP k], O); if (no2 < 0) bad(k " in the base is no plain string list") }
+    v = ""; n = 0; add = 0
+    for (i = 1; i <= na; i++) if (!(has(O, no2, A[i]) && !has(B, nb, A[i]))) { v = v (n++ ? ", " : "") A[i] }
+    for (i = 1; i <= nb; i++) if (!has(A, na, B[i]) && !has(O, no2, B[i])) { v = v (n++ ? ", " : "") B[i]; add++ }
+    out[++nl] = k "=PackedStringArray(" v ")" OC[j]
+    print k " " add; joined++
+  }
+  if (!joined) bad("a block without a list")
+  next
+}
+st == 3 { TL[++nt] = $0; next }
+END {
+  if (failed) exit 1
+  if (st != 0) { print "NO an unclosed conflict block"; exit 1 }
+  for (i = 1; i <= nl; i++) print out[i] > res
+}
+AWK
+)" "$tmp/base" "$GIT_ROOT/$f")" || { rm -rf "$tmp"; return 1; }
+    [ -n "$out" ] && [ -f "$tmp/res.$i" ] || { rm -rf "$tmp"; return 1; }
+    while read -r k n; do rep+="resolved $f list $k: +$n entries"$'\n'; done <<< "$out"
+  done <<< "$files"
+  i=0
+  while IFS= read -r f; do
+    i=$((i+1))
+    cp "$tmp/res.$i" "$GIT_ROOT/$f" && git -C "$GIT_ROOT" add -- "$f" || { rm -rf "$tmp"; return 1; }
+  done <<< "$files"
+  rm -rf "$tmp"
+  [ -z "$(git -C "$GIT_ROOT" diff --name-only --diff-filter=U)" ] || return 1
+  git -C "$GIT_ROOT" commit -q --no-edit -m "Merge $1" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} >/dev/null 2>&1 || return 1
+  REPLY="${rep%$'\n'}"
+}
 # Work left in a worktree: tracked changes and new files, but not files the engine writes on its own (Godot .uid/.import next to every asset).
 wt_work() { git -C "$1" status --porcelain 2>/dev/null | grep -vE '^(\?\?| M) .*\.(uid|import)$|^\?\? \.?godot/|^\?\? .*/\.godot/'; }   # also a tracked .uid Godot rewrote
 # A finished worktree keeps its slow caches, so reusing one beats copying gigabytes. Only when its work is merged and nothing is open or running.
@@ -748,7 +837,9 @@ team_merge() {
   for i in "${!brs[@]}"; do
     br="${brs[$i]}"
     merge_clear_byproducts "$br"
-    out="$(git -C "$GIT_ROOT" merge --no-ff -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} "$br" 2>&1)" || {
+    out="$(git -C "$GIT_ROOT" merge --no-ff -m "Merge $br" ${WARMD_TRAILER:+-m "$WARMD_TRAILER"} "$br" 2>&1)" ||
+      # Parallel branches that each add an entry to the same one-line list of project.godot: joined, the merge goes on
+      { git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null && merge_godot_lists "$br" && echo "$REPLY"; } || {
       if [ "${WARMD_MERGE_ATOMIC:-0}" != 1 ] && git -C "$GIT_ROOT" rev-parse -q --verify MERGE_HEAD >/dev/null; then
         printf '%s\n%s\n%s\n%s\n' "$start" "$nogate" "${brs[*]:$((i+1))}" "${merged[*]}" > "$q"
         echo "FAIL conflict in $(echo "$out" | grep -c CONFLICT) files of $br${merged[0]:+ (merged before it: ${merged[*]})}, resolve them and run warmd merge --continue"; echo "$out" | grep CONFLICT | head -8 | cut -c1-160

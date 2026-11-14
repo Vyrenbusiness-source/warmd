@@ -14,7 +14,7 @@ jobs:
       matrix:
         group:
           - generic
-          - perf ship docs digest install
+          - perf ship docs digest install mergelist
           - team tune map ledger bgwait
           - core
           - hook bars gain daemon
