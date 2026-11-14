@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- Godot: a new or moved `class_name` script is now found in every warmd worktree, so the class cache (`.godot/global_script_class_cache.cfg`) is renewed with one import before the compile. The search for `class_name` scripts skipped every file when a folder above the project starts with a dot (warmd's own `.warmd-worktrees`): `grep --exclude-dir` matched that folder in the project path. After `git merge main` brought new classes, `warmd check` reported them as `does not parse` until a manual `godot --import`. An unchanged cache still costs no import
+
 ## [0.4.50] - 2026-11-13
 
 ### Fixed

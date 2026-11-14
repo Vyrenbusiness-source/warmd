@@ -100,14 +100,16 @@ class_cache_drift() {
   local -A have=()
   [ -d "$PROJECT/.godot" ] || { echo "no import yet"; return 0; }
   [ -f "$cache" ] || cache=/dev/null   # no cache is an empty one: stale only once a script has a class_name
-  # Godot skips a folder with a .gdignore and every hidden one: their scripts are never in the cache
-  while IFS= read -r p; do skip+=("${p%.gdignore}"); done < <(find "$PROJECT" \( -name .gdignore -print \) -o \( -name '.?*' -prune \) 2>/dev/null)
+  # Godot skips a folder with a .gdignore and every hidden one: their scripts are never in the cache.
+  # Both searches run from inside the project on ".": grep's --exclude-dir matches any suffix of a path it is given, so
+  # with an absolute path a hidden folder above the project (warmd's own .warmd-worktrees) excluded every script.
+  while IFS= read -r p; do skip+=("${p%.gdignore}"); done < <(cd "$PROJECT" && find . \( -name .gdignore -print \) -o \( -name '.?*' -prune \) 2>/dev/null)
   while IFS= read -r line; do
-    line="${line%$'\r'}"; rel="${line#"$PROJECT"/}"; cls="${rel#*:}"; rel="${rel%%:*}"
+    line="${line%$'\r'}"; rel="${line#./}"; cls="${rel#*:}"; rel="${rel%%:*}"
     [[ $cls =~ ^class_name[[:space:]]+([A-Za-z0-9_]+) ]] || continue
-    for p in "${skip[@]}"; do [[ "$PROJECT/$rel" == "$p"* ]] && continue 2; done
+    for p in "${skip[@]}"; do [[ "./$rel" == "$p"* ]] && continue 2; done
     mine+=("${BASH_REMATCH[1]}|res://$rel")
-  done < <(grep -r -m1 -H -E --include='*.gd' --exclude-dir='.?*' '^class_name[[:space:]]' "$PROJECT" 2>/dev/null)
+  done < <(cd "$PROJECT" && grep -r -m1 -H -E --include='*.gd' --exclude-dir='.?*' '^class_name[[:space:]]' . 2>/dev/null)
   while IFS='|' read -r cls p; do
     [ -n "$cls" ] || continue
     have["$cls"]="$p"
