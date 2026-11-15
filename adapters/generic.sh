@@ -46,7 +46,12 @@ a_check() {
   if [ "$KIND" = none ] && [ -f "$PROJECT/tests/run.sh" ]; then shell_check; return; fi
   # With your own test= command warmd cannot know which files matter, so any change counts.
   if [ -n "$CFG_test" ]; then names="$(changed_names '.')"; else names="$(changed_names '\.(py|rs|go|cs)$')"; fi
-  [ -n "$names" ] || { echo "OK no code changed against $(base_branch)"; return 0; }
+  if [ -z "$names" ]; then
+    # Committed work counts (diff against the merge-base). Files of an unknown language with no test= are no "no change": say so.
+    local n; n="$(changed_files | grep -c .)"
+    if [ "$n" -gt 0 ]; then echo "OK $n files changed against $(base_branch), no test= in warmd.conf: nothing ran, set test= to run your tests"; return 0; fi
+    echo "OK no code changed against $(base_branch)"; return 0
+  fi
   a_test
 }
 
