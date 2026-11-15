@@ -84,6 +84,7 @@ slim_init() {
   local root="${GIT_ROOT:-$PROJECT}" f n=0 s=0 line tools="${WARMD_SLIM_TOOLS:-$SLIM_TOOLS_DEFAULT}" tmp
   for f in "$root"/.claude/agents/*.md; do
     [ -f "$f" ] || continue
+    case "$f" in */warmd-worker-mcp.md) continue;; esac   # its missing tools line is the point
     if awk 'NR==1&&$0!~/^---/{exit 1} NR>1&&/^---/{exit} /^tools:/{found=1} END{exit !found}' "$f"; then s=$((s + 1)); continue; fi
     [ "$(head -1 "$f" | tr -d '')" = "---" ] || continue
     tmp="$f.slim.$$"

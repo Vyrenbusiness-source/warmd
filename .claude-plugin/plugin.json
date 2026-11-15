@@ -11,5 +11,5 @@
   "repository": "https://github.com/Vyrenbusiness-source/warmd",
   "license": "MIT",
   "keywords": ["unity", "godot", "tests", "tokens", "agents", "windows"],
-  "agents": ["./agents/warmd-worker.md", "./agents/warmd-scout.md", "./agents/warmd-merge.md"]
+  "agents": ["./agents/warmd-worker.md", "./agents/warmd-worker-mcp.md", "./agents/warmd-scout.md", "./agents/warmd-merge.md"]
 }

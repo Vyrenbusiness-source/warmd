@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- `warmd split` sent every task to `warmd-worker`, whose tools are Bash, Read, Edit, Write, so a task that needs MCP tools (Roblox Studio, any `mcp__*`) failed silently. A goal that matches `mcp_words` (default `roblox studio|mcp`) now gets the new agent `warmd-worker-mcp`, which has no tools restriction. `warmd init` installs it; `escalate`, `handoff` and `route` keep it; `init --slim` does not add a tools line to it
+
 ## [0.4.52] - 2026-11-14
 
 ### Fixed
