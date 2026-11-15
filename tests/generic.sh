@@ -170,6 +170,14 @@ expect "disk below disk_min_mb is reported" '^LOW disk: .* GB free on ' "$(WARMD
 rm -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
 cd "$HERE" || exit 1
 
+# Committed work of an unknown language, no test=: not "no code changed", and no file of the task is missed.
+Q="$TMP/luau"; mkdir -p "$Q"; cd "$Q" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo a > a.luau; git add -A; git commit -qm init; git checkout -qb task; echo b >> a.luau; git commit -qam work
+out="$("$WARMD" check 2>&1)"
+expect "committed luau work is reported as changed" 'OK 1 files changed against main, no test=' "$out"
+cd "$HERE" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null
