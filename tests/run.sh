@@ -167,13 +167,15 @@ cat > tasks.txt <<'EOF'
 footer | add a footer | warmd test passes | src/footer.css
 search | list unused css | list of 5 | none
 EOF
-mkdir -p big; echo x > big/a.txt; printf 'seed_links=big
+mkdir -p big tbin; echo x > big/a.txt; echo bin > tbin/t.exe; printf 'seed_links=big
+worktree_links=tbin/*.exe
 ' > warmd.conf
 out="$("$WARMD" split tasks.txt)"
 wts="$(dirname "$PWD")/.warmd-worktrees/app/footer"
 [ -e "$wts/big/a.txt" ] && ok "split links the seed folder" || no "seed folder not linked"
 [ -z "$(git -C "$wts" status --porcelain -- big)" ] && ok "a seed link is invisible to git, add -A never takes it" || no "seed link seen by git: $(git -C "$wts" status --porcelain -- big | head -2)"
-rm -rf big; rm warmd.conf
+[ -f "$wts/tbin/t.exe" ] && ok "split copies a worktree_links file" || no "worktree_links file missing"
+rm -rf big tbin; rm warmd.conf
 expect "split routes the edit to the mid tier" 'AGENT footer: subagent_type=warmd-worker model=sonnet' "$out"
 expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd-scout model=haiku' "$out"
 expect "route sends an MCP goal to the mcp worker" 'agent=warmd-worker-mcp' "$("$WARMD" route 'fix the track in Roblox Studio' src/a.luau)"
