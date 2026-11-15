@@ -4,8 +4,13 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- `worktree_links` in `warmd.conf`: globs of git-ignored files (e.g. `tools/luau/*.exe`) that `warmd split` copies into every new or reused worktree (folders are linked). Default empty
+
 ### Fixed
 
+- `warmd check` in a project without `test=` and without a Rust, Go, Python, .NET source change (e.g. Luau) said "no code changed against main" after the task was committed. It compares with the merge-base (committed and uncommitted work) and now says how many files changed and that no test ran, until `test=` is set
 - `warmd split` sent every task to `warmd-worker`, whose tools are Bash, Read, Edit, Write, so a task that needs MCP tools (Roblox Studio, any `mcp__*`) failed silently. A goal that matches `mcp_words` (default `roblox studio|mcp`) now gets the new agent `warmd-worker-mcp`, which has no tools restriction. `warmd init` installs it; `escalate`, `handoff` and `route` keep it; `init --slim` does not add a tools line to it
 
 ## [0.4.52] - 2026-11-14
