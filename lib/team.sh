@@ -31,13 +31,18 @@ area_of() { echo "$1" | cut -d, -f1 | sed 's#/[^/]*$##'; }
 tier_model() { case "$1" in cheap) echo "$CFG_cheap";; top) echo "$CFG_top";; *) echo "$CFG_mid";; esac; }
 tier_budget() { case "$1" in cheap) echo "$CFG_budget_cheap";; top) echo "$CFG_budget_top";; *) echo "$CFG_budget_mid";; esac; }
 tier_next() { case "$1" in cheap) echo mid;; mid) echo top;; *) echo "";; esac; }
-tier_agent() { case "$1" in cheap) echo "${AGENT_NS:-}warmd-scout";; *) echo "${AGENT_NS:-}warmd-worker";; esac; }
+# tier_agent <tier> [text]: text that names MCP tools (mcp_words in warmd.conf) gets warmd-worker-mcp, the only agent without a tools list
+tier_agent() {
+  if [ -n "${2:-}" ] && [ -n "$CFG_mcp_words" ] && printf '%s' "$2" | grep -qiE "$CFG_mcp_words"; then echo "${AGENT_NS:-}warmd-worker-mcp"; return; fi
+  case "$1" in cheap) echo "${AGENT_NS:-}warmd-scout";; *) echo "${AGENT_NS:-}warmd-worker";; esac
+}
+task_agent() { tier_agent "$1" "$(sed -n 's/^Goal: //p' "$2" 2>/dev/null)"; }
 # Editing never runs on the cheap tier, whatever the config says: that tier only reads
 
 route_print() {
   [ -n "${1:-}" ] || { echo "warmd route <goal> [files], e.g. warmd route 'fix the footer' src/footer.css"; return 2; }
   local t; t="$(route_tier "$1" "${2:-}")"
-  echo "$t model=$(tier_model "$t") budget=$(tier_budget "$t")k agent=$(tier_agent "$t")"
+  echo "$t model=$(tier_model "$t") budget=$(tier_budget "$t")k agent=$(tier_agent "$t" "$1")"
 }
 
 need_git() { [ -n "$GIT_ROOT" ] || { echo "FAIL needs a git repo"; exit 2; }; }
@@ -352,7 +357,7 @@ write_task() { # name tier goal done files wt
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
   } > "$f"
   handoff_register "$name" "$(native_path "$f")" "$tier"
-  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
+  echo "AGENT $name: subagent_type=$(task_agent "$tier" "$f") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
 }
 
 # Warm start for agents: the slow first start runs before the agent arrives, in the background and through the normal queue.
@@ -694,7 +699,7 @@ team_escalate() {
   sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
   handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
   local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$f")"
-  echo "AGENT $name: subagent_type=${AGENT_NS:-}warmd-worker model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
+  echo "AGENT $name: subagent_type=$(task_agent "$next" "$f") model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
 }
 
 # For the prompt of a next agent on a running task: where the branch stands, and that the old agent must be stopped first.

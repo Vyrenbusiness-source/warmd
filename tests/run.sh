@@ -176,6 +176,14 @@ wts="$(dirname "$PWD")/.warmd-worktrees/app/footer"
 rm -rf big; rm warmd.conf
 expect "split routes the edit to the mid tier" 'AGENT footer: subagent_type=warmd-worker model=sonnet' "$out"
 expect "split routes the search to the scout" 'AGENT search: subagent_type=warmd-scout model=haiku' "$out"
+expect "route sends an MCP goal to the mcp worker" 'agent=warmd-worker-mcp' "$("$WARMD" route 'fix the track in Roblox Studio' src/a.luau)"
+expect "route keeps a plain goal on the worker" 'agent=warmd-worker$' "$("$WARMD" route 'fix the footer' src/footer.css)"
+printf '# name | goal | done check | files
+studio | place parts via mcp__Roblox_Studio tools | parts exist | src/studio.txt
+' > mcp-tasks.txt
+expect "split gives an MCP task the mcp worker" 'AGENT studio: subagent_type=warmd-worker-mcp model=sonnet' "$("$WARMD" split mcp-tasks.txt)"
+expect "escalate keeps the mcp worker" 'AGENT studio: subagent_type=warmd-worker-mcp model=opus' "$("$WARMD" escalate studio)"
+! grep -q '^tools:' "$HERE/agents/warmd-worker-mcp.md" && ok "mcp worker has no tools line" || no "mcp worker restricts tools"
 expect "split makes a worktree" 'warmd/footer' "$(git worktree list)"
 expect "watch sees moving worktrees" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 wtw="$(dirname "$PWD")/.warmd-worktrees/app/footer"

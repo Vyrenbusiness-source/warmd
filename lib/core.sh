@@ -143,7 +143,7 @@ CFG_build=""; CFG_test=""; CFG_lint=""; CFG_dev=""; CFG_url=""; CFG_base=""; CFG
 CFG_port_env=""; CFG_seed_links=""; CFG_gate=""; CFG_package_method=""; CFG_package_args=""; CFG_shot_method=""
 CFG_floor=""; CFG_full=""; CFG_warm=0; CFG_cheap=haiku; CFG_mid=sonnet; CFG_top=opus
 CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics|netcode|security|root cause|crash'
-CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
+CFG_mcp_words='roblox studio|mcp'; CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
 CFG_world_method=""; CFG_world_sources=""; CFG_world_outputs=""; CFG_gfx_tests=""
 load_config() {
   local f="$PROJECT/warmd.conf" k v

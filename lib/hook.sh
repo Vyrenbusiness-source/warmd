@@ -320,7 +320,7 @@ hook_plugin_instr() { # project dir
   done
   [ -f "$WARMD_HOME/agents/INSTRUCTIONS.md" ] || return 0
   cat "$WARMD_HOME/agents/INSTRUCTIONS.md"
-  echo "- The warmd command is on the PATH of your Bash tool. Its agents are warmd:warmd-worker, warmd:warmd-scout and warmd:warmd-merge."
+  echo "- The warmd command is on the PATH of your Bash tool. Its agents are warmd:warmd-worker, warmd:warmd-worker-mcp, warmd:warmd-scout and warmd:warmd-merge."
 }
 hook_session() {
   local in src="" common here tf brief main batch donef wt br ahead dirty open=0 n=0 log base l re='"source" *: *"([a-z]+)"'
