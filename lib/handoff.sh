@@ -36,5 +36,5 @@ team_handoff() {
     else echo "Green runs: none recorded on this branch"; fi
   } >> "$note"
   model="$(tier_model "$tier")"
-  echo "AGENT $name: subagent_type=$(tier_agent "$tier") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.$(agent_state "$GIT_ROOT")\""
+  echo "AGENT $name: subagent_type=$(task_agent "$tier" "$task") model=$model prompt=\"Read $task, then $(native_path "$note"), and continue from there. Do not redo finished work.$(agent_state "$GIT_ROOT")\""
 }

@@ -102,6 +102,7 @@ mid model=sonnet budget=100k agent=warmd-worker
 ```
 
 ### warmd split
+A task whose goal names MCP tools (`roblox studio` or `mcp`, case-insensitive; change the pattern with `mcp_words` in `warmd.conf`) gets `subagent_type=warmd-worker-mcp` instead of `warmd-worker`/`warmd-scout`. That agent has no `tools` line, so the MCP tools of the session (Roblox Studio, any `mcp__*`) reach it; `warmd-worker` lists only Bash, Read, Edit, Write and would fail such a task silently. `warmd init` installs it, `warmd escalate`, `warmd handoff` and `warmd route` keep it. `init --slim` leaves it unrestricted.
 Turns a task list into worktrees, model tiers and one-line prompts. Syntax: `warmd split <tasks.txt>`, one task per line: `name | goal | done check | files`.
 ```text
 warmd split tasks.txt
@@ -301,6 +302,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
 | `port_env` | Env variable that gets a stable port per worktree | none |
+| `mcp_words` | Regex (case-insensitive) on the task goal: a match routes the task to `warmd-worker-mcp` | `roblox studio|mcp` |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 
 Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
