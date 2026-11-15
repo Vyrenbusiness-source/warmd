@@ -16,8 +16,7 @@ OWN_JOB="proof godot"   # tests/<name>.sh with a CI job of its own
 MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
 guard() {
   local ci="$HERE/.github/workflows/ci.yml" groups f n s c
-  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '
-')"
+  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '')"
   [ -n "$groups" ] || { no "guard: ci.yml has no self-test matrix group list"; return; }
   for f in "$HERE"/tests/*.sh; do
     n="${f##*/}"; n="${n%.sh}"
