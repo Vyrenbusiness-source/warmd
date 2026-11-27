@@ -25,7 +25,9 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 
 <sub>Inside Claude Code, then restart it. Codex, Cursor or your own terminal: see [Install](#install).</sub>
 
-[Install](#install) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
+**New for Godot:** no false green · red cache · `warmd where` · `warmd map scene.tscn` · `warmd peek` · [see it](#new-for-godot)
+
+[Install](#install) · [Godot](#new-for-godot) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
 [![CI](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Vyrenbusiness-source/warmd?color=d4442a)](https://github.com/Vyrenbusiness-source/warmd/releases/latest)
@@ -46,6 +48,30 @@ What the agent reads after one Unity test run, real output from [PROOF.md](docs/
 | **Green** | 33,323 bytes of editor log, about 8,300 tokens, after a cold editor start | `OK 3s test`<br>`8 passed, 0 failed, 0 skipped` |
 | **Red** | The same log with the failure somewhere inside | `RED Adds: ScoreTests.cs:2 Expected: 5    But was:  -1` |
 | **Repeat, code unchanged** | The whole run again | `OK cached, code unchanged: 1 passed, 0 failed, 0 skipped` in 0.4 s |
+
+## New for Godot
+
+The agent gets the truth about a Godot project as a few lines of text: no log to scroll, no screenshot to read.
+
+```console
+$ warmd test
+FAIL 0s test
+1 passed, 1 failed
+RED test_wrong: sum got 4, want 5
+```
+<sub>Real run, Godot 4.7.2 on Windows, from [PROOF.md](docs/PROOF.md#godot).</sub>
+
+| | What the agent sees |
+|---|---|
+| **No false green** | A test that stops on a script error or ran no assert is red, and so is a runner that prints `SCRIPT ERROR` and exits 0. |
+| **Compile with `file:line`** | A red compile names each error as `file:line message`. Strict typing (`untyped_declaration`, `unsafe_*` at level 2) is red, proven in CI with Godot 4.4.1. A green compile is cached. |
+| **Red cache** | A failing run on unchanged code answers at once: `RED cached, code unchanged: <line>. Change code first.` Timeouts, kills and crashes are never kept. |
+| **Engine in the key** | Engine version and binary, `project.godot` and `export_presets.cfg` are part of the cache key, so a new Godot never reuses an old result. |
+| **`warmd where <term>`** | At most 5 lines `file:line what` from scripts, scenes, input actions, autoloads and groups, German and English synonyms included, then what changed since the agent last looked. |
+| **`warmd map scene.tscn`** | Scene outline: each node with depth, type, script, instanced scene, groups, `%unique` name, and its signals as `line signal from -> to method`. |
+| **`warmd peek <scene>`** | Plays the scene headless for 10 frames and prints the node tree as text: type, position, hidden, animation, script, exported vars. Instead of a screenshot. |
+
+Setup: `warmd init` once, it adds `addons/warmd`. Built-in runner, GUT or gdUnit4. All options: [reference](docs/COMMANDS.md).
 
 ## What runs by itself
 
@@ -113,14 +139,14 @@ With the plugin, `warmd init` is optional: it adds the block to `CLAUDE.md` and 
 | Stack | Kept warm | Tests |
 |---|---|---|
 | **Unity** | Headless editor | EditMode and PlayMode, Test Runner API |
-| **Godot** | Nothing, one test in 0.9 s | Built-in runner, GUT or gdUnit4 |
+| **Godot** | Nothing, one test in 0.9 s | Built-in runner, GUT or gdUnit4, red on script errors and zero asserts |
 | **Web** | Dev server | Vitest, Jest or your script |
 | **Rust, Go, Python, .NET** | Nothing | Native test runner |
 
 <details>
 <summary><b>Safety: what it sends, writes, undoes and kills</b></summary>
 
-About 4,200 lines of bash, one C# file, three small GDScript files and a PowerShell installer. You can read it in one sitting.
+About 7,000 lines of bash, one C# file, four small GDScript files and a PowerShell installer. You can read it in one sitting.
 
 - **No telemetry.** It talks only to git remotes: it pushes finished branches to yours, and with a GitHub CI it uses `gh` to open the pull request, wait for the checks and merge. `warmd status` and `warmd doctor` check at most every 6 hours for a newer version with a `git fetch` of the warmd clone, `WARMD_UPDATE_CHECK=0` turns it off. A new version is installed only by `warmd update`, or by a `warmd ship --release` of warmd itself.
 - **What it writes.** `.warmd/` (ignored by git), a cache in `~/.cache/warmd`. The setup adds `.claude/agents`, a short block in `CLAUDE.md` or `AGENTS.md`, and the engine file: `Assets/Editor/Warmd` for Unity, `addons/warmd` for Godot.
