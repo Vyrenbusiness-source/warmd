@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- README agents image. Real warmd 0.6.2 output, recorded 2026-11-27 on Windows: split, board and state on the same throwaway
+     Godot project as godot.html (its path shown as <project>), brakes from the maintainer's machine (three of the top five causes, the German-language ones skipped, each
+     cut after its cause with "..."). Lines starting with # are comments added here. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:735px}
+body{padding:26px 34px 0}
+.stripe{position:absolute;left:0;right:0;top:0}
+.head{display:flex;justify-content:space-between}
+h2{font:600 28px/1.1 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 18px}
+h2 em{font-style:normal;color:var(--heat)}
+.term{background:var(--term);color:var(--tink);border:1px solid var(--trule)}
+.bar{height:28px;border-bottom:1px solid var(--trule);display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  font:11px "Cascadia Mono",Consolas,monospace;letter-spacing:.08em;color:var(--tmute);text-transform:uppercase}
+.bar i{display:inline-block;width:8px;height:8px;background:var(--heat);margin-right:8px}
+pre{padding:10px 16px 12px;font-size:12.5px;line-height:1.5;white-space:normal}
+pre span{display:block;white-space:pre-wrap;padding-left:3ch;text-indent:-3ch}
+.p:before{content:"$ ";color:#ff8a66}.c{color:var(--tmute);margin-top:6px}.ok{color:#6fd99a;font-weight:700}.no{color:#ff7a6e;font-weight:700}
+.am{color:#f4ac48;font-weight:700}.dim{color:var(--tmute)}
+</style></head><body>
+<div class="stripe"></div>
+<div class="head"><span class="label"><b>&#9632;</b> Parallel agents</span><span class="label">real output &middot; warmd 0.6.2 &middot; Windows</span></div>
+<h2>Three agents, three worktrees. <em>No two touch one file.</em></h2>
+<div class="term"><div class="bar"><span><i></i>Git Bash &middot; jumper</span><span>split &middot; board &middot; state &middot; brakes</span></div>
+<pre><span class="c"># two tasks list main.tscn: split refuses before anything is created</span>
+<span class="p">warmd split tasks.txt</span>
+<span class="am">GAP dash: main.tscn already owned in this batch, two agents would collide</span>
+<span class="no">FAIL fix the gaps, nothing was created</span>
+<span class="c"># fixed task list: one worktree, model and prompt per task</span>
+<span class="p">warmd split tasks.txt</span>
+<span>AGENT fix-combo: subagent_type=warmd-worker model=sonnet prompt="Read &lt;project&gt;/.warmd/tasks/fix-combo.md and do it."</span>
+<span>AGENT jump-cap: subagent_type=warmd-worker model=sonnet prompt="Read &lt;project&gt;/.warmd/tasks/jump-cap.md and do it."</span>
+<span>AGENT dash: subagent_type=warmd-worker model=sonnet prompt="Read &lt;project&gt;/.warmd/tasks/dash.md and do it."</span>
+<span class="ok">OK 3 tasks split. Start now, in the background: warmd watch</span>
+<span class="p">warmd board</span>
+<span class="dim">worktree                   branch                    age  dirty  ahead</span>
+<span>g                          main                       1m      1      0</span>
+<span>dash                       warmd/dash                 1m      0      0</span>
+<span>fix-combo                  warmd/fix-combo            1m      0      0</span>
+<span>jump-cap                   warmd/jump-cap             1m      0      0</span>
+<span class="p">warmd state</span>
+<span class="am">ACTIVE batch, 3 agents | last: test all red at 2026-11-27 23:39:02 (af2e5cc)</span>
+<span class="c"># every agent records what slowed it down; brakes ranks the causes machine-wide</span>
+<span class="p">warmd brakes</span>
+<span>170 min lost in 29 brakes</span>
+<span>  30 min  1x  third CI round: spelling fix changed PROJECT spelling, broke Unity editor match ...</span>
+<span>  15 min  1x  godot CI job: tests/godot.sh:192 empty output once, green on rerun ...</span>
+<span>  12 min  1x  local tests/godot.sh red everywhere: C: has 3.2 GB free, under disk_min_mb 4096 ...</span>
+</pre></div>
+</body></html>
