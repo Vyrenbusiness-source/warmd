@@ -4,6 +4,12 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-27
+
+### Changed
+- docs: README for v0.6.3, every command grouped with real images
+- docs: Godot, agents and VS Code images from real warmd output
+
 ## [0.6.3] - 2026-11-27
 
 ### Changed
@@ -493,7 +499,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...v0.6.1

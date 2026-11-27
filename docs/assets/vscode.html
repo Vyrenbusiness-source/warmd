@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- README VS Code image. A drawing of the status bar item of the extension in vscode/, not a screenshot. Texts follow render()
+     in vscode/extension.js; the tooltip line is real warmd 0.6.2 `warmd state` output from the agents.html session. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:356px}
+body{padding:26px 34px 0}
+.stripe{position:absolute;left:0;right:0;top:0}
+.head{display:flex;justify-content:space-between}
+h2{font:600 28px/1.1 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 18px}
+h2 em{font-style:normal;color:var(--heat)}
+.rows{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.row{display:flex;align-items:center;gap:12px}
+.sb{width:190px;height:26px;background:#007acc;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;
+  font:12.5px "Segoe UI",sans-serif;flex:none}
+.dark .sb{background:#181818;color:#cccccc;border-top:1px solid #2b2b2b}
+.it{display:inline-flex;align-items:center;gap:5px;padding:0 6px;height:22px}
+.it.dim{opacity:.55}
+.it svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5}
+.it .g{stroke:#89f0b0}.it .r{stroke:#ffb3ab}
+.dark .it .g{stroke:#5fcf8c}.dark .it .r{stroke:#ff6f61}
+.what{font-size:13px;line-height:1.35;color:var(--mute)}
+.what b{color:var(--ink);font-weight:600;display:block}
+.tip{margin-top:20px;display:flex;gap:16px;align-items:flex-start}
+.tip .box{background:var(--panel);border:1px solid var(--rule);padding:10px 14px;font:12.5px/1.6 "Cascadia Mono",Consolas,monospace;color:var(--ink)}
+.tip .what{max-width:230px;padding-top:6px}
+</style></head><body>
+<div class="stripe"></div>
+<div class="head"><span class="label"><b>&#9632;</b> VS Code</span><span class="label">status bar states &middot; drawn, not a screenshot</span></div>
+<h2>One icon says what warmd is doing. <em>Click: warmd status.</em></h2>
+<div class="rows">
+<div class="row"><div class="sb"><span class="it dim"><svg viewBox="0 0 16 16"><path d="M9 1 3 9h4l-1 6 6-8H8z"/></svg>warmd</span></div><div class="what"><b>Idle</b>dim, nothing running</div></div>
+<div class="row"><div class="sb"><span class="it"><svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3"/></svg>warmd test</span></div><div class="what"><b>Run</b>spins during test, check, build, merge</div></div>
+<div class="row"><div class="sb"><span class="it"><svg viewBox="0 0 16 16"><circle cx="8" cy="4" r="2"/><circle cx="3.5" cy="11" r="1.8"/><circle cx="12.5" cy="11" r="1.8"/><path d="M8 6v3M4.5 9.5 8 9l3.5.5"/></svg>warmd 3 agents</span></div><div class="what"><b>Batch</b>agents of the running batch</div></div>
+<div class="row"><div class="sb"><span class="it"><svg viewBox="0 0 16 16"><path d="M4.5 12.5h7a2.8 2.8 0 0 0 .4-5.6A4 4 0 0 0 4.2 7a2.8 2.8 0 0 0 .3 5.5z"/></svg>CI</span></div><div class="what"><b>CI wait</b>while warmd waits for GitHub CI</div></div>
+<div class="row"><div class="sb"><span class="it"><svg viewBox="0 0 16 16"><circle class="g" cx="8" cy="8" r="6"/><path class="g" d="m5.2 8.2 2 2 3.8-4"/></svg>warmd</span></div><div class="what"><b>Green</b>for 10 s after a result</div></div>
+<div class="row"><div class="sb"><span class="it"><svg viewBox="0 0 16 16"><circle class="r" cx="8" cy="8" r="6"/><path class="r" d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/></svg>warmd</span></div><div class="what"><b>Red</b>for 10 s after a result</div></div>
+</div>
+<div class="tip"><div class="box">$ warmd state<br>ACTIVE batch, 3 agents | last: test all red at 2026-11-27 23:39:02 (af2e5cc)</div></div>
+</body></html>

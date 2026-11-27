@@ -11,10 +11,9 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>56 s → 3 s</h3>one Unity test class<br><sub><a href="docs/MEASURED.md">warm headless editor</a></sub></td>
-<td align="center" width="25%"><h3>33,323 → 41</h3>bytes read per green run<br><sub><a href="docs/PROOF.md#tokens">Unity log vs. warmd</a></sub></td>
-<td align="center" width="25%"><h3>26% fewer</h3>tokens, 27% lower cost<br><sub><a href="docs/ab.md">agent A/B, 5 of 5 fixed per arm</a></sub></td>
-<td align="center" width="25%"><h3>0.4 s</h3>repeat run, code unchanged<br><sub><a href="docs/PROOF.md#unity">answered from the green cache</a></sub></td>
+<td align="center" width="33%"><h3>56 s → 3 s</h3>one Unity test class<br><sub><a href="docs/MEASURED.md">warm headless editor</a></sub></td>
+<td align="center" width="33%"><h3>33,323 → 41</h3>bytes the agent reads per green run<br><sub><a href="docs/PROOF.md#tokens">Unity log vs. warmd</a></sub></td>
+<td align="center" width="33%"><h3>26% fewer</h3>tokens, 27% lower cost<br><sub><a href="docs/ab.md">agent A/B, 5 of 5 fixed per arm</a></sub></td>
 </tr>
 </table>
 
@@ -23,11 +22,9 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 /plugin install warmd@warmd
 ```
 
-<sub>Inside Claude Code, then restart it. Codex, Cursor or your own terminal: see [Install](#install).</sub>
+<sub>Inside Claude Code, then restart it. Codex, Cursor or your own terminal: one line, see [Install](#install).</sub>
 
-**New for Godot:** no false green · one engine start · `warmd sim` · `warmd lint` · `warmd nightly` · `warmd where` · `warmd peek` · [see it](#new-for-godot)
-
-[Install](#install) · [Godot](#new-for-godot) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
+[What it does](#what-it-does) · [Godot](#godot) · [Agents](#parallel-agents) · [Proof](#proof) · [Install](#install) · [All commands](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
 [![CI](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyrenbusiness-source/warmd/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Vyrenbusiness-source/warmd?color=d4442a)](https://github.com/Vyrenbusiness-source/warmd/releases/latest)
@@ -38,8 +35,8 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 
 ## The problem
 
-A coding agent spends most of a test run waiting for the engine to start, then pays tokens to read a log it mostly ignores.
-warmd keeps the engine warm, answers unchanged code from cache and hands the agent only the error.
+A coding agent spends most of a test run waiting for the engine to start.
+Then it pays tokens to read a log it mostly ignores.
 
 What the agent reads after one Unity test run, real output from [PROOF.md](docs/PROOF.md#unity):
 
@@ -49,56 +46,115 @@ What the agent reads after one Unity test run, real output from [PROOF.md](docs/
 | **Red** | The same log with the failure somewhere inside | `RED Adds: ScoreTests.cs:2 Expected: 5    But was:  -1` |
 | **Repeat, code unchanged** | The whole run again | `OK cached, code unchanged: 1 passed, 0 failed, 0 skipped` in 0.4 s |
 
-## New for Godot
-
-The agent gets the truth about a Godot project as a few lines of text: no log to scroll, no screenshot to read.
-
-```console
-$ warmd test
-FAIL 0s test
-1 passed, 1 failed
-RED test_wrong: sum got 4, want 5
-```
-<sub>Real run, Godot 4.7.2 on Windows, from [PROOF.md](docs/PROOF.md#godot).</sub>
-
-| | What the agent sees |
-|---|---|
-| **No false green** | A test that stops on a script error or ran no assert is red, and so is a runner that prints `SCRIPT ERROR` and exits 0. |
-| **Compile with `file:line`** | A red compile names each error as `file:line message`. Strict typing (`untyped_declaration`, `unsafe_*` at level 2) is red, proven in CI with Godot 4.4.1. A green compile is cached. |
-| **Red cache** | A failing run on unchanged code answers at once: `RED cached, code unchanged: <line>. Change code first.` Timeouts, kills and crashes are never kept. |
-| **Engine in the key** | Engine version and binary, `project.godot` and `export_presets.cfg` are part of the cache key, so a new Godot never reuses an old result. |
-| **`warmd where <term>`** | At most 5 lines `file:line what` from scripts, scenes, input actions, autoloads and groups, German and English synonyms included, then what changed since the agent last looked. |
-| **`warmd map scene.tscn`** | Scene outline: each node with depth, type, script, instanced scene, groups, `%unique` name, and its signals as `line signal from -> to method`. |
-| **`warmd peek <scene>`** | Plays the scene headless for 10 frames and prints the node tree as text: type, position, hidden, animation, script, exported vars. Instead of a screenshot. |
-| **One engine start** | All test runners in one engine, random order from a printed seed; `# warmd: isolate` gives a runner its own. The build loads every changed `.tscn` and `.tres` headless: a dead path or missing script is red with the file. |
-| **`warmd sim`** | Gameplay scenarios headless under a fixed tick, all in one engine start, one line each: `FAIL jump: peak 6 > 5 at frame 16 of 200 (seed 1)`. Metrics are Godot expressions on the scene, checked after every tick. |
-| **Input replay** | `warmd sim --record <scene>` plays the scene in a window and writes every input per tick to `tests/sim/<name>.sim`. Add the metric the bug breaks: a red scenario a worker can fix. |
-| **`warmd lint`** | Red only when the engine or the disk proves it: unknown input action, missing `res://` path, wrong case, layer outside 1-32. The rest is at most 10 warnings. First step of `warmd check`. |
-| **`warmd nightly`** | Once a night without cache: `MISMATCH` when the cache lied, `FLAKY` when a test flips, `GAP` when a runner loads a file the graph missed. |
-| **`warmd mutate`** | Flips one operator per changed line; a line no test notices is `SURVIVED file:line`. |
-| **`warmd models`** | One model per role (producer, worker, qa, reviewer, merge, scout); the reviewer is never the author's model. |
-
-Setup: `warmd init` once, it adds `addons/warmd`. Built-in runner, GUT or gdUnit4. All options: [reference](docs/COMMANDS.md).
-
-In VS Code a status bar icon shows what warmd does: a spinning `warmd test` during a run, `warmd 4 agents` in a batch, `CI` while it waits, green or red for 10 s after. Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.
-
-## What runs by itself
+## What it does
 
 After `warmd init` your agent calls warmd through its instructions and hooks. Nobody types a warmd command.
+Each line below is one command or feature; [docs/COMMANDS.md](docs/COMMANDS.md) has every option.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/auto-dark.png">
   <img src="docs/assets/auto-light.png" width="800" alt="Four stations: 01 test, warm and short; 02 route, cheapest model; 03 merge, green or back; 04 machine, never frozen">
 </picture>
 
+### Tests: warm, cached, error only
+
 | | |
 |---|---|
-| **01 Test** | **Warm engine:** the Unity editor runs headless and stays open, the web dev server too. **Affected tests:** a real import graph for JS and TS, Python, C# and GDScript, and `warmd check` takes the faster of full and selective. **Green cache:** a passing result holds until the code changes, across worktrees. **Error only:** green is one line, red is the test, `file:line`, expected and actual. |
-| **02 Route** | **Cheapest tier:** reading starts on `haiku`, edits on `sonnet`, hard areas on `opus`. **Escalation:** a real failure moves the task one tier up with its commits as context. **Handoff:** past 70% of the budget or 60 tool calls an agent commits and a fresh one continues. **Shared brief:** one fact found by one agent is never searched again. |
-| **03 Merge** | **One at a time:** pushed branches merge in the background and the project's checks run on each result. **Rollback:** red is reset, the base stays green. **CI:** with GitHub CI the branches go through one pull request, the wait prints an ETA and stops at the first red job. |
-| **04 Machine** | **RAM wait:** a heavy start queues while less than 15% of RAM is free. **Queue:** one heavy slot per 4 cores and 8 GB. **Idle end:** a daemon stops after 30 minutes. **Own processes only:** an editor you opened by hand is never touched. |
+| `warmd build` | Fastest compile or typecheck for the detected stack. A green compile is cached like a test run. |
+| `warmd test [filter]` | Green is one line. Red is the test, `file:line`, expected and actual. |
+| `warmd check` | Build, then only the tests the change touches: a real import graph for JS and TS, Python, C# and GDScript. |
+| **Green cache** | A passing result holds until the code changes, across worktrees. |
+| **Red cache** | A failing run on unchanged code answers at once: `Change code first.` Timeouts and crashes are never kept. |
+| **Engine in the key** | Engine version, binary and project settings are part of the cache key. A new engine never reuses an old result. |
+| **Warm engine** | The Unity editor runs headless and stays open, the web dev server too. `warmd stop` ends it. |
+| **Unity** | EditMode and PlayMode through the Test Runner API, time lapse with `--speed N`, `--play`, `--edit`, `--window`, `--sound`. |
+| `warmd run -- <cmd>` | Any command: up to 20 lines pass, longer output becomes one OK or FAIL line with the error lines. |
+| `warmd status` · `warmd bench` | What was detected and what is warm. Cold, warm and cached timings on your own project. |
 
-Also: time lapse for Unity tests (`--speed N`), screenshots and layout problems as text, a performance baseline, repo maps and file outlines, lean subagent starts and real token cost per task. Every one is in the [reference](docs/COMMANDS.md).
+### Godot
+
+The truth about a Godot project as a few lines of text: no log to scroll, no screenshot to read.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/godot-dark.png">
+  <img src="docs/assets/godot-light.png" width="800" alt="Real warmd session on a Godot 4.7 project: warmd test is red with got 40, want 45; the repeat is answered from the red cache; warmd lint names hero.gd:14 for an unknown input action; warmd sim prints OK idle and FAIL jump: peak 13 > 12 at frame 18; warmd where and warmd map answer with file:line">
+</picture>
+
+| | |
+|---|---|
+| **No false green** | A test that stops on a script error or ran no assert is red. So is a runner that prints `SCRIPT ERROR` and exits 0. |
+| **Compile with `file:line`** | Strict typing (`untyped_declaration`, `unsafe_*` at level 2) is red. Every changed `.tscn` and `.tres` is loaded: a dead path is red. |
+| **One engine start** | All test runners in one engine, random order from a printed seed. Built-in runner, GUT or gdUnit4. |
+| **Leaks** | A test that leaves orphan nodes is red with the count. |
+| `warmd lint` | Red only when the engine or the disk proves it: unknown input action, missing `res://` path, wrong case, layer outside 1-32. |
+| `warmd sim` | Gameplay scenarios headless under a fixed tick, one line each: `FAIL jump: peak 13 > 12 at frame 18 of 120`. |
+| `warmd sim --record` | Play the scene once; every input per tick becomes a replayable scenario a worker can fix. |
+| `warmd where <term>` | At most 5 `file:line` places from scripts, scenes, input actions, autoloads and groups, then what changed. |
+| `warmd map scene.tscn` | Scene outline: nodes, types, scripts, groups, signals as `from -> to method`. |
+| `warmd peek <scene>` | Plays the scene headless and prints the node tree as text instead of a screenshot. |
+| `warmd shot --golden` | Shot against this machine's reference: `SAME` or `DIFF 3.2% in region x,y,w,h`. |
+| `warmd package` | Export smoke: exports the first preset, starts the release build and fails on a crash or script error. |
+| **Budgets at merge** | Texture size, draw calls, memory and node count per scene, checked in the merge gate. |
+| `warmd nightly` | Once a night without cache: `MISMATCH` when the cache lied, `FLAKY` when a test flips, `GAP` when the graph missed a file. |
+| `warmd mutate` | Flips one operator per changed line. A line no test notices is `SURVIVED file:line`. GDScript, sh, Python, JS and TS. |
+| `warmd doctor` | Unversioned `.uid` or `.import` files, `.godot/` not ignored, engine not the pinned version. |
+
+Setup: `warmd init` once, it adds `addons/warmd`.
+
+### Parallel agents
+
+Cheap models do the work, a stronger one reviews, and the base branch stays green.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/agents-dark.png">
+  <img src="docs/assets/agents-light.png" width="800" alt="Real warmd output: split refuses two tasks on main.tscn with GAP before anything is created, then splits three tasks into worktrees with one AGENT line each; board lists the worktrees; state says ACTIVE batch, 3 agents; brakes ranks causes of lost minutes">
+</picture>
+
+| | |
+|---|---|
+| `warmd route <goal>` | Cheapest fitting tier: reading on `haiku`, edits on `sonnet`, hard areas on `opus`. Routing only learns upward. |
+| `warmd models` | One model per role: producer, worker, qa, reviewer, merge, scout. The reviewer is never the author's model. |
+| `warmd split <tasks.txt>` | One worktree, model and one-line prompt per task. Two tasks on one file or scene never run at once. |
+| `warmd note` | One finding goes into the brief every agent of the batch reads. Nothing is searched twice. |
+| `warmd escalate` | A real failure moves the task one tier up, with its commits as context. |
+| `warmd handoff` | Past 70% of the budget or 60 tool calls: commit, and a fresh agent continues. |
+| `warmd finish` | Records tokens and outcome, pushes, prints a one-line report. |
+| `warmd watch` · `warmd board` | Background watch that ends when an agent stalls; all worktrees at a glance. |
+| `warmd merge` | Branches merge one at a time, the checks run on each result, red is rolled back. |
+| `warmd ship` · `warmd ci` | One pull request for the batch, waits for CI with an ETA, stops at the first red job, merges on green. |
+| `warmd drop` · `warmd batch-done` · `warmd batch-resume` | Cancel one task, end the batch, or rebuild the batch from its open tasks and worktrees. |
+
+### Machine and cost
+
+| | |
+|---|---|
+| **RAM wait** | A heavy start queues while less than 15% of RAM is free. One heavy slot per 4 cores and 8 GB. |
+| **Own processes only** | An editor you opened by hand is never touched. An idle daemon ends after 30 minutes. |
+| `warmd brake` · `warmd brakes` | Agents record what slowed them down; `brakes` ranks the causes by minutes lost. |
+| `warmd audit` | What your agents pay for on every turn, biggest first, including MCP servers that load upfront. |
+| `warmd gain` · `warmd report` | Tokens and dollars per session from the transcripts; cost per tier and what escalation wasted. |
+| `warmd init --slim` | Gives project agents without a tools line the cheapest useful set: fewer start tokens per subagent. |
+| `warmd disk` · `warmd leak` | Free space and engine caches of finished worktrees; kernel memory lost per process start on Windows. |
+| `warmd doctor` · `warmd update` · `warmd feedback` | What is missing; the newest version, only when you run it; a prefilled issue with your bench numbers. |
+
+### Web and UI
+
+| | |
+|---|---|
+| `warmd shot [url]` | Desktop and 390 px phone screenshot, sized to cost few tokens. |
+| `warmd layout [url]` | Layout problems as text lines, no screenshot. |
+| `warmd perf` | Load time and bundle size against a stored baseline; a regression over 5% is red. |
+| `warmd map [file]` | Repo map by import rank, or one file outline with line numbers. |
+
+### See it in VS Code
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/vscode-dark.png">
+  <img src="docs/assets/vscode-light.png" width="800" alt="Drawing of the VS Code status bar states: idle warmd, warmd test spinning, warmd 3 agents, CI, green and red for 10 seconds after a result">
+</picture>
+
+`warmd state` prints in one line what warmd does here; the extension in `vscode/` shows it in the status bar.
+Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.
 
 ## Proof
 
@@ -123,7 +179,7 @@ Task time is equal within the spread in both areas: the gain on small projects i
 
 ## Install
 
-Claude Code, as a plugin. It brings the hooks, the agent definitions and the `warmd` command for the agent, nothing to run in your project:
+Claude Code, as a plugin. It brings the hooks, the agent definitions and the `warmd` command, nothing to run in your project:
 
 ```text
 /plugin marketplace add Vyrenbusiness-source/warmd
@@ -143,7 +199,8 @@ irm https://raw.githubusercontent.com/Vyrenbusiness-source/warmd/main/install.ps
 ```
 
 Then run `warmd init` once in your project. warmd detects the stack from its files, there is nothing to configure.
-With the plugin, `warmd init` is optional: it adds the block to `CLAUDE.md` and the agent definitions to the project, the plugin's hooks step aside for the ones it writes.
+With the plugin, `warmd init` is optional: it adds the block to `CLAUDE.md` and the agent definitions to the project.
+`warmd init --no-hooks` removes the hooks again.
 
 | Stack | Kept warm | Tests |
 |---|---|---|
@@ -152,6 +209,7 @@ With the plugin, `warmd init` is optional: it adds the block to `CLAUDE.md` and 
 | **Web** | Dev server | Vitest, Jest or your script |
 | **Rust, Go, Python, .NET** | Nothing | Native test runner |
 
+<a id="safety"></a>
 <details>
 <summary><b>Safety: what it sends, writes, undoes and kills</b></summary>
 
