@@ -49,6 +49,26 @@ rm -rf raw
 printf 'func broken(:\n' > bad.gd
 expect "parse error is found with file:line" 'bad.gd:1 .*Error' "$("$WARMD" build)"
 rm bad.gd
+# The build loads and instantiates changed scenes and resources: dead paths, missing scripts, renamed methods are red
+printf 'extends Control\n\nfunc _on_go_pressed() -> void:\n\tpass\n' > hud.gd
+printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://hud.gd" id="1"]\n\n[node name="Hud" type="Control"]\nscript = ExtResource("1")\n\n[node name="Go" type="Button" parent="."]\n\n[connection signal="pressed" from="Go" to="." method="_on_go_pressed"]\n' > hud.tscn
+expect "a changed scene that loads is green" 'scripts parse, 1 changed scenes and resources load' "$("$WARMD" build)"
+git add hud.gd hud.tscn; git commit -qm hud
+refuse "an unchanged scene is not loaded again" 'changed scenes' "$(WARMD_NOCACHE=1 "$WARMD" build)"
+sed -i.bak 's/method="_on_go_pressed"/method="_on_go_renamed"/' hud.tscn; rm hud.tscn.bak
+expect "a signal wired to a renamed method is red" 'hud\.tscn: .*_on_go_renamed' "$("$WARMD" build)"
+expect "and its red is not cached" 'hud\.tscn: .*_on_go_renamed' "$("$WARMD" build)"
+git checkout -q hud.tscn
+printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://gone.gd" id="1"]\n\n[node name="Main" type="Node2D"]\nscript = ExtResource("1")\n' > lost.tscn
+expect "a scene with a missing script is red" 'lost\.tscn: ' "$("$WARMD" build)"
+rm lost.tscn
+printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="PackedScene" path="res://base_gone.tscn" id="1"]\n\n[node name="Kid" instance=ExtResource("1")]\n' > kid.tscn
+expect "an inherited scene whose base is gone is red" 'kid\.tscn: ' "$("$WARMD" build)"
+rm kid.tscn
+printf '[gd_resource type="Resource" load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://gone_data.gd" id="1"]\n\n[resource]\nscript = ExtResource("1")\n' > data.tres
+expect "a resource with a dead path is red" 'data\.tres: ' "$("$WARMD" build)"
+rm data.tres
+git rm -q hud.gd hud.tscn; rm -f hud.gd.uid; git commit -qm "no hud"
 # Strict typing: these warnings at level 2 in project.godot. GDScript.reload() has to fail on them, warmd's own scripts
 # have to load under them.
 cp project.godot project.godot.orig
@@ -156,6 +176,20 @@ printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tq
 expect "a runner with class_name before extends is found" 'FAIL runner tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 rm tests/run_cn.gd tests/run_math.gd
 expect "no test of any kind is a WARN, not green" 'WARN no tests found' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+# warmd peek: the scene runs N frames headless, its node tree comes back as text, nothing is saved
+P="$TMP/peek"; mkdir -p "$P"; cd "$P" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+printf 'config_version=5\n[application]\nconfig/name="p"\n' > project.godot
+printf '.warmd\n.godot\n' > .gitignore
+printf 'extends Node2D\n' > main.gd
+printf 'extends Node2D\n\n@export var speed := 120.0\n' > mover.gd
+printf '[gd_scene load_steps=3 format=3]\n\n[ext_resource type="Script" path="res://main.gd" id="1"]\n[ext_resource type="Script" path="res://mover.gd" id="2"]\n\n[node name="Main" type="Node2D"]\nscript = ExtResource("1")\n\n[node name="Mover" type="Node2D" parent="."]\nscript = ExtResource("2")\n' > main.tscn
+"$WARMD" init > /dev/null; "$WARMD" build > /dev/null   # the import writes .uid files: they are committed, peek must add none
+git add -A; git commit -qm init
+out="$("$WARMD" peek main.tscn 5 2>&1)"
+expect "peek" '^== res://main\.tscn after 5 frames' "$out"
+expect "peek shows the exported var" 'speed=120' "$out"
+expect "peek saves nothing" '^clean$' "$(s="$(git status --porcelain | grep -vE '^\?\? \.(godot|warmd)/')"; [ -z "$s" ] && echo clean || echo "$s")"
 cd "$TMP" || exit 1
 rm -rf "$TMP" 2>/dev/null
 exit $fails

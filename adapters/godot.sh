@@ -280,7 +280,16 @@ godot_build() {
   if ls "$PROJECT"/*.csproj >/dev/null 2>&1 && command -v dotnet >/dev/null 2>&1; then
     run_bounded "dotnet build" bash -c "cd '$PROJECT' && dotnet build --nologo -v q" || return 1
   fi
-  class_retry run_job compile
+  local scenes; scenes="$(changed_scenes)"
+  class_retry run_job compile ${scenes:+"scenes=$scenes"}
+}
+# changed_scenes: the .tscn and .tres changed against HEAD and the base branch (warmd check's selection), as res:// paths
+# with a comma between. The build's cache key covers them: a green load stays green until one of them changes.
+changed_scenes() {
+  [ -n "$(type -t aff_changed)" ] || . "$WARMD_HOME/lib/affected.sh"
+  aff_changed | grep -E '\.(tscn|tres)$' | grep -vE '(^|/)\.(godot|warmd)/' | while IFS= read -r f; do
+    [ -f "$PROJECT/$f" ] && printf 'res://%s,' "$f"
+  done | sed 's/,$//'
 }
 
 a_test() {

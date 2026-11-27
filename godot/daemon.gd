@@ -16,6 +16,7 @@ var allow := RegEx.new()
 var allow_on := OS.get_environment("WARMD_ALLOW_ERRORS") != "" and allow.compile(OS.get_environment("WARMD_ALLOW_ERRORS")) == OK
 var at_rx := RegEx.create_from_string("^\\s*at: .*\\((.+:\\d+)\\)\\s*$")
 var ansi_rx := RegEx.create_from_string("\u001b\\[[0-9;]*[A-Za-z]")
+var engine_rx := RegEx.create_from_string("^(USER )?ERROR:")
 # A runner (extends SceneTree) becomes a guest of this engine: its extends line names RefCounted, GUEST_HOST adds the
 # SceneTree members it uses at the end. One that uses a member the host lacks does not compile as a guest and gets an
 # engine of its own, so a gap costs time, never a verdict. The extends line keeps its place: error lines stay true.
@@ -156,7 +157,7 @@ func _run(job: Dictionary) -> Array:
 		"quit":
 			return [true, ["daemon stops"]]
 		"compile":
-			return _compile()
+			return _compile(str(job.get("scenes", "")).split(",", false))
 		"test":
 			return await _test(str(job.get("filter", "")))
 		"call":
@@ -167,7 +168,8 @@ func _run(job: Dictionary) -> Array:
 
 
 ## A red script names the engine's own line, "file:line message", so nobody has to open a log for it.
-func _compile() -> Array:
+## Changed scenes and resources (warmd passes them) load and instantiate after the scripts.
+func _compile(scenes: PackedStringArray) -> Array:
 	var bad: PackedStringArray = []
 	var files := _scripts("res://")
 	for path: String in files:
@@ -178,9 +180,58 @@ func _compile() -> Array:
 		if script.reload() != OK:
 			var errs := _log_errors(mark)
 			bad.append(errs[0] if not errs.is_empty() else "%s does not parse" % path.trim_prefix("res://"))
+	bad.append_array(_check_scenes(scenes))
 	if bad.is_empty():
-		return [true, ["%d scripts parse" % files.size()]]
+		var also := ", %d changed scenes and resources load" % scenes.size() if not scenes.is_empty() else ""
+		return [true, ["%d scripts parse%s" % [files.size(), also]]]
 	return [false, bad]
+
+
+## A text check misses an inherited scene's dead base, a missing script, a signal wired to a renamed method: each changed
+## .tscn and .tres is loaded and a scene instantiated, never saved (scripts run their _init, @tool or not). Every engine
+## error while it does is red as "file: message", a scene connection to a method its target lacks too.
+func _check_scenes(scenes: PackedStringArray) -> PackedStringArray:
+	var bad: PackedStringArray = []
+	for path: String in scenes:
+		var rel := path.trim_prefix("res://")
+		var mark := _log_marks()
+		var why := ""
+		var res: Resource = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
+		if res == null:
+			why = "does not load"
+		elif res is PackedScene:
+			var scene := res as PackedScene
+			var node: Node = scene.instantiate() if scene.can_instantiate() else null
+			if node == null:
+				why = "does not instantiate"
+			else:
+				why = _dead_connection(node)
+				node.free()
+		var errs: PackedStringArray = []
+		for e: String in _log_errors(mark, true):
+			if not (allow_on and allow.search("%s %s" % [rel, e]) != null):
+				errs.append(e)
+		if not errs.is_empty():
+			bad.append("%s: %s" % [rel, errs[0].left(200)])
+		elif why != "":
+			bad.append("%s: %s" % [rel, why])
+	return bad
+
+
+## The first scene connection (CONNECT_PERSIST) in the tree whose target lacks the method, as text, else "".
+func _dead_connection(top: Node) -> String:
+	var nodes: Array[Node] = [top]
+	nodes.append_array(top.find_children("*", "", true, false))
+	for n: Node in nodes:
+		for s: Dictionary in n.get_signal_list():
+			var sig: StringName = s["name"]
+			for c: Dictionary in n.get_signal_connection_list(sig):
+				var cb: Callable = c["callable"]
+				var flags: int = c["flags"]
+				var target := cb.get_object()
+				if flags & CONNECT_PERSIST and target != null and not target.has_method(cb.get_method()):
+					return "signal %s of %s connects to missing method %s" % [sig, top.get_path_to(n), cb.get_method()]
+	return ""
 
 
 ## class_name scripts resolve to the cached instance, so a changed one has to reload in place.
@@ -396,7 +447,8 @@ func _log_marks() -> PackedInt64Array:
 
 ## The script errors the engine printed since the marks, as "file:line message".
 ## An addon's error is red like any other, unless the allowlist names it.
-func _log_errors(marks: PackedInt64Array) -> PackedStringArray:
+## engine: the engine's own errors count too ("ERROR: ...", a missing file, a broken scene), without the C++ place.
+func _log_errors(marks: PackedInt64Array, engine: bool = false) -> PackedStringArray:
 	var found: PackedStringArray = []
 	for i: int in logs.size():
 		if marks[i] < 0:
@@ -408,6 +460,11 @@ func _log_errors(marks: PackedInt64Array) -> PackedStringArray:
 		var text := ansi_rx.sub(f.get_buffer(f.get_length() - marks[i]).get_string_from_utf8().replace("\r", ""), "", true)
 		var lines := text.split("\n")
 		for n: int in lines.size():
+			if engine and engine_rx.search(lines[n]) != null:
+				var said := engine_rx.sub(lines[n], "").strip_edges()
+				if not found.has(said):
+					found.append(said)
+				continue
 			if not lines[n].begins_with("SCRIPT ERROR:"):
 				continue
 			var msg := lines[n].trim_prefix("SCRIPT ERROR:").strip_edges()
