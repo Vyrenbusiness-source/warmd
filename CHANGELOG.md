@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- `warmd lint` (Godot): a `res://` path the code only asks about (`file_exists(...)`, `ResourceLoader.exists(...)`, `dir_exists_absolute(...)`, `globalize_path(...)`) is no longer a missing-path error, and a line with `# warmd: nolint` gives no `res://` finding (a test that passes a missing path on purpose).
+
 ## [0.6.0] - 2026-11-27
 
 ### Added

@@ -86,8 +86,10 @@ FNR == 1 { flush(); pf = FILENAME; gd = FILENAME ~ /\.gd$/; fn = ""; fnind = -1
     if (v + 0 < 1 || v + 0 > 32) out("E", "collision layer " v " is out of range, Godot has layers 1 to 32") }
   t = code
   while (match(t, /"res:\/\/[^"]*"[ ]*[%+]?/)) {
-    q = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
+    q = substr(t, RSTART, RLENGTH); pre = substr(t, 1, RSTART - 1); t = substr(t, RSTART + RLENGTH)
     if (q ~ /[%+]$/) continue
+    # a path the code only asks about (file_exists, globalize_path) is no reference, and a line can opt out
+    if (pre ~ /(exists|exists_absolute|globalize_path)\( *$/ || $0 ~ /warmd: nolint/) continue
     sub(/^"/, "", q); sub(/"[ ]*$/, "", q)
     if (q != "res://" && q !~ /\/$/ && q !~ /[%{*]/) cand("res", q)
   }
