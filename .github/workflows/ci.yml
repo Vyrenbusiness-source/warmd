@@ -17,7 +17,7 @@ jobs:
           - perf ship docs digest install mergelist where
           - team tune map ledger bgwait
           - core
-          - hook bars gain daemon
+          - hook bars gain daemon godot_lint
           - auto affected brakes audit unity slim layout
     runs-on: windows-latest
     defaults:
@@ -65,6 +65,7 @@ jobs:
           unzip -q godot.zip -d "$HOME/godot"
           echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
+      - run: bash tests/godot_lint.sh
 
   plugin:
     runs-on: windows-latest
