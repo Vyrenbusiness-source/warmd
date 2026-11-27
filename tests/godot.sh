@@ -17,6 +17,7 @@ git add -A; git commit -qm init
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: $3"; fails=$((fails+1)); fi; }
 expect "compile" 'scripts parse' "$("$WARMD" build)"
+expect "an unchanged compile is cached" 'OK cached, code unchanged' "$("$WARMD" build)"
 expect "green test" '1 passed, 0 failed, 1 asserts' "$("$WARMD" test)"
 # A runtime error ends only the test method, it returns like one that passed: the engine's output makes it red
 printf 'extends WarmdTest\n\nfunc test_boom() -> void:\n\tassert_true(true)\n\tvar n: Object = null\n\tn.free()\n\tassert_true(true)\n' > test/test_boom.gd
@@ -43,7 +44,7 @@ mkdir raw; touch raw/.gdignore; printf 'func broken(:\n' > raw/vendor.gd
 expect "a .gdignore folder is skipped" 'scripts parse' "$("$WARMD" build)"
 rm -rf raw
 printf 'func broken(:\n' > bad.gd
-expect "parse error is found" 'bad.gd does not parse' "$("$WARMD" build)"
+expect "parse error is found with file:line" 'bad.gd:1 .*Error' "$("$WARMD" build)"
 rm bad.gd
 echo 'warm=1' > warmd.conf
 expect "warm mode" '1 passed, 0 failed' "$(WARMD_NOCACHE=1 "$WARMD" test)"

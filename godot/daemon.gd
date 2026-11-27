@@ -83,6 +83,7 @@ func _run(job: Dictionary) -> Array:
 	return [false, ["unknown job"]]
 
 
+## A red script names the engine's own line, "file:line message", so nobody has to open a log for it.
 func _compile() -> Array:
 	var bad: PackedStringArray = []
 	var files := _scripts("res://")
@@ -90,8 +91,10 @@ func _compile() -> Array:
 		var script := GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(path)
 		script.resource_path = path
+		var mark := _log_marks()
 		if script.reload() != OK:
-			bad.append("%s does not parse" % path.trim_prefix("res://"))
+			var errs := _log_errors(mark)
+			bad.append(errs[0] if not errs.is_empty() else "%s does not parse" % path.trim_prefix("res://"))
 	if bad.is_empty():
 		return [true, ["%d scripts parse" % files.size()]]
 	return [false, bad]

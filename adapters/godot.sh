@@ -194,7 +194,12 @@ job_oneshot() {
 }
 run_job() { if [ "$CFG_warm" = 1 ]; then job "$@"; else job_oneshot "$@"; fi; }
 
+# A green compile stays green until the code (project.godot included) or the engine changes: the build is cached like a test
 a_build() {
+  local exe; exe="$(godot_exe)" || exe=none
+  cached "build|$exe|${WARMD_VERSION:-}" godot_build
+}
+godot_build() {
   refresh_classes
   if ls "$PROJECT"/*.csproj >/dev/null 2>&1 && command -v dotnet >/dev/null 2>&1; then
     run_bounded "dotnet build" bash -c "cd '$PROJECT' && dotnet build --nologo -v q" || return 1
