@@ -178,6 +178,24 @@ out="$("$WARMD" check 2>&1)"
 expect "committed luau work is reported as changed" 'OK 1 files changed against main, no test=' "$out"
 cd "$HERE" || exit 1
 
+# ---- cache key: a git-ignored engine binary, export_presets.cfg and the warmd version count, the engine starts once per binary ----
+G="$TMP/gd"; mkdir -p "$G"; cd "$G" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+: > project.godot; printf 'godot.x86_64\nexport_presets.cfg\ncalls.txt\n.warmd\n' > .gitignore; git add -A; git commit -qm init
+printf '#!/bin/sh\necho v >> "%s/calls.txt"; echo 4.3.stable\n' "$G" > godot.x86_64; chmod +x godot.x86_64
+gkey() { ( cd "$G" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project >/dev/null 2>&1 && load_config 2>/dev/null; . "$HERE/adapters/godot.sh"; code_key ) 2>/dev/null; }
+k1="$(gkey)"; k2="$(gkey)"
+[ -n "$k1" ] && [ "$k1" = "$k2" ] && ok "same engine, same key" || no "key unstable: '$k1' '$k2'"
+expect "the engine version is asked once per binary" '^1$' "$(wc -l < calls.txt | tr -d ' ')"
+printf '#!/bin/sh\necho v >> "%s/calls.txt"; echo 4.4.1.stable\n' "$G" > godot.x86_64
+k3="$(gkey)"; [ "$k3" != "$k1" ] && ok "a new git-ignored engine binary changes the key" || no "engine update kept key $k1"
+expect "the new binary is asked once" '^2$' "$(wc -l < calls.txt | tr -d ' ')"
+echo 'preset' > export_presets.cfg; k4="$(gkey)"
+[ "$k4" != "$k3" ] && ok "a git-ignored export_presets.cfg changes the key" || no "export_presets.cfg not in the key"
+k5="$(WARMD_VERSION=9.9.9 gkey)"; [ "$k5" != "$k4" ] && ok "the warmd version changes the key" || no "warmd version not in the key"
+k6="$(WARMD_GFX=1 gkey)"; [ "$k6" != "$k4" ] && ok "WARMD_GFX changes the key" || no "WARMD_GFX not in the key"
+cd "$HERE" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

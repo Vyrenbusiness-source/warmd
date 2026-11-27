@@ -197,13 +197,37 @@ code_key() {
   list="${list//$'\r'/}"
   [ -z "$list" ] || mapfile -t files <<< "$list"
   for f in "${files[@]}"; do [ -f "$top/$f" ] && have+=("$f"); done
+  # export_presets.cfg is often git-ignored but changes an export: hashed by its path below the root, the same in every worktree
+  f="${PROJECT:-$top}/export_presets.cfg"; [ -f "$f" ] && have+=("${f#"$top"/}")
   k="$(cd "$top" && {
-    echo "$tree"; echo "$list"
+    echo "$tree"; echo "$list"; engine_key
     for (( i = 0; i < ${#have[@]}; i += 100 )); do
       { sha1sum -- "${have[@]:i:100}" 2>/dev/null || shasum -- "${have[@]:i:100}"; }
     done
   } | { sha1sum 2>/dev/null || shasum; })"
   echo "${k:0:20}"
+}
+# Part of code_key: what decides a result besides the code. A git-ignored engine binary next to project.godot or a new
+# Unity editor changes no file, so the engine counts by size and mtime (not by path: the key stays the same across worktrees),
+# Godot also by its --version, asked once per exe path+size+mtime and kept in $CACHE_ROOT/engine. Plus the warmd version and the env that changes results.
+engine_key() {
+  local exe="" st="" v="" m
+  case "${KIND:-}" in
+    godot) declare -F godot_exe >/dev/null && exe="$(godot_exe 2>/dev/null)";;
+    unity) declare -F unity_exe >/dev/null && exe="$(unity_exe 2>/dev/null)"; v="${UNITY_VER:-}";;
+  esac
+  if [ -n "$exe" ] && [ -f "$exe" ]; then
+    st="$(stat -c '%s %Y' -- "$exe" 2>/dev/null || stat -f '%z %m' -- "$exe" 2>/dev/null)"
+    if [ "$KIND" = godot ]; then
+      m="$CACHE_ROOT/engine/$(sha_of "$exe|$st")"
+      if [ -f "$m" ]; then read -r v < "$m"
+      else
+        v="$(timeout 30 "$exe" --version 2>/dev/null | tr -d '\r' | grep -m1 .)"
+        [ -n "$v" ] && mkdir -p "$CACHE_ROOT/engine" 2>/dev/null && echo "$v" > "$m"
+      fi
+    fi
+  fi
+  echo "engine ${KIND:-}|$v|$st|warmd ${WARMD_VERSION:-}|${WARMD_GODOT:-}|${WARMD_UNITY:-}|gfx ${WARMD_GFX:-}|window ${WARMD_WINDOW:-}|full ${WARMD_FULL:-}"
 }
 sha_of() { local k; k="$(printf '%s' "$1" | { sha1sum 2>/dev/null || shasum; })"; echo "${k:0:12}"; }
 
