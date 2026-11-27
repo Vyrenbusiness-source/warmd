@@ -19,7 +19,7 @@ jobs:
           - core
           - hook bars gain daemon godot_lint
           - auto affected brakes audit unity slim layout
-          - mutate nightly
+          - mutate nightly rest
     runs-on: windows-latest
     defaults:
       run:
@@ -60,10 +60,18 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      # The engine download was the slowest step of the longest job: cached by version, fetched only on a miss
+      - uses: actions/cache@v4
+        id: godot-cache
+        with:
+          path: ~/godot
+          key: godot-4.4.1-stable-win64
       - name: Install Godot
         run: |
-          curl -fsSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_win64.exe.zip
-          unzip -q godot.zip -d "$HOME/godot"
+          if [ ! -f "$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" ]; then
+            curl -fsSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_win64.exe.zip
+            unzip -q godot.zip -d "$HOME/godot"
+          fi
           echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
       - run: bash tests/godot_lint.sh

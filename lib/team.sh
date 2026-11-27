@@ -202,6 +202,10 @@ wt_old_gap() { # name: prints a GAP line and returns 1 when the old branch/workt
 wt_old_renew() { # name
   local name="$1" br="warmd/$1" base wt; base="$(base_branch)"
   wt="$(worktree_dir)/$name"
+  # The folder of this name may hold another task's branch (split reuses folders): switching it took a running task's
+  # worktree away. Such a folder is left alone, wt_create gives this task a folder of its own.
+  local cur; cur="$(git -C "$wt" branch --show-current 2>/dev/null)"
+  if [ -d "$wt" ] && [ -n "$cur" ] && [ "$cur" != "$br" ] && { wt_taken "$wt" "$cur" || ! git -C "$wt" merge-base --is-ancestor HEAD "$base" 2>/dev/null; }; then wt=/nonexistent/warmd; fi
   if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/$br" >/dev/null; then
     local at; at="$(git -C "$GIT_ROOT" worktree list --porcelain | awk -v b="refs/heads/$br" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')"
     if [ -n "$at" ] && [ -d "$at" ]; then git -C "$at" checkout -q -B "$br" "$base" 2>/dev/null || return 1
@@ -210,6 +214,17 @@ wt_old_renew() { # name
   elif [ -d "$wt" ]; then git -C "$wt" checkout -q -B "$br" "$base" 2>/dev/null || return 1
   fi
   return 0
+}
+# A worktree whose branch belongs to an unfinished task is never handed to another one: split switched the worktree of
+# a running task (warmd/godot-sim, its work still untracked) to a new task's branch. Unfinished = a task file of that
+# name and no warmd finish marker; new files count as work too.
+wt_taken() { # path branch -> 0 when another task still owns it
+  local p="$1" t="${2#warmd/}" common
+  [ "$2" != "$t" ] || return 1
+  [ -n "$(wt_work "$p")" ] && return 0
+  common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  [ -f "$(ledger_taskdir)/$t.md" ] && [ ! -f "$common/warmd-auto/done/$t" ] && return 0
+  return 1
 }
 wt_reuse() { # name
   local name="$1" p br base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
@@ -225,6 +240,7 @@ wt_reuse() { # name
     # git prints C:/x, the shell uses /c/x: compare one form, or two tasks land in one worktree
     case " ${USED_WT:-} " in *" $(cd "$p" && pwd) "*) continue;; esac
     grep -qxF "$(cd "$p" && pwd)" "$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch" 2>/dev/null && continue   # an agent of the running batch works there
+    wt_taken "$p" "$br" && continue
     wt_free "$p" || continue
     git -C "$p" checkout -q -- . 2>/dev/null
     if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/warmd/$name" >/dev/null; then
@@ -243,6 +259,17 @@ wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
   rel="$(rel_project)"; src="$PROJECT"
+  # The folder of this name holds another task's branch that is still owned: that task keeps it, this one gets a new folder
+  if [ -d "$wt" ]; then
+    local cur; cur="$(git -C "$wt" branch --show-current 2>/dev/null)"
+    if [ -n "$cur" ] && [ "$cur" != "$branch" ] && { wt_taken "$wt" "$cur" || ! git -C "$wt" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null; }; then
+      wt="$wt-$(date +%s)"; echo "(worktree folder $name holds $cur, still owned: using ${wt##*/})" >&2
+      mkdir -p "$(worktree_dir)"
+      git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
+      a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+      echo "$wt"; return 0
+    fi
+  fi
   # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
   if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
@@ -338,7 +365,10 @@ team_running() { # batchfile
 team_note() {
   need_git
   local text="${1:-}" f who keep; f="$(shared_file)"
-  [ -f "$f" ] || { echo "FAIL no shared brief, warmd split creates it"; return 2; }
+  # A BRAKE note goes to the machine-wide brake log (lib/brake.sh) too: the brief keeps 40 lines and ends with the batch
+  local braked=""
+  case "$text" in BRAKE:*|brake:*) [ -f "$f" ] && grep -qF -- "$text" "$f" || { type brake_from_note >/dev/null 2>&1 && brake_from_note "$text" && braked=1; };; esac
+  [ -f "$f" ] || { [ -n "$braked" ] && { echo "OK brake recorded (no batch brief to note it in)"; return 0; }; echo "FAIL no shared brief, warmd split creates it"; return 2; }
   [ -n "$text" ] || { echo "warmd note \"one line\""; return 2; }
   [ ${#text} -le 160 ] || { echo "FAIL over 160 characters, keep it to one fact"; return 2; }
   grep -qF -- "$text" "$f" && { echo "OK already noted"; return 0; }
@@ -427,6 +457,7 @@ write_task() { # name tier goal done files wt
     echo "Files you own: ${files:-none, read only}"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
+    echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
     echo "Time budget: $(tier_minutes "$tier") min. warmd watch escalates the task past it: commit before."
     review_line "$model"
@@ -759,6 +790,7 @@ team_split() {
   local file="${1:-}" name goal check files tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
   rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
+  ledger_cost_gate || return 2
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
   if [ -f "$batch" ]; then batch_prune "${batch%/warmd-batch}"; append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
@@ -878,17 +910,38 @@ team_finish() {
   # DONE with an outcome other than failed or escalated: the task waits for the merge. No stop may escalate or restart it.
   case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; mkdir -p "$fb" && : > "$fb/${br#warmd/}";; esac
   finish_stop_runs
+  git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1 && finish_base_sync "$base"
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
   dirty="$(wt_work "$GIT_ROOT" | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
+  # The open PR of the branch conflicts (main moved after a ship): GitHub runs no CI for it, say so now (lib/ship.sh)
+  [ "$up" = pushed ] && command -v gh >/dev/null 2>&1 && type ci_conflict >/dev/null 2>&1 && ci_conflict "$br"
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
   # so the next split frees its files once it is merged
   local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\t%s\n' "$GIT_ROOT" ok "$br" >> "$common/warmd-batch-done"; fi
   local over=""; task_over "${br#warmd/}" "$(ledger_taskdir)" && over=", OVER time budget: $REPLY"
+  type brake_batch_line >/dev/null 2>&1 && brake_batch_line "${br#warmd/}"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
+}
+
+
+# Before the push: a PR that conflicts with its base gets no CI run at all, and agents waited minutes for checks that
+# never start. A clean merge of origin/<base> is made here (clean tree only), a conflict is named at once.
+finish_base_sync() { # base
+  local ob="origin/$1" rc
+  git -C "$GIT_ROOT" fetch -q origin "$1" 2>/dev/null || return 0
+  git -C "$GIT_ROOT" rev-parse -q --verify "$ob" >/dev/null || return 0
+  git -C "$GIT_ROOT" merge-base --is-ancestor "$ob" HEAD 2>/dev/null && return 0
+  git -C "$GIT_ROOT" merge-tree --write-tree HEAD "$ob" >/dev/null 2>&1; rc=$?
+  if [ $rc = 1 ]; then
+    echo "CONFLICT with $1: CI will not run on the PR. Merge $ob, resolve, commit, then warmd finish again"
+  elif [ $rc = 0 ] && [ -z "$(git -C "$GIT_ROOT" status --porcelain --untracked-files=no)" ]; then
+    git -C "$GIT_ROOT" merge -q --no-edit "$ob" >/dev/null 2>&1 && echo "(merged $ob first, it merged clean: the PR stays mergeable)"
+  fi
+  return 0
 }
 
 # The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
@@ -1035,6 +1088,11 @@ team_merge() {
     if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
   if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
+  # mutate=merge in warmd.conf: every changed line of this merge must have a test that notices a flipped operator (lib/mutate.sh)
+  if [ $nogate = 0 ] && [ "${CFG_mutate:-}" = merge ] && type mutate_gate >/dev/null 2>&1; then
+    m="$(WARMD_DIFF_BASE="$start" mutate_gate 2>&1)" || { mfail "mutation gate: $(echo "$m" | tail -3 | tr '\n' ' ' | cut -c1-200)"; return; }
+    echo "$m" | tail -1
+  fi
   # What the gate wrote (world outputs, the renewed daemon copy, .uid) goes into the last merge commit, only into this
   # merge's own commit: a commit made meanwhile is never amended. Any other change in the checkout was made by someone
   # meanwhile: it stays uncommitted and is named, never taken into the merge commit.

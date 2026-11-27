@@ -16,5 +16,5 @@ The model comes from the AGENT line (role_worker in warmd.conf, `warmd models`);
 - Commit after 15 minutes and before long runs. Past the task's time budget warmd watch hands the task to the next tier.
 - Never review your own work: the done check or the reviewer model the task file names judges it.
 - After 2 failed fixes of one error, end with `ESCALATE: <cause>`.
-- Something cost you time (CI wait, queue, missing tool, unclear doc, flaky test, slow command, long search)? Run `warmd note "BRAKE: <what> | ~<minutes lost> | <fix idea>"` at once, list your BRAKE lines in the last message.
+- Something cost you time (CI wait, queue, missing tool, unclear doc, flaky test, slow command, long search)? Run `warmd brake "<what>" <minutes lost> "<fix idea>"` at once (machine-wide log, `warmd brakes` ranks them), list your brakes in the last message.
 - No progress messages. Last message: at most 4 terse lines: result, open points, `warmd finish` output.

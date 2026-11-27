@@ -10,33 +10,41 @@ no() { echo "FAIL $1"; fails=$((fails+1)); }
 
 # Suites: core is the inline part of this file, unity is tests/fixtures/unity/check.sh, every other name is tests/<name>.sh.
 # CI runs them as parallel jobs, one per group of the self-test matrix in .github/workflows/ci.yml, balanced by the
-# "time <suite>" lines this file prints. Every suite sits in exactly one group, the guard below fails otherwise.
-SUITES="core ledger digest affected perf tune layout docs hook bgwait auto team generic install map ship brakes audit gain slim unity bars daemon mergelist where godot_lint mutate nightly models state"
-OWN_JOB="proof godot sim"   # tests/<name>.sh with a CI job of its own
+# "time <suite>" lines this file prints. A suite sits in at most one group; the group word "rest" runs every suite that
+# no group names. The list comes from the files: a new suite needs no edit here or in ci.yml, so two branches that each
+# add a suite no longer conflict on one shared line (every batch PR conflicted on SUITES and the matrix, and a
+# conflicting PR runs no CI).
+OWN_JOB="proof godot sim" # tests/<name>.sh with a CI job of its own
 MANUAL="e2e"            # real claude -p runs that cost tokens, started by hand
+SUITES="core unity"
+for f in "$HERE"/tests/*.sh; do
+  n="${f##*/}"; n="${n%.sh}"
+  case " run $OWN_JOB $MANUAL " in *" $n "*) ;; *) SUITES="$SUITES $n";; esac
+done
+ci_groups() { awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$HERE/.github/workflows/ci.yml" 2>/dev/null | tr -d ''; }
+rest_suites() { # suites no CI group names
+  local s r="" named; named=" $(ci_groups | tr '\n' ' ') "
+  for s in $SUITES; do case "$named" in *" $s "*) ;; *) r="$r $s";; esac; done
+  echo "${r# }"
+}
 guard() {
-  local ci="$HERE/.github/workflows/ci.yml" groups f n s c
-  groups="$(awk '/^ *group:$/ {g=1; next} g && /^ *- / {sub(/^ *- */, ""); gsub(/"/, ""); print; next} g {g=0}' "$ci" | tr -d '')"
+  local ci="$HERE/.github/workflows/ci.yml" groups n s c
+  groups="$(ci_groups)"
   [ -n "$groups" ] || { no "guard: ci.yml has no self-test matrix group list"; return; }
-  for f in "$HERE"/tests/*.sh; do
-    n="${f##*/}"; n="${n%.sh}"
-    case " run $SUITES $MANUAL " in *" $n "*) continue;; esac
-    case " $OWN_JOB " in *" $n "*) grep -q "tests/$n.sh" "$ci" && continue; no "guard: tests/$n.sh has no CI job"; continue;; esac
-    no "guard: tests/$n.sh is no suite, add it to SUITES in tests/run.sh and to a group in ci.yml"
-  done
+  for n in $OWN_JOB; do grep -q "tests/$n.sh" "$ci" || no "guard: tests/$n.sh has no CI job"; done
   for s in $SUITES; do
-    c="$(echo "$groups" | tr ' ' '
-' | grep -cx "$s")"
-    [ "$c" = 1 ] || no "guard: suite $s is in $c CI groups, wanted 1"
+    c="$(echo "$groups" | tr ' ' '\n' | grep -cx "$s")"
+    [ "$c" -le 1 ] || no "guard: suite $s is in $c CI groups, wanted 1"
   done
-  for s in $(echo "$groups" | tr ' ' '
-'); do
-    case " $SUITES " in *" $s "*) ;; *) no "guard: CI group names unknown suite $s";; esac
+  [ -z "$(rest_suites)" ] || echo "$groups" | tr ' ' '\n' | grep -qx rest || no "guard: suites $(rest_suites) are in no CI group and ci.yml has no group word rest"
+  for s in $(echo "$groups" | tr ' ' '\n'); do
+    case " $SUITES rest " in *" $s "*) ;; *) no "guard: CI group names unknown suite $s";; esac
   done
-  [ $fails = 0 ] && ok "every suite is in exactly one CI group"
+  [ $fails = 0 ] && ok "every suite is in exactly one CI group${groups:+ (rest: $(rest_suites))}"
 }
 if [ "${1:-}" = --guard ]; then guard; exit $fails; fi
 WANT="${*:-$SUITES}"
+case " $WANT " in *" rest "*) r="$(rest_suites)"; WANT=" $WANT "; WANT="${WANT/ rest / $r }";; esac
 for s in $WANT; do case " $SUITES " in *" $s "*) ;; *) echo "FAIL no suite $s, known: $SUITES"; exit 2;; esac; done
 want() { case " $WANT " in *" $1 "*) return 0;; esac; return 1; }
 [ $# = 0 ] && guard
