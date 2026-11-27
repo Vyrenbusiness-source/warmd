@@ -383,3 +383,62 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `mutate_cmd`, `mutate_limit` | Judge command of `warmd mutate` and its time limit in seconds | `warmd check` without cache, 900 |
 
 Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`, `WARMD_MAP_NODES=80`, `WARMD_PEEK_NODES=80`, `WARMD_PEEK_TIMEOUT=120`, `WARMD_LINT_WARN=10`, `WARMD_LINT_NODES=300`, `WARMD_LINT_SUBRES_KB=64`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
+
+### warmd brake
+Records what slowed an agent down in a machine-wide log (`brakes.tsv` in the warmd cache dir): date, project, task, cause, minutes, fix idea. Syntax: `warmd brake "<what>" [minutes] [fix idea]`. `warmd note "BRAKE: <what> | ~<min> | <fix>"` lands there too, once per text. `warmd report` and `warmd finish` print the brake minutes of the running batch in one line.
+
+### warmd brakes
+Causes from the brake log grouped by their words (case, digits and punctuation do not split a group) and ranked by total minutes lost, one line each, top 10. Syntax: `warmd brakes [--days N]`.
+
+### warmd package (Godot)
+
+Export smoke. The first preset of `export_presets.cfg` is exported with `--export-release` into a temp folder.
+The release build starts headless for `export_frames` frames (default 120). A crash, a non-zero exit or a load error is red.
+A release build prints no GDScript error, so the same pack then runs on the editor binary (`--main-pack`): a script error is red.
+Without export templates only `--export-pack` runs, and the output says so. A build for another platform is exported but not started.
+Needs `run/main_scene`. Config: `export_frames=`, `export_timeout=` (600 s), `export_run_timeout=` (120 s).
+
+### warmd shot [scene] --golden | --golden-update [--from image.png]
+
+Godot golden shot. The shot is compared with this machine's reference in `.warmd/golden/<machine>/<scene>.png`.
+The answer is text: `SAME`, or `DIFF 3.2% in region x,y,w,h`. Channels within 8 of each other count as equal.
+`golden_tolerance=<percent>` (default 0.5): a smaller share of differing pixels is `SAME` and still names its share.
+Only `--golden-update` makes or renews a reference; a DIFF never does. `--from` compares an image made elsewhere.
+A headless engine renders nothing. Then golden is red and says to run with `WARMD_GFX=1` on a machine with a display and GPU.
+
+### warmd doctor (Godot)
+
+Errors: `.uid` or `.import` files not versioned, `.godot/` not ignored, Godot version not pinned, engine not the pinned version.
+The pin is `godot_version=` in warmd.conf, else the version in `config/features` of project.godot.
+
+### Godot leaks at test end
+
+Debug builds only. A WarmdTest test or a runner that leaves orphan nodes is red with the count:
+`N orphan nodes left (leak, Node.print_orphan_nodes() lists them)`. A runner in its own engine is red on `ObjectDB instance(s) leaked at exit`.
+Allowlist via `godot_allow_errors`, matched against `<file>: N orphan nodes` or `<file>: leaked at exit`.
+
+### Godot budgets at merge
+
+These run in the merge gate, or in any `warmd check` with `WARMD_BUDGET=1`. One engine start for all of them.
+- `budget_texture_px=2048`: no changed texture longer than this on its long side (after `process/size_limit` of its .import).
+- `budget_texture_raw_px=512`: no changed texture longer than this stored lossless or VRAM uncompressed (`compress/mode` 0 or 3).
+- `budget_<scene>=draw_calls=200,memory_mb=64,nodes=500`: `<scene>.tscn` runs `budget_frames` frames (default 60), its peaks are compared. Draw calls need a renderer: such a budget runs with graphics.
+- `rendered_smoke=1`: the main scene runs with graphics (graphics slot) on every merge; a script error is red.
+
+### warmd sim
+Runs Godot gameplay scenarios headless under a fixed tick, all in one engine start. Syntax: `warmd sim [--seed N] [file.sim|dir|name...]`. `--fixed-fps` is the number of physics ticks per second; the engine runs as fast as it can, never with `--time-scale`. One line per scenario, e.g. `FAIL jump: peak 6 > 5 at frame 16 of 200 (seed 1)` or `OK calm: peak 0 <= 1 (120 frames, seed 7)`. A scenario stops as soon as its verdict is decided.
+- Scenario file `tests/sim/<name>.sim`: `scene res://x.tscn`, `seed N` (default 1), `frames N` (default 600), `isolate` (own engine), `metric <name> <max|min|last|avg|count|pct> <<=|<|>=|>|==> <limit> : <expression>` (Godot Expression on the scene root, `$Path` = node, sampled after every tick).
+- Input lines: `<frame> press|release <action>`, `<frame> mouse x y`, `<frame> down|up <button> x y`.
+- A script error while it runs is red with file:line. A hang or crash is red and never cached; the rest goes on in a new engine (`WARMD_SIM_TIMEOUT`).
+- Verdicts are cached per scenario: code without `*.sim` + engine + scenario file + seed. `--seed N` overrides every seed and is its own key.
+- Headless is not rendered: shaders, rendering, audio timing and the real mouse differ.
+
+`warmd sim --record <scene> [--seed N] [--frames N] [--name x] [--headless]` plays the scene in a window and writes every input change per physics tick to `tests/sim/<x>.sim`. Add a metric that is red for the bug: the replay is a red scenario, then hand it to a worker.
+
+### warmd state
+Shows in one line whether warmd is working here: a run, merge, CI wait, a batch with its number of agents, the last result (green/red). Syntax: `warmd state [--json]`. `--json` prints `{active, what, agents, since, last, line}` for the VS Code status bar.
+```text
+warmd state
+ACTIVE batch, 1 agents
+```
+VS Code extension in `vscode/`: `$(zap) warmd` idle (dim), `$(sync~spin) warmd <test|check|build|merge>` during a run, `$(organization) warmd N agents` in a batch, `$(cloud) CI` while waiting for CI, `$(pass)`/`$(error)` for 10 s after a result. The tooltip shows the state and the last line; a click runs `warmd status`. Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.

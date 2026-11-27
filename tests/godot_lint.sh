@@ -70,8 +70,8 @@ func _process(delta: float) -> void:
 	var r := randi()
 	var t := Time.get_ticks_msec()
 	print(tr("MENU_START"), tr("MENU_MISSING"), tr("Plain words stay"))
-	set_collision_layer_value(33, true)
-	var gone = ResourceLoader.exists("res://missing.png")
+	set_collision_layer_value(33, true); var quiet = load("res://quiet.png")  # warmd: nolint
+	var gone = load("res://missing.png"); var asks = FileAccess.file_exists("res://asked.cfg")
 	var lvl = "res://levels/" + str(delta)
 
 
@@ -152,7 +152,7 @@ cat > "$STUB" <<'EOF'
 in="$WARMD_LINT_IN"; command -v cygpath >/dev/null 2>&1 && in="$(cygpath -u "$in")"
 echo "$*" >> "${in%/*}/stub.calls"
 while IFS=$'\t' read -r k v; do
-  case "$v" in jupm|Scroe|MENU_MISSING|res://missing.png) r=missing;; *) r=ok;; esac
+  case "$v" in jupm|Scroe|MENU_MISSING|res://missing.png|res://asked.cfg|res://quiet.png) r=missing;; *) r=ok;; esac
   printf 'LINT %s\t%s\t%s\n' "$k" "$v" "$r"
 done < "$in"
 echo "LINT END"
@@ -163,6 +163,8 @@ expect "stub engine: missing action is an error" '^ERROR player.gd:10 input acti
 expect "stub engine: missing autoload is an error" '^ERROR player.gd:15 /root/Scroe is no autoload' "$out"
 expect "stub engine: missing tr key is an error" '^ERROR player.gd:19 translation key "MENU_MISSING"' "$out"
 expect "stub engine: missing res:// path is an error" '^ERROR player.gd:21 res://missing.png does not exist' "$out"
+refuse "a path the code only asks about (file_exists) is no finding" 'res://asked.cfg' "$out"
+refuse "a line with warmd: nolint gives no res:// finding" 'res://quiet.png' "$out"
 refuse "stub engine: what the engine knows is no finding" 'ui_accept' "$out"
 [ "$(wc -l < .warmd/run/stub.calls)" = 1 ] && ok "one engine start for all candidates" || no "engine started $(wc -l < .warmd/run/stub.calls) times"
 rm -f .warmd/run/stub.calls
