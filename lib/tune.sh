@@ -280,7 +280,7 @@ slot_maybe_free() {
 eval "$(declare -f slot_take | sed '1s/slot_take/slot_take_base/')"
 # Wait for RAM BEFORE taking a heavy slot: a run that holds a slot while it waits blocks every other run behind it.
 slot_take_now() { tune_wait_ram; slot_take_base; disk_guard; }
-# A green-cache hit never waits: when the caller goes straight on to "cached", the slot and the RAM wait move behind the cache check.
+# A cache hit (green or red) never waits: when the caller goes straight on to "cached", the slot and the RAM wait move behind the cache check.
 SLOT_DEFER=0
 slot_take() {
   if [ -z "$SLOT" ] && [ -n "${FUNCNAME[1]:-}" ] && declare -f "${FUNCNAME[1]}" | tr '\n' ' ' | grep -qE 'slot_take; +cached '; then SLOT_DEFER=1; return 0; fi
@@ -289,12 +289,14 @@ slot_take() {
 # Only a miss takes the slot. The key is read again after the wait, the code may change while queued.
 eval "$(declare -f cached | sed '1s/cached/cached_base/')"
 cached() {
-  local key f
+  local key f rc
   if [ "$SLOT_DEFER" = 1 ]; then
     SLOT_DEFER=0
     if [ "${WARMD_NOCACHE:-0}" != 1 ] && key="$(code_key)"; then
       f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$1")"
       [ -f "$f" ] && { echo "OK cached, code unchanged: $(cat "$f")"; CACHE_HIT=1; return 0; }
+      # A red hit answers just as fast: same file, exit code and log as in cached_base, no wait for slot or RAM
+      red_hit "$CACHE_ROOT/red/${f##*/}"; rc=$?; [ $rc != 255 ] && return $rc
     fi
     slot_take_now
   fi

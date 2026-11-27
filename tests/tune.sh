@@ -69,6 +69,30 @@ expect "cache hit returns at once" 'OK cached' "$out"
 expect "cache hit has no queue line" '^0$' "$(echo "$out" | grep -c queued)"
 [ $(( $(date +%s) - t0 )) -lt 5 ] && echo "ok   cache hit took under 5s with full slots and low RAM" || { echo "FAIL cache hit waited"; fails=$((fails+1)); }
 rm -rf "$XDG_CACHE_HOME/warmd/slots/1"; rm warmd.conf
+
+# ---- a red-cache hit answers just as fast, same exit code and log; WARMD_NOCACHE=1 still runs and waits ----
+printf 'slots=1\n' > warmd.conf
+cat > package.json <<'J'
+{ "name": "t", "scripts": { "test": "echo boom-red && exit 3" } }
+J
+WARMD_FREE_PCT=40 "$WARMD" test > /dev/null 2>&1; rc1=$?   # a real red fills the red cache
+mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; echo $$ > "$XDG_CACHE_HOME/warmd/slots/1/pid"
+t0=$(date +%s)
+out="$(WARMD_FREE_PCT=1 WARMD_RAM_WAIT=60 "$WARMD" test 2>&1)"; rc2=$?
+expect "red hit returns at once" '^RED cached, code unchanged: .*Log: ' "$out"
+expect "red hit has no queue line" '^0$' "$(echo "$out" | grep -c queued)"
+[ $(( $(date +%s) - t0 )) -lt 5 ] && echo "ok   red hit took under 5s with full slots and low RAM" || { echo "FAIL red hit waited"; fails=$((fails+1)); }
+[ "$rc1" != 0 ] && [ "$rc2" = "$rc1" ] && echo "ok   red hit keeps the exit code ($rc1)" || { echo "FAIL red hit exited $rc2, the run $rc1"; fails=$((fails+1)); }
+lg="$(echo "$out" | sed -n 's/.*Log: //p' | head -1)"
+grep -q 'boom-red' "$lg" 2>/dev/null && echo "ok   red hit points to the saved log" || { echo "FAIL saved log missing: $lg"; fails=$((fails+1)); }
+rm -rf "$XDG_CACHE_HOME/warmd/slots/1"
+out="$(WARMD_NOCACHE=1 WARMD_FREE_PCT=1 WARMD_RAM_WAIT=1 "$WARMD" test 2>&1)"
+expect "WARMD_NOCACHE=1 skips the red cache and waits" 'queued: only 1% RAM free' "$out"
+expect "and runs the test again" '^0$' "$(echo "$out" | grep -c 'RED cached')"
+rm warmd.conf
+cat > package.json <<'J'
+{ "name": "t", "scripts": { "test": "echo ran" } }
+J
 export WARMD_NOCACHE=1
 expect "a real run still waits for RAM" 'queued: only 1% RAM free' "$(WARMD_FREE_PCT=1 WARMD_RAM_WAIT=1 "$WARMD" test)"
 out="$(WARMD_NO_RAM_WAIT=1 WARMD_FREE_PCT=1 "$WARMD" test)"
