@@ -288,8 +288,20 @@ job_oneshot() {
 }
 run_job() { if [ "$CFG_warm" = 1 ]; then job "$@"; else job_oneshot "$@"; fi; }
 
+# engine_refresh: warmd's own files in the project (only addons/warmd/warmd_test.gd, the daemon and drivers run from
+# $WARMD_HOME) follow a newer warmd without a manual warmd init. One file compare, no engine start. Only a copy warmd
+# installed is replaced, known by its header; content only, so the .uid next to it stays valid. Never committed here.
+engine_refresh() {
+  local f="$PROJECT/addons/warmd/warmd_test.gd" src="$WARMD_HOME/godot/warmd_test.gd"
+  [ -f "$f" ] && [ -f "$src" ] || return 0
+  [ "$(tr -d '\r' < "$f")" = "$(tr -d '\r' < "$src")" ] && return 0
+  head -n 3 "$f" | tr -d '\r' | grep -qx '## Tiny base class for warmd tests\..*' || return 0
+  [ "$(head -n 1 "$f" | tr -d '\r')" = "class_name WarmdTest" ] || return 0
+  cat "$src" > "$f" && echo "updated addons/warmd/warmd_test.gd to warmd ${WARMD_VERSION:-?}"
+}
 # A green compile stays green until the code (project.godot included) or the engine changes: the build is cached like a test
 a_build() {
+  engine_refresh
   local exe; exe="$(godot_exe)" || exe=none
   cached "build|$exe|${WARMD_VERSION:-}" godot_build
 }
@@ -311,6 +323,7 @@ changed_scenes() {
 }
 
 a_test() {
+  engine_refresh
   local filter=""
   while [ $# -gt 0 ]; do case "$1" in --*) ;; *) filter="$1";; esac; shift; done
   # GUT and gdUnit4 bring their own runner, a one-shot start is fast enough for them
@@ -417,6 +430,7 @@ godot_budgets() {
 }
 
 a_check() {
+  engine_refresh
   godot_lint || return 1
   if [ "${WARMD_IN_MERGE:-0}" = 1 ] || [ "${WARMD_BUDGET:-0}" = 1 ]; then godot_budgets || return 1; fi
   . "$WARMD_HOME/lib/affected.sh"

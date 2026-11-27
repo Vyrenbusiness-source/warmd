@@ -44,6 +44,8 @@ unity_free_batch() {
 # warmd init copies the engine side once, a newer warmd brings a newer daemon: before every Unity run the project copy is
 # compared with this install and replaced when it differs. A warm editor restarts, so Unity compiles the new code.
 # Builtins only (read), no process start per run. A tracked copy shows as changed until it is committed; warmd merge takes it along.
+# Only warmd's own files in warmd's own folder: a file of the project next to them stays. Content only, so every .meta and
+# its GUID stays and references to the daemon assembly hold. A checkout with CRLF line ends counts as the same copy.
 unity_sync() {
   [ -f "$EDITOR_DIR/WarmdDaemon.cs" ] || return 0   # not installed: a_start_daemon says to run warmd init
   local f dst a b changed=""
@@ -52,6 +54,7 @@ unity_sync() {
     dst="$EDITOR_DIR/${f##*/}"; a=""; b=""
     IFS= read -r -d '' a < "$f"; [ -f "$dst" ] && IFS= read -r -d '' b < "$dst"
     [ "$a" = "$b" ] && continue
+    [ -n "$b" ] && [ "${a//$'\r'/}" = "${b//$'\r'/}" ] && continue
     cp "$f" "$dst" && changed="$changed ${f##*/}"
   done
   [ -n "$changed" ] || return 0
@@ -369,6 +372,7 @@ unity_play_all() {
 
 # Test classes that mention a changed class, per mode
 a_check() {
+  unity_sync   # before the early OK lines too: a check on unchanged code still brings a newer daemon
   unity_world || return 1
   . "$WARMD_HOME/lib/affected.sh"
   affected_select cs Assets Packages
