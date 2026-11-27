@@ -15,10 +15,18 @@ no() { echo "FAIL $1"; fails=$((fails+1)); }
 PY=python3; "$PY" -c 'import json' >/dev/null 2>&1 || PY=python
 . "$HERE/lib/platform.sh"
 jstr() { "$PY" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
-# A detached job gets 20 s, then the test fails fast and shows the job logs instead of waiting for the CI timeout
+# A detached job gets 20 s to start and 20 s to run, then the test fails fast and shows the job logs instead of waiting
+# for the CI timeout. Two windows: the first start goes through powershell.exe and a cold WMI service (CIM, lib/hook.sh
+# hook_detach), on a fresh Windows runner that alone took 8 s and left the job 12 s of one shared window.
+# The poll uses builtins only: three process starts every 0.2 s took the CPU of a 2-core runner from the job it waits for.
 waitfor() { local end=$((SECONDS + ${WAIT_MAX:-20})); until eval "$1"; do
   [ $SECONDS -ge $end ] && { echo "  waited ${WAIT_MAX:-20}s for: $1" >&2; tail -n 6 "$C/warmd-hook.log" "$C/warmd-automerge.log" 2>/dev/null | sed 's/^/  /' >&2; return 1; }
-  sleep 0.2; done; }
+  nap 0.2; done; }
+logged() { # count regex: at least count lines of warmd-hook.log match the regex
+  local n=0 l
+  { while IFS= read -r l; do [[ $l =~ $2 ]] && n=$((n+1)); done < "$C/warmd-hook.log"; } 2>/dev/null
+  [ $n -ge "$1" ]
+}
 
 B="$TMP/origin.git"; git init -q --bare "$B"
 R="$TMP/repo"; mkdir -p "$R" && cd "$R" && git init -q -b main . && git config core.autocrlf false && git config user.name t && git config user.email t@example.com || exit 1
@@ -46,7 +54,8 @@ stop() { # name, last text: the SubagentStop for that agent, then wait for the d
   N=$((N+1)); local t="$TMP/$1-$N.jsonl"
   transcript "$t" "$1" "$2"
   printf '{"session_id":"s1","hook_event_name":"SubagentStop","agent_id":"x","agent_transcript_path":"%s"}' "$(native_path "$t")" | "$WARMD" hook-subagent
-  waitfor "[ \"\$(cat '$C/warmd-hook.log' 2>/dev/null | grep -c '^DONE warmd/$1 ')\" -ge $N ]" || no "job for $1 never finished: $(tail -3 "$C/warmd-hook.log")"
+  waitfor "logged $N '^[0-9: -]+ $1 stopped: '" || { no "job for $1 never started: $(tail -3 "$C/warmd-hook.log")"; return; }
+  waitfor "logged $N '^DONE warmd/$1 '" || no "job for $1 never finished: $(tail -3 "$C/warmd-hook.log")"
 }
 tier() { cat "$R/.warmd/tasks/$1.tier"; }
 outcome() { grep "	$1	" "$C/warmd-ledger.tsv" | tail -1 | cut -f8; }

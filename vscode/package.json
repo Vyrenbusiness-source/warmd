@@ -1,0 +1,27 @@
+{
+  "name": "warmd",
+  "displayName": "warmd status",
+  "description": "Status bar icon that shows when warmd works in this workspace: a run, a merge, a CI wait, a batch of agents, the last result.",
+  "version": "0.1.0",
+  "publisher": "warmd",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Vyrenbusiness-source/warmd.git" },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "files": ["extension.js", "README.md"],
+  "activationEvents": ["workspaceContains:.warmd", "workspaceContains:warmd.conf", "onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "warmd.status", "title": "warmd: status" },
+      { "command": "warmd.refresh", "title": "warmd: refresh state" }
+    ],
+    "configuration": {
+      "title": "warmd",
+      "properties": {
+        "warmd.path": { "type": "string", "default": "", "description": "Path of the warmd script. Empty: found on PATH, ~/.local/bin or ~/.warmd/bin." },
+        "warmd.bash": { "type": "string", "default": "", "description": "Windows: bash.exe that runs warmd. Empty: Git Bash." }
+      }
+    }
+  }
+}
