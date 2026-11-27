@@ -108,17 +108,35 @@ kind_of() {
   fi
 }
 
+# A folder of the repo's own tooling (an editor extension, CI, docs) is never the project, even with a package.json in it.
+tooling_dir() {
+  case "/$1/" in */vscode/*|*/.vscode/*|*/.github/*|*/docs/*|*/tools/*|*/node_modules/*) return 0;; esac
+  return 1
+}
+# A root that warmd already treats as the project: its own warmd.conf, or warmd state (.warmd/run, made only for a PROJECT;
+# .warmd/ci.wait alone comes from warmd ship in any repo and says nothing).
+anchored_root() { [ -f "$1/warmd.conf" ] || [ -d "$1/.warmd/run" ]; }
 # Walks up to the git root, then one level down, so a Unity project in a subfolder of the repo is found too.
+# WARMD_PROJECT always wins. A marker below an anchored git root wins only for an engine (unity, godot), a marker in a
+# tooling folder never: warmd's own vscode/package.json took the warmd repo over as a web project.
 detect_project() {
-  local d k sub
+  local d k sub rel anchored=0
   d="${WARMD_PROJECT:-$PWD}"; d="$(cd "$d" && pwd)"
   GIT_ROOT="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
   [ -n "$GIT_ROOT" ] && GIT_ROOT="$(cd "$GIT_ROOT" && pwd)"
   PROJECT=""; KIND=""
   local start="$d" stop="${GIT_ROOT:-}"
-  while :; do
+  if [ -n "${WARMD_PROJECT:-}" ]; then
+    PROJECT="$d"; KIND="$(kind_of "$d")"; KIND="${KIND:-none}"
+  fi
+  [ -n "$stop" ] && anchored_root "$stop" && anchored=1
+  while [ -z "$PROJECT" ]; do
     k="$(kind_of "$d")"
-    if [ -n "$k" ]; then PROJECT="$d"; KIND="$k"; break; fi
+    if [ -n "$k" ]; then
+      rel="${d#"$stop"/}"
+      if [ -z "$stop" ] || [ "$d" = "$stop" ] || [ "$rel" = "$d" ]; then PROJECT="$d"; KIND="$k"; break; fi
+      if ! tooling_dir "$rel" && { [ $anchored = 0 ] || [ "$k" = unity ] || [ "$k" = godot ]; }; then PROJECT="$d"; KIND="$k"; break; fi
+    fi
     [ "$d" = "$stop" ] && break
     [ "$d" = "$(dirname "$d")" ] && break
     d="$(dirname "$d")"
@@ -126,8 +144,11 @@ detect_project() {
   stop="${stop:-$start}"
   if [ -z "$PROJECT" ]; then
     for sub in "$stop"/*/; do
-      k="$(kind_of "${sub%/}")"
-      if [ -n "$k" ]; then PROJECT="${sub%/}"; KIND="$k"; break; fi
+      sub="${sub%/}"; tooling_dir "${sub##*/}" && continue
+      k="$(kind_of "$sub")"
+      [ -n "$k" ] || continue
+      [ $anchored = 1 ] && [ "$k" != unity ] && [ "$k" != godot ] && continue
+      PROJECT="$sub"; KIND="$k"; break
     done
   fi
   if [ -z "$PROJECT" ]; then PROJECT="$stop"; KIND=none; fi
