@@ -99,6 +99,13 @@ expect "a timeout red is never cached" '^beta$' "$(ran)"
 printf 'echo run >> "%s/ran.txt"; exit 137\n' "$P" > tests/run.sh; echo '# k' >> lib/notest.sh; git commit -qam killed; rm -f ran.txt
 WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1; rm -f ran.txt; WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1
 expect "a killed run (exit 137) is never cached" '^run$' "$(ran)"
+# One killed test inside the sh suite loop: it is named, and the same call runs it again instead of a red cache answer
+git checkout -q main; git checkout -qB "w$RANDOM"; printf 'echo beta >> "%s/ran.txt"; exit 137\n' "$P" > tests/beta.sh; echo '# k' >> lib/beta.sh; git commit -qam killed1; rm -f ran.txt
+out="$(WARMD_NOCACHE=0 "$WARMD" check 2>&1)"
+expect "a single killed sh test is named" 'beta killed \(exit 137\)' "$out"
+rm -f ran.txt; out="$(WARMD_NOCACHE=0 "$WARMD" check 2>&1)"
+expect "a single killed sh test is never red-cached" '^beta$' "$(ran)"
+refuse "the second call is no red cache answer" '^RED cached' "$out"
 git checkout -q main
 
 
