@@ -122,8 +122,14 @@ anchored_root() { [ -f "$1/warmd.conf" ] || [ -d "$1/.warmd/run" ]; }
 detect_project() {
   local d k sub rel anchored=0
   d="${WARMD_PROJECT:-$PWD}"; d="$(cd "$d" && pwd)"
-  GIT_ROOT="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ -n "$GIT_ROOT" ] && GIT_ROOT="$(cd "$GIT_ROOT" && pwd)"
+  # Toplevel and prefix in one call: the start folder is rebuilt from git's spelling of the root, so a short 8.3 path
+  # (C:/Users/RUNNER~1) or a mount alias (/tmp) in $PWD still compares equal to GIT_ROOT on the walk up.
+  local top pre; { IFS= read -r top; IFS= read -r pre; } < <(git -C "$d" rev-parse --show-toplevel --show-prefix 2>/dev/null)
+  GIT_ROOT=""
+  if [ -n "$top" ]; then
+    GIT_ROOT="$(cd "${top%$'\r'}" && pwd)"; pre="${pre%$'\r'}"; pre="${pre%/}"
+    d="$GIT_ROOT${pre:+/$pre}"
+  fi
   PROJECT=""; KIND=""
   local start="$d" stop="${GIT_ROOT:-}"
   if [ -n "${WARMD_PROJECT:-}" ]; then
