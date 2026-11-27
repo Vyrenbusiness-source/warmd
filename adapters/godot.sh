@@ -64,7 +64,7 @@ runner_timeout() {
   echo "${t:-$TIMEOUT}"
 }
 run_runners() {
-  local exe="$1" f rc=0 n=0 out r bad load t; shift
+  local exe="$1" f rc=0 n=0 out r bad load where t; shift
   out="$(mktemp)"
   for f in "$@"; do
     n=$((n + 1))
@@ -75,8 +75,9 @@ run_runners() {
     bad="$(godot_errors "$out" | head -1 | cut -c1-200)"
     if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))${bad:+: $bad}"; rc=1
     else
+      where=""; [[ ${bad%% *} =~ :[0-9]+$ ]] && where=" at ${bad%% *}"
       load="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
-      if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: ${bad:-$load}"; rc=1
+      if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: $load$where"; rc=1
       elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1; fi
     fi
   done
