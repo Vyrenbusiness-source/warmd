@@ -144,6 +144,18 @@ expect "both steps are kept, ours first" '^nightly godot_lint$' "$(grep -o 'test
 printf '<<<<<<< HEAD\n          - a b\n=======\n          - a c\n>>>>>>> b\n' > "$TMP/ci2.yml"
 bash -c "reg() { :; }; . '$HERE/lib/ship.sh'; ship_union '$TMP/ci2.yml'" && no "ship_union joined matrix group lines" || ok "ship_union leaves matrix group lines to a person"
 
+
+# split never hands a worktree of an unfinished task to another task (the brakes task got godot-sim's worktree)
+mkdir -p "$TMP/sp/p"; cd "$TMP/sp/p" || exit 1; git init -q -b main .; cfg
+printf '.warmd\n' > .gitignore; echo x > x.txt; git add -A; git commit -qm init
+mkdir -p .warmd/tasks; : > .warmd/tasks/a.md
+git worktree add -q -b warmd/a "$TMP/sp/.warmd-worktrees/p/b" HEAD; echo wip > "$TMP/sp/.warmd-worktrees/p/b/new.txt"
+printf 'b | goal b | check | y.txt\n' > tasks.txt
+out="$(w split tasks.txt)"
+expect "the owned worktree keeps its task's branch" '^warmd/a$' "$(git -C "$TMP/sp/.warmd-worktrees/p/b" branch --show-current)"
+expect "the new task gets a folder of its own" 'still owned: using b-[0-9]+' "$out"
+w batch-done >/dev/null
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails

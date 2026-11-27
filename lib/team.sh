@@ -202,6 +202,10 @@ wt_old_gap() { # name: prints a GAP line and returns 1 when the old branch/workt
 wt_old_renew() { # name
   local name="$1" br="warmd/$1" base wt; base="$(base_branch)"
   wt="$(worktree_dir)/$name"
+  # The folder of this name may hold another task's branch (split reuses folders): switching it took a running task's
+  # worktree away. Such a folder is left alone, wt_create gives this task a folder of its own.
+  local cur; cur="$(git -C "$wt" branch --show-current 2>/dev/null)"
+  if [ -d "$wt" ] && [ -n "$cur" ] && [ "$cur" != "$br" ] && { wt_taken "$wt" "$cur" || ! git -C "$wt" merge-base --is-ancestor HEAD "$base" 2>/dev/null; }; then wt=/nonexistent/warmd; fi
   if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/$br" >/dev/null; then
     local at; at="$(git -C "$GIT_ROOT" worktree list --porcelain | awk -v b="refs/heads/$br" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')"
     if [ -n "$at" ] && [ -d "$at" ]; then git -C "$at" checkout -q -B "$br" "$base" 2>/dev/null || return 1
@@ -210,6 +214,17 @@ wt_old_renew() { # name
   elif [ -d "$wt" ]; then git -C "$wt" checkout -q -B "$br" "$base" 2>/dev/null || return 1
   fi
   return 0
+}
+# A worktree whose branch belongs to an unfinished task is never handed to another one: split switched the worktree of
+# a running task (warmd/godot-sim, its work still untracked) to a new task's branch. Unfinished = a task file of that
+# name and no warmd finish marker; new files count as work too.
+wt_taken() { # path branch -> 0 when another task still owns it
+  local p="$1" t="${2#warmd/}" common
+  [ "$2" != "$t" ] || return 1
+  [ -n "$(wt_work "$p")" ] && return 0
+  common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  [ -f "$(ledger_taskdir)/$t.md" ] && [ ! -f "$common/warmd-auto/done/$t" ] && return 0
+  return 1
 }
 wt_reuse() { # name
   local name="$1" p br base main; base="$(base_branch)"; main="$(git -C "$GIT_ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
@@ -225,6 +240,7 @@ wt_reuse() { # name
     # git prints C:/x, the shell uses /c/x: compare one form, or two tasks land in one worktree
     case " ${USED_WT:-} " in *" $(cd "$p" && pwd) "*) continue;; esac
     grep -qxF "$(cd "$p" && pwd)" "$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch" 2>/dev/null && continue   # an agent of the running batch works there
+    wt_taken "$p" "$br" && continue
     wt_free "$p" || continue
     git -C "$p" checkout -q -- . 2>/dev/null
     if git -C "$GIT_ROOT" rev-parse -q --verify "refs/heads/warmd/$name" >/dev/null; then
@@ -243,6 +259,17 @@ wt_create() { # name
   local name="$1" wt branch src rel
   wt="$(worktree_dir)/$name"; branch="warmd/$name"
   rel="$(rel_project)"; src="$PROJECT"
+  # The folder of this name holds another task's branch that is still owned: that task keeps it, this one gets a new folder
+  if [ -d "$wt" ]; then
+    local cur; cur="$(git -C "$wt" branch --show-current 2>/dev/null)"
+    if [ -n "$cur" ] && [ "$cur" != "$branch" ] && { wt_taken "$wt" "$cur" || ! git -C "$wt" merge-base --is-ancestor HEAD "$(base_branch)" 2>/dev/null; }; then
+      wt="$wt-$(date +%s)"; echo "(worktree folder $name holds $cur, still owned: using ${wt##*/})" >&2
+      mkdir -p "$(worktree_dir)"
+      git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
+      a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+      echo "$wt"; return 0
+    fi
+  fi
   # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
   if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
