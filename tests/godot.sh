@@ -17,7 +17,16 @@ git add -A; git commit -qm init
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: $3"; fails=$((fails+1)); fi; }
 expect "compile" 'scripts parse' "$("$WARMD" build)"
-expect "green test" '1 passed, 0 failed' "$("$WARMD" test)"
+expect "green test" '1 passed, 0 failed, 1 asserts' "$("$WARMD" test)"
+# A runtime error ends only the test method, it returns like one that passed: the engine's output makes it red
+printf 'extends WarmdTest\n\nfunc test_boom() -> void:\n\tassert_true(true)\n\tvar n: Object = null\n\tn.free()\n\tassert_true(true)\n' > test/test_boom.gd
+expect "a runtime error in a test is red with file:line" 'RED test_boom: script error test/test_boom.gd:6 ' "$("$WARMD" test)"
+printf 'godot_allow_errors=test_boom\\.gd:6\n' > warmd.conf
+expect "an allowlisted script error is noise" '2 passed, 0 failed' "$("$WARMD" test)"
+rm warmd.conf test/test_boom.gd
+printf 'extends WarmdTest\n\nfunc test_empty() -> void:\n\tpass\n' > test/test_empty.gd
+expect "a test without an assert is red" 'RED test_empty: no assert ran' "$("$WARMD" test)"
+rm test/test_empty.gd
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
 expect "an edit counts in one-shot mode" 'RED test_add' "$("$WARMD" test)"
 git checkout -q score.gd
@@ -41,6 +50,9 @@ expect "warm mode" '1 passed, 0 failed' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
 expect "an edit reaches the warm engine" 'RED test_add' "$("$WARMD" test)"
 git checkout -q score.gd
+printf 'extends WarmdTest\n\nfunc test_boom() -> void:\n\tassert_true(true)\n\tvar n: Object = null\n\tn.free()\n' > test/test_boom.gd
+expect "a runtime error in the warm engine is red with file:line" 'RED test_boom: script error test/test_boom.gd:6 ' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+rm test/test_boom.gd
 # Two callers on one daemon: both get their own result, none overwrites the other's job
 WARMD_NOCACHE=1 "$WARMD" test test_add > one.out 2>&1 &
 p1=$!
@@ -84,6 +96,13 @@ printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tvar x := \n\tquit(0)
 expect "a runner that does not parse is red" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
 expect "and its red is not cached as green" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
 rm tests/run_broken.gd
+# A runtime error ends only the function it happens in: the runner still quits with 0, its output makes it red
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tboom()\n\tquit(0)\n\nfunc boom() -> void:\n\tvar n: Object = null\n\tn.free()\n' > tests/run_err.gd
+expect "a runner with a script error and exit 0 is red with file:line" 'FAIL runner tests/run_err.gd script error tests/run_err.gd:9 ' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+cp warmd.conf warmd.conf.orig 2>/dev/null; printf 'godot_allow_errors=run_err\\.gd\n' >> warmd.conf
+expect "an allowlisted runner error passes" '2 runners passed|OK .*test' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+if [ -f warmd.conf.orig ]; then mv warmd.conf.orig warmd.conf; else rm warmd.conf; fi
+rm tests/run_err.gd
 # A runner whose extends line carries class_name is found too; no test of any kind is a WARN, never a silent green
 printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(1)\n' > tests/run_cn.gd
 expect "a runner with class_name before extends is found" 'FAIL runner tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
