@@ -231,19 +231,52 @@ engine_key() {
 }
 sha_of() { local k; k="$(printf '%s' "$1" | { sha1sum 2>/dev/null || shasum; })"; echo "${k:0:12}"; }
 
-# A green run stays green until the code changes, across all worktrees. Red is never cached.
+# A green run stays green until the code changes, across all worktrees (7 days).
+# A red verdict stays 2 hours under the same key: the same call on the same state answers at once with the cause and the saved log.
+# Only a real test or compile verdict is kept: no timeout, kill or signal (exit 124 and up), no missing engine, RAM, queue or crash.
+RED_MIN=120
+RED_ENV='timeout|timed out|not found|killed|out of memory|(^|[^a-z])ram([^a-z]|$)|queued|caller is gone|another unity|not ready|ended without a result|crash|0xc0000|refus|licen[cs]e|disk|blocked|still runs|hung|after success output'
+red_hit() { # <red file>: prints the cached red and returns its rc, 255 when there is none or it is older than RED_MIN
+  local r="$1" rc=0 at=0 line="" now c
+  [ -f "$r" ] || return 255
+  { read -r rc at; read -r line; } < "$r"
+  printf -v now '%(%s)T' -1
+  [ $(( now - at )) -lt $(( RED_MIN * 60 )) ] 2>/dev/null && [ "$rc" -gt 0 ] 2>/dev/null || { rm -f "$r" "$r.log"; return 255; }
+  while IFS= read -r c; do [[ $c == "---- "* ]] && break; printf '%s\n' "$c"; done < "$r.log" 2>/dev/null
+  echo "RED cached, code unchanged: $line. Change code first. Log: $(native_path "$r.log")"
+  return "$rc"
+}
+red_keep() { # <red file> <rc> <stdout file> <start marker>: keeps a real red verdict with the newest run log
+  local r="$1" rc="$2" out="$3" mark="$4" lg="" c now
+  [ "$rc" -lt 124 ] 2>/dev/null || return 0
+  grep -qiE "$RED_ENV" "$out" && return 0
+  for c in "$RUN/last.log" "$RUN/warmd-daemon.log" "$RUN/daemon.log" "$RUN/result.txt"; do
+    [ -f "$c" ] && ! [ "$c" -ot "$mark" ] && { [ -z "$lg" ] || [ "$c" -nt "$lg" ]; } && lg="$c"
+  done
+  mkdir -p "${r%/*}" 2>/dev/null || return 0
+  printf -v now '%(%s)T' -1
+  { cat "$out"; echo "---- $(native_path "${lg:-$out}")"; [ -n "$lg" ] && tail -n 3000 "$lg"; } > "$r.log"
+  { echo "$rc $now"; tail -1 "$out" | cut -c1-120; } > "$r"
+  find "${r%/*}" -type f -mmin +"$RED_MIN" -delete 2>/dev/null
+}
 cached() {
-  local what="$1" key f tmp rc line; shift
+  local what="$1" key f r tmp rc line; shift
   key="$(code_key)" || { slot_now; "$@"; return $?; }
-  f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"
-  if [ "${WARMD_NOCACHE:-0}" != 1 ] && [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
+  f="$CACHE_ROOT/green/${key}_$(sha_of "$KIND|$what")"; r="$CACHE_ROOT/red/${f##*/}"
+  if [ "${WARMD_NOCACHE:-0}" != 1 ]; then
+    if [ -f "$f" ]; then read -r line < "$f"; echo "OK cached, code unchanged: $line"; return 0; fi
+    red_hit "$r"; rc=$?; [ $rc != 255 ] && return $rc
+  fi
   slot_now
-  tmp="$(mktemp)"; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; cat "$tmp"
+  tmp="$(mktemp)"; : > "$tmp.t"; CACHED_OUT="$tmp"; "$@" > "$tmp"; rc=$?; CACHED_OUT=""; cat "$tmp"
   if [ $rc = 0 ]; then
+    rm -f "$r" "$r.log"
     mkdir -p "$CACHE_ROOT/green"; tail -1 "$tmp" | cut -c1-120 > "$f"
     find "$CACHE_ROOT/green" -type f -mtime +7 -delete 2>/dev/null
+  else
+    rm -f "$f"; red_keep "$r" "$rc" "$tmp" "$tmp.t"
   fi
-  rm -f "$tmp"; return $rc
+  rm -f "$tmp" "$tmp.t"; return $rc
 }
 
 # Queue: at most <slots> heavy runs per machine across all projects. A slot is a directory (mkdir is atomic) holding the owner pid, dead owners expire.

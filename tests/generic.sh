@@ -78,6 +78,29 @@ out="$("$WARMD" check 2>&1)"; expect "pycache and .DS_Store start no test" '^non
 refuse "pycache and .DS_Store are no change" 'pycache|DS_Store|running all' "$out"
 rm -rf Art .DS_Store
 
+# ---- red cache: the same red call on the same state answers at once, with the saved log; WARMD_NOCACHE, age and flaky reds run again ----
+change lib/beta.sh
+WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1; rc1=$?
+expect "a red run starts its test" '^beta$' "$(ran)"; rm -f ran.txt
+out="$(WARMD_NOCACHE=0 "$WARMD" check 2>&1)"; rc2=$?
+expect "the same red call runs nothing again" '^none$' "$(ran)"
+expect "it answers from the red cache" '^RED cached, code unchanged: .*\. Change code first\. Log: ' "$out"
+[ $rc1 != 0 ] && [ $rc2 = $rc1 ] && ok "a cached red keeps the exit code ($rc1)" || no "cached red exited $rc2, the run $rc1"
+lg="$(echo "$out" | sed -n 's/.*Change code first\. Log: //p' | head -1)"
+[ -n "$lg" ] && grep -q 'FAIL' "$lg" 2>/dev/null && ok "the saved log holds the cause" || no "saved log missing or empty: $lg"
+WARMD_NOCACHE=1 "$WARMD" check >/dev/null 2>&1
+expect "WARMD_NOCACHE=1 runs a cached red again" '^beta$' "$(ran)"; rm -f ran.txt
+for r in "$XDG_CACHE_HOME"/warmd/red/*; do case "$r" in *.log) ;; *) { read -r a b; read -r l; } < "$r"; printf '%s %s\n%s\n' "$a" $(( b - 7300 )) "$l" > "$r";; esac; done
+WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1
+expect "a red older than 2 hours runs again" '^beta$' "$(ran)"
+git checkout -q main; git checkout -qB "w$RANDOM"; printf 'echo beta >> "%s/ran.txt"; echo "FAIL timeout after 900s"; exit 1\n' "$P" > tests/beta.sh; git commit -qam flaky; rm -f ran.txt
+WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1; rm -f ran.txt; WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1
+expect "a timeout red is never cached" '^beta$' "$(ran)"
+printf 'echo run >> "%s/ran.txt"; exit 137\n' "$P" > tests/run.sh; echo '# k' >> lib/notest.sh; git commit -qam killed; rm -f ran.txt
+WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1; rm -f ran.txt; WARMD_NOCACHE=0 "$WARMD" check >/dev/null 2>&1
+expect "a killed run (exit 137) is never cached" '^run$' "$(ran)"
+git checkout -q main
+
 
 # ---- small suite: when the full run is cheaper than build plus selection, check runs the full suite ----
 S="$TMP/small"; mkdir -p "$S/src" "$S/tests"; cd "$S" || exit 1
