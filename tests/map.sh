@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repo map ranked by the import graph, the token budget, and the MCP part of warmd audit against fake settings.
+# Repo map ranked by the import graph, the token budget, Godot scene outlines and peek, and the MCP part of warmd audit against fake settings.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
@@ -74,6 +74,100 @@ expect "py: files ranked by importers" '^app/models\.py app/cart\.py app/cli\.py
 expect "py: class used by both importers" 'class Item:  \[2\]$' "$out"
 expect "py: methods listed" 'def price\(self\):  \[1\]$' "$out"
 refuse "py: dunder methods left out" '__init__\(self' "$out"
+
+# ---- Godot scenes: outline of one .tscn, scenes ranked in the repo map, peek refusals (the engine part needs Godot) ----
+G="$TMP/gd"; mkdir -p "$G/actors"
+printf 'config_version=5\n[application]\nconfig/name="t"\nrun/main_scene="res://main.tscn"\n' > "$G/project.godot"
+printf 'extends Node2D\n\nfunc _on_area_body_entered(_b) -> void:\n\tpass\n' > "$G/main.gd"
+printf 'extends CharacterBody2D\n\n@export var speed := 120.0\nsignal hit\n\nfunc _on_hit(_a, _b) -> void:\n\tpass\n' > "$G/actors/player.gd"
+cat > "$G/actors/enemy.tscn" <<'EOF'
+[gd_scene format=3 uid="uid://en"]
+
+[node name="Enemy" type="CharacterBody2D"]
+EOF
+cat > "$G/main.tscn" <<'EOF'
+[gd_scene load_steps=4 format=3 uid="uid://abc"]
+
+[ext_resource type="Script" uid="uid://s1" path="res://main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://e1" path="res://actors/enemy.tscn" id="2_en"]
+[ext_resource type="Script" path="res://actors/player.gd" id="3_pl"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_x"]
+size = Vector2(10, 10)
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Player" type="CharacterBody2D" parent="." groups=["players", "save"]]
+position = Vector2(1, 2)
+script = ExtResource("3_pl")
+
+[node name="Area" type="Area2D" parent="Player"]
+unique_name_in_owner = true
+
+[node name="Shape" type="CollisionShape2D" parent="Player/Area"]
+shape = SubResource("RectangleShape2D_x")
+
+[node name="Enemy" parent="." instance=ExtResource("2_en")]
+position = Vector2(5, 5)
+
+[connection signal="body_entered" from="Player/Area" to="." method="_on_area_body_entered"]
+[connection signal="hit" from="Enemy" to="Player" method="_on_hit" flags=3 binds=[1, 2]]
+[connection to="." method="_odd" from="Player" signal="ready" unbinds=1]
+EOF
+cat > "$G/level.tscn" <<'EOF'
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://actors/enemy.tscn" id="1_e"]
+
+[node name="Level" type="Node2D"]
+
+[node name="Enemy" parent="." instance=ExtResource("1_e")]
+EOF
+# Godot 3 text: numeric ids without quotes, ExtResource( 1 ) with spaces, an inherited root
+printf '[gd_scene load_steps=3 format=2]\n\n[ext_resource path="res://base.tscn" type="PackedScene" id=1]\n[ext_resource path="res://old.gd" type="Script" id=2]\n\n[node name="Old" instance=ExtResource( 1 )]\nscript = ExtResource( 2 )\n\n[node name="Kid" type="Sprite" parent="."]\n\n[connection signal="pressed" from="Kid" to="." method="_on_pressed"]\n' > "$G/old.tscn"
+repo "$G"
+smap() { ( cd "$G" && PROJECT="$G" WARMD_HOME="$HERE" bash -c '. "$WARMD_HOME/lib/map.sh"; scene_map "$@"' _ "$@" ); }
+out="$(smap main.tscn)"
+expect "scene: header with root type and counts" '^== main\.tscn  Node2D, 5 nodes, 3 connections$' "$out"
+expect "scene: root with its script and line" '^10 Main  Node2D  script res://main\.gd$' "$out"
+expect "scene: child indented, script and groups" '^13   Player  CharacterBody2D  script res://actors/player\.gd  groups players,save$' "$out"
+expect "scene: unique name marked, depth from the parent path" '^17     %Area  Area2D$' "$out"
+expect "scene: three levels deep" '^20       Shape  CollisionShape2D$' "$out"
+expect "scene: instanced sub-scene" '^23   Enemy  instance res://actors/enemy\.tscn$' "$out"
+expect "scene: connection signal from to method" '^26 body_entered Player/Area -> \. _on_area_body_entered$' "$out"
+expect "scene: flags and binds kept" '^27 hit Enemy -> Player _on_hit  flags 3  binds=\[1, 2\]$' "$out"
+expect "scene: attributes in any order" '^28 ready Player -> \. _odd$' "$out"
+refuse "scene: sub_resource bodies are no nodes" 'size|RectangleShape2D_x' "$out"
+out="$(smap old.tscn)"
+expect "scene: Godot 3 format named" '^== old\.tscn  inherited scene, 2 nodes, 1 connection, Godot 3 format$' "$out"
+expect "scene: Godot 3 inherited root with its base and script" '^6 Old  inherits res://base\.tscn  script res://old\.gd$' "$out"
+expect "scene: Godot 3 child" '^9   Kid  Sprite$' "$out"
+expect "scene: Godot 3 connection" '^11 pressed Kid -> \. _on_pressed$' "$out"
+expect "scene: node cap" '^\.\.\. 3 more nodes' "$(cd "$G" && PROJECT="$G" WARMD_HOME="$HERE" WARMD_MAP_NODES=2 bash -c '. "$WARMD_HOME/lib/map.sh"; scene_map main.tscn')"
+expect "scene: missing file" '^warmd map: no file nope\.tscn' "$(smap nope.tscn)"
+if grep -q scene_map "$HERE/bin/warmd"; then
+  expect "scene: warmd map routes .tscn to the outline" '^== main\.tscn  Node2D, 5 nodes' "$(cd "$G" && "$WARMD" map main.tscn)"
+else echo "skip scene: bin/warmd does not route .tscn to scene_map yet"; fi
+out="$(cd "$G" && "$WARMD" map)"
+expect "scene: the twice instanced scene ranks first" '^== actors/enemy\.tscn  used by 2$' "$(printf '%s\n' "$out" | grep '^== ' | head -1)"
+expect "scene: scene nodes listed as name and type" '^  3 node Enemy CharacterBody2D$' "$out"
+expect "scene: a scene's script ranks with it" '^== actors/player\.gd  used by 1$' "$out"
+expect "scene: nodes of a ranked scene" '^  13 node Player CharacterBody2D$' "$out"
+refuse "scene: node names get no use counts" 'node .*\[[0-9]+\]$' "$out"
+peek() { ( cd "$G" && PROJECT="$G" WARMD_HOME="$HERE" bash -c '. "$WARMD_HOME/lib/map.sh"; '"$1"'; scene_peek "$@"' _ "${@:2}" ); }
+expect "peek: other project kinds refused" '^FAIL warmd peek is for Godot projects' "$(peek 'KIND=js' main.tscn)"
+expect "peek: frames must be a number" '^FAIL frames wants a number, got x' "$(peek 'KIND=godot; godot_exe() { return 1; }' main.tscn x)"
+expect "peek: unknown name refused" '^FAIL no scene named nosuch' "$(peek 'KIND=godot; godot_exe() { return 1; }' nosuch)"
+expect "peek: a name finds the scene, then the engine is asked for" '^FAIL Godot not found' "$(peek 'KIND=godot; godot_exe() { return 1; }' level)"
+if GX="${WARMD_GODOT:-$(command -v godot 2>/dev/null || command -v godot4 2>/dev/null)}" && [ -n "$GX" ]; then
+  out="$(cd "$G" && "$WARMD" peek main.tscn 5 2>&1)"
+  expect "peek: tree after the frames" '^== res://main\.tscn after 5 frames, 5 nodes$' "$out"
+  expect "peek: root with position and script" '^Main  Node2D  pos \(0, 0\)  script res://main\.gd$' "$out"
+  expect "peek: exported var shown" '^  Player  CharacterBody2D  pos \(1, 2\)  script res://actors/player\.gd  speed=120$' "$out"
+  expect "peek: instanced scene is live" '^  Enemy  CharacterBody2D  pos \(5, 5\)$' "$out"
+  if git -C "$G" status --porcelain | grep -qvE '^\?\? \.(godot|warmd)/'; then no "peek: changed project files: $(git -C "$G" status --porcelain | head -3)"; else ok "peek: saves nothing"; fi
+else echo "skip peek engine cases: no Godot (CI job godot covers them)"; fi
 
 # ---- audit: MCP servers from fake settings ----
 H="$TMP/home"; A="$TMP/aud"; mkdir -p "$H/.claude" "$A/.claude"

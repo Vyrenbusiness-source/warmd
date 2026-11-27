@@ -125,33 +125,33 @@ fi
 printf '%s OK\n1 scripts parse\n' "$id" > "$WARMD_DIR/result.txt"
 STUB
 chmod +x "$GS/godot"
-WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1; rm -f "$GS/imports"
+WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1; rm -f "$GS/imports"
 expect "the stub engine built a class cache with the old path" 'res://scripts/ui/orbit_preview.gd' "$(cat .godot/global_script_class_cache.cfg 2>&1)"
 mkdir -p scripts/orbit; git mv scripts/ui/orbit_preview.gd scripts/orbit/orbit_preview.gd; git commit -qm move
 imports() { if [ -f "$GS/imports" ]; then wc -l < "$GS/imports" | tr -d ' '; else echo 0; fi; }
-out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+out="$(WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
 expect "a cache that names the moved script is renewed, the compile is green" 'scripts parse' "$out"
 refuse "no hides error reaches the build" 'hides a global script class|FAIL' "$out"
 expect "it took one import" '^1$' "$(imports)"
-WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
+WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
 expect "a fresh cache costs no import" '^1$' "$(imports)"
 touch "$GS/needs_import"
-out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+out="$(WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
 expect "a hides error the check did not foresee: one import, then green" 'scripts parse' "$out"
 expect "that retry says why" 'class cache named a script twice' "$out"
 expect "the retry took one import" '^2$' "$(imports)"
-out="$(STUB_HIDES=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"; rc=$?
+out="$(STUB_HIDES=1 WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"; rc=$?
 expect "a hides error that stays after the import is red" 'does not parse' "$out"
 [ "$rc" != 0 ] && ok "its build exits non-zero" || no "its build exits 0"
 expect "it is retried once, not in a loop" '^3$' "$(imports)"
 # git merge main brings a new class_name script: the cache is renewed before the compile, one import, then green
 git checkout -q -b side; mkdir -p scripts/campaign; printf 'class_name CampaignHud\nextends CanvasLayer\n' > scripts/campaign/campaign_hud.gd
 git add -A; git commit -qm hud; git checkout -q main; git merge -q --no-edit side
-out="$(WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
+out="$(WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build 2>&1)"
 expect "a merged new class_name is in the cache before the compile, green" 'scripts parse' "$out"
 refuse "no parse error for the merged class_name script" 'does not parse|FAIL' "$out"
 expect "the merge took one import" '^4$' "$(imports)"
-WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
+WARMD_NOCACHE=1 WARMD_GODOT="$GS/godot" "$WARMD" build >/dev/null 2>&1
 expect "the next build costs no import" '^4$' "$(imports)"
 
 # ---- godot: a runner that does not parse or compile is red, also when the engine ends with exit 0 ----
