@@ -19,6 +19,7 @@ jobs:
           - core
           - hook bars gain daemon
           - auto affected brakes audit unity slim layout
+          - mutate
     runs-on: windows-latest
     defaults:
       run:
