@@ -19,7 +19,7 @@ jobs:
           - core
           - hook bars gain daemon godot_lint
           - auto affected brakes audit unity slim layout
-          - mutate nightly
+          - mutate nightly rest
     runs-on: windows-latest
     defaults:
       run:
