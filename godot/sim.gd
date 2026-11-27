@@ -29,7 +29,7 @@ var _frames := 0
 var _seed := 0
 var _name := ""
 var _metrics: Array = []
-var _replay: RefCounted = null
+var _replay = null              # godot/replay.gd instance, untyped: its methods are not known to RefCounted
 var _running := false
 var _started := false
 
@@ -125,7 +125,7 @@ func _parse(path: String) -> String:
 	_seed = 1
 	_replay = _replay_script.new()
 	var n := 0
-	for raw in FileAccess.get_file_as_string(path).split("\n"):
+	for raw: String in FileAccess.get_file_as_string(path).split("\n"):
 		n += 1
 		var line := raw.replace("\t", " ").strip_edges()
 		var hash_at := line.find("#")
@@ -184,8 +184,8 @@ func _metric(line: String) -> String:
 		return "limit %s is no number" % head[4]
 	var rx := RegEx.create_from_string("\\$(\"[^\"]+\"|[A-Za-z0-9_/]+)")
 	var code := src
-	for m in rx.search_all(src):
-		var p := m.get_string(1).trim_prefix("\"").trim_suffix("\"")
+	for m: RegExMatch in rx.search_all(src):
+		var p: String = m.get_string(1).trim_prefix("\"").trim_suffix("\"")
 		code = code.replace(m.get_string(0), "get_node_or_null(\"%s\")" % p)
 	var e := Expression.new()
 	if e.parse(code) != OK:
@@ -333,7 +333,7 @@ func _cleanup() -> void:
 
 
 # ---- record ----
-var _rec: RefCounted = null
+var _rec = null
 var _rec_frames := 0
 
 
