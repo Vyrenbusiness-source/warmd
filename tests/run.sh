@@ -365,7 +365,7 @@ for t in $WANT; do
     layout) if [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Windows ]; then echo "skip layout on the hosted Windows runner"; continue; fi
       bash "$HERE/tests/layout.sh" || fails=$((fails+1));;
     # Unity dotnet stage suite from the unity-build branch: skipped cleanly until that branch is merged
-    unity) if [ -f "$HERE/tests/fixtures/unity/check.sh" ]; then bash "$HERE/tests/fixtures/unity/check.sh" || fails=$((fails+1)); fi;;
+    unity) bash "$HERE/tests/unity.sh" || fails=$((fails+1)); if [ -f "$HERE/tests/fixtures/unity/check.sh" ]; then bash "$HERE/tests/fixtures/unity/check.sh" || fails=$((fails+1)); fi;;
     bars) bash "$HERE/tests/bars.sh" >/dev/null 2>&1 && ok "chart bars are proportional" || no "chart bars are not proportional";;
     *) bash "$HERE/tests/$t.sh" || fails=$((fails+1));;
   esac
