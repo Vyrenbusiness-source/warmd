@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- README Godot image. Real warmd 0.6.2 session on a throwaway Godot 4.7 project (Windows, Git Bash), recorded 2026-11-27.
+     Output lines unchanged; left out: the closing "FAIL 7s test: exit 1, cause above" lines, the log path of the red cache
+     and of sim. Lines starting with # are comments added here. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css"><style>
+html,body{width:800px;height:668px}
+body{padding:26px 34px 0}
+.stripe{position:absolute;left:0;right:0;top:0}
+.head{display:flex;justify-content:space-between}
+h2{font:600 28px/1.1 Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.01em;margin:10px 0 18px}
+h2 em{font-style:normal;color:var(--heat)}
+.term{background:var(--term);color:var(--tink);border:1px solid var(--trule)}
+.bar{height:28px;border-bottom:1px solid var(--trule);display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  font:11px "Cascadia Mono",Consolas,monospace;letter-spacing:.08em;color:var(--tmute);text-transform:uppercase}
+.bar i{display:inline-block;width:8px;height:8px;background:var(--heat);margin-right:8px}
+pre{padding:10px 16px 12px;font-size:12.5px;line-height:1.5;white-space:normal}
+pre span{display:block;white-space:pre-wrap;padding-left:3ch;text-indent:-3ch}
+.p:before{content:"$ ";color:#ff8a66}.c{color:var(--tmute)}.c{margin-top:6px}.ok{color:#6fd99a;font-weight:700}.no{color:#ff7a6e;font-weight:700}
+</style></head><body>
+<div class="stripe"></div>
+<div class="head"><span class="label"><b>&#9632;</b> Godot</span><span class="label">real session &middot; Godot 4.7 &middot; Windows</span></div>
+<h2>A Godot project, told as text. <em>No log, no screenshot.</em></h2>
+<div class="term"><div class="bar"><span><i></i>Git Bash &middot; jumper</span><span>warmd 0.6.2</span></div>
+<pre><span class="c"># test: a wrong combo formula, red with got and want</span>
+<span class="p">warmd test</span>
+<span class="no">FAIL 0s test</span>
+<span>1 passed, 1 failed, 1 asserts</span>
+<span class="no">RED test_combo_of_three:  got 40, want 45</span>
+<span class="c"># same code again: the red cache answers at once</span>
+<span class="p">warmd test</span>
+<span class="no">RED cached, code unchanged: RED test_combo_of_three:  got 40, want 45. Change code first.</span>
+<span class="c"># lint: only what the engine or the disk proves</span>
+<span class="p">warmd lint hero.gd</span>
+<span class="no">ERROR hero.gd:14 input action "dash" is not in project.godot [input] and the engine does not know it either</span>
+<span class="c"># add the action, then play the gameplay scenarios under a fixed tick</span>
+<span class="p">warmd sim</span>
+<span class="ok">OK idle: ground 0 &lt;= 0 (60 frames, seed 1)</span>
+<span class="no">FAIL jump: peak 13 &gt; 12 at frame 18 of 120 (seed 1)</span>
+<span>FAIL sim: 1 of 2 green, 1 engine start, 2s</span>
+<span class="c"># where is it, and what does the scene hold</span>
+<span class="p">warmd where player</span>
+<span>main.tscn:7  group player on Main/Hero</span>
+<span>hero.gd:1  file hero.gd</span>
+<span class="p">warmd map main.tscn</span>
+<span>== main.tscn  Node2D, 2 nodes, 0 connections</span>
+<span>5 Main  Node2D</span>
+<span>7   Hero  Node2D  script res://hero.gd  groups player</span>
+</pre></div>
+</body></html>
