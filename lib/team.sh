@@ -1058,6 +1058,11 @@ team_merge() {
     if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
   if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
+  # mutate=merge in warmd.conf: every changed line of this merge must have a test that notices a flipped operator (lib/mutate.sh)
+  if [ $nogate = 0 ] && [ "${CFG_mutate:-}" = merge ] && type mutate_gate >/dev/null 2>&1; then
+    m="$(WARMD_DIFF_BASE="$start" mutate_gate 2>&1)" || { mfail "mutation gate: $(echo "$m" | tail -3 | tr '\n' ' ' | cut -c1-200)"; return; }
+    echo "$m" | tail -1
+  fi
   # What the gate wrote (world outputs, the renewed daemon copy, .uid) goes into the last merge commit, only into this
   # merge's own commit: a commit made meanwhile is never amended. Any other change in the checkout was made by someone
   # meanwhile: it stays uncommitted and is named, never taken into the merge commit.

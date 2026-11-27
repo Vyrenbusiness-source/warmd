@@ -108,6 +108,17 @@ expect "without extra edges other.ts selects its own test only" '^SOME\|test/oth
 printf 'E\ttest/top.test.ts\tsrc/other.ts\n' > "$d/.git/warmd-edges.tsv"
 expect "an engine-proven edge selects the test that loads the file" '^SOME\|.*test/top\.test\.ts' "$(sel)"
 
+
+# warmd merge with mutate=merge: a changed line no test notices turns the merge red and rolls it back
+mkdir -p "$TMP/mg"; cd "$TMP/mg" || exit 1; git init -q -b main .; cfg
+printf 'gate=true\nmutate=merge\nmutate_cmd=true\nmutate_limit=60\n' > warmd.conf; printf '.warmd\n' > .gitignore
+mkdir -p lib; printf 'f() {\n  echo start\n}\n' > lib/a.sh; git add -A; git commit -qm init
+git checkout -qb warmd/m; printf 'f() {\n  [ 1 -lt 2 ] && echo yes\n}\n' > lib/a.sh; git commit -qam m; git checkout -q main
+before="$(git rev-parse HEAD)"
+out="$(WARMD_BASE=1 w merge warmd/m)"
+expect "the mutation gate turns a merge red" '^FAIL merge warmd/m: mutation gate' "$out"
+[ "$(git rev-parse HEAD)" = "$before" ] && ok "the red merge is rolled back" || no "the red merge stayed: $(git log --oneline -1)"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails
