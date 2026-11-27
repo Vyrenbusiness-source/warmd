@@ -8,7 +8,7 @@ export XDG_CACHE_HOME="$TMP/cache"
 cd "$TMP" || exit 1
 git init -q -b main .; git config user.name t; git config user.email t@example.com
 printf 'config_version=5\n[application]\nconfig/name="t"\n' > project.godot
-printf '.warmd\n.godot\n' > .gitignore
+printf '.warmd\n.godot\ncache\n' > .gitignore   # XDG_CACHE_HOME lies inside: its files would change the code key
 printf 'class_name Score\nextends RefCounted\n\nstatic func add(a: int, b: int) -> int:\n\treturn a + b\n' > score.gd
 "$WARMD" init > /dev/null
 mkdir test
