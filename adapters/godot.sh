@@ -6,6 +6,7 @@ export WARMD_ALLOW_ERRORS="${CFG_godot_allow_errors:-}"
 
 godot_exe() {
   local c
+  [ -n "${WARMD_GODOT:-}" ] || read -r WARMD_GODOT < "$CACHE_ROOT/godot.path" 2>/dev/null
   for c in "${WARMD_GODOT:-}" godot godot4 Godot; do
     [ -n "$c" ] || continue
     if [ -x "$c" ]; then echo "$c"; return 0; fi
