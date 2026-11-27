@@ -119,6 +119,14 @@ out="$(WARMD_BASE=1 w merge warmd/m)"
 expect "the mutation gate turns a merge red" '^FAIL merge warmd/m: mutation gate' "$out"
 [ "$(git rev-parse HEAD)" = "$before" ] && ok "the red merge is rolled back" || no "the red merge stayed: $(git log --oneline -1)"
 
+
+# A restart's AGENT line takes role_worker / role_scout from warmd.conf like split does, not only cheap/mid/top
+mkdir -p "$TMP/ral/tasks" "$TMP/ral/common"; : > "$TMP/ral/tasks/x.md"; echo mid > "$TMP/ral/tasks/x.tier"
+al() { printf '%s\n' "$@" > "$TMP/ral/warmd.conf"; ( WARMD_HOME="$HERE"; . "$HERE/lib/platform.sh"; . "$HERE/lib/auto.sh"; . "$HERE/lib/hook.sh"; HOOK_PROJ="$TMP/ral"; hook_agent_line "$TMP/ral/common" "$TMP/ral/tasks/x.md" ) 2>&1; }
+expect "restart line uses role_worker" 'model=opus ' "$(al 'role_worker=claude:opus')"
+expect "restart line keeps the tier model over a weaker role" 'model=sonnet ' "$(al 'role_worker=haiku')"
+expect "restart line still reads the tier key" 'model=claude-x ' "$(al 'mid=claude-x')"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails

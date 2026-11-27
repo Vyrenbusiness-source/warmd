@@ -273,7 +273,15 @@ hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGE
   case "$tier" in cheap) agent=warmd-scout; model=haiku;; top) agent=warmd-worker; model=opus;; *) tier=mid; agent=warmd-worker; model=sonnet;; esac
   agent="${AGENT_NS:-}$agent"
   if [ -f "$HOOK_PROJ/warmd.conf" ]; then
-    while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; done < "$HOOK_PROJ/warmd.conf"
+    local rk=role_worker rv=""; [ "$tier" = cheap ] && rk=role_scout
+    while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; [ "$k" = "$rk" ] && rv="${v##*:}"; done < "$HOOK_PROJ/warmd.conf"
+    # role_scout / role_worker win like tier_model (lib/team.sh): only when they rank at least as high as the tier's model,
+    # a worker never below mid. Builtins only, models.sh is not loaded in a hook.
+    if [ -n "$rv" ]; then
+      local ra rt; case "$rv" in *haiku*) ra=1;; *opus*) ra=3;; *) ra=2;; esac; case "$model" in *haiku*) rt=1;; *opus*) rt=3;; *) rt=2;; esac
+      [ "$rk" = role_worker ] && [ $ra -lt 2 ] && ra=0
+      [ $ra -ge $rt ] && model="$rv"
+    fi
   fi
   note="$1/warmd-handoff/$name.md"
   if [ -f "$note" ]; then
