@@ -25,7 +25,7 @@ warmd keeps the engine warm, skips tests whose code did not change and hands the
 
 <sub>Inside Claude Code, then restart it. Codex, Cursor or your own terminal: see [Install](#install).</sub>
 
-**New for Godot:** no false green · one engine start · `warmd lint` · `warmd nightly` · `warmd where` · `warmd peek` · [see it](#new-for-godot)
+**New for Godot:** no false green · one engine start · `warmd sim` · `warmd lint` · `warmd nightly` · `warmd where` · `warmd peek` · [see it](#new-for-godot)
 
 [Install](#install) · [Godot](#new-for-godot) · [Proof](#proof) · [Reference](docs/COMMANDS.md) · [FAQ](docs/FAQ.md)
 
@@ -71,12 +71,16 @@ RED test_wrong: sum got 4, want 5
 | **`warmd map scene.tscn`** | Scene outline: each node with depth, type, script, instanced scene, groups, `%unique` name, and its signals as `line signal from -> to method`. |
 | **`warmd peek <scene>`** | Plays the scene headless for 10 frames and prints the node tree as text: type, position, hidden, animation, script, exported vars. Instead of a screenshot. |
 | **One engine start** | All test runners in one engine, random order from a printed seed; `# warmd: isolate` gives a runner its own. The build loads every changed `.tscn` and `.tres` headless: a dead path or missing script is red with the file. |
+| **`warmd sim`** | Gameplay scenarios headless under a fixed tick, all in one engine start, one line each: `FAIL jump: peak 6 > 5 at frame 16 of 200 (seed 1)`. Metrics are Godot expressions on the scene, checked after every tick. |
+| **Input replay** | `warmd sim --record <scene>` plays the scene in a window and writes every input per tick to `tests/sim/<name>.sim`. Add the metric the bug breaks: a red scenario a worker can fix. |
 | **`warmd lint`** | Red only when the engine or the disk proves it: unknown input action, missing `res://` path, wrong case, layer outside 1-32. The rest is at most 10 warnings. First step of `warmd check`. |
 | **`warmd nightly`** | Once a night without cache: `MISMATCH` when the cache lied, `FLAKY` when a test flips, `GAP` when a runner loads a file the graph missed. |
 | **`warmd mutate`** | Flips one operator per changed line; a line no test notices is `SURVIVED file:line`. |
 | **`warmd models`** | One model per role (producer, worker, qa, reviewer, merge, scout); the reviewer is never the author's model. |
 
 Setup: `warmd init` once, it adds `addons/warmd`. Built-in runner, GUT or gdUnit4. All options: [reference](docs/COMMANDS.md).
+
+In VS Code a status bar icon shows what warmd does: a spinning `warmd test` during a run, `warmd 4 agents` in a batch, `CI` while it waits, green or red for 10 s after. Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.
 
 ## What runs by itself
 

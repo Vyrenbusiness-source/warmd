@@ -253,6 +253,7 @@ ship_run() {
     fi
   done
   ship_docs_pending || return 1
+  [ -z "$release" ] || ship_smoke || return 1
   [ -z "$release" ] || ship_bump "$release" || return 1
   git push -q --force-with-lease -u origin "$into" 2>/dev/null || git push -q -f -u origin "$into" || { echo "FAIL push $into"; return 1; }
   local pr
@@ -283,6 +284,15 @@ ship_run() {
     ship_install "$base"
   fi
   echo "SHIPPED PR #$pr"
+}
+
+# A release of a game that only runs in the editor helps nobody: with export_smoke=1 in warmd.conf the release first runs
+# warmd package (the adapter's a_package, for Godot the export smoke) on the merged code, and a red one stops it before
+# the version moves. In a subshell, so the project, adapter and config it loads stay out of ship.
+ship_smoke() {
+  ( detect_project; [ "${CFG_export_smoke:-0}" = 1 ] || exit 0
+    . "$WARMD_HOME/adapters/$ADAPTER.sh"; a_package ) && return 0
+  echo "FAIL export smoke red (export_smoke=1 in warmd.conf), no release"; return 1
 }
 
 # A task cannot own docs/COMMANDS.md (one file, every task adds to it): it writes its entry to docs/pending/<task>.md,
