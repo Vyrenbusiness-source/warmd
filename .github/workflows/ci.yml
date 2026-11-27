@@ -68,6 +68,7 @@ jobs:
       - run: bash tests/godot.sh
       - run: bash tests/godot_lint.sh
       - run: bash tests/nightly.sh
+      - run: bash tests/sim.sh
 
   plugin:
     runs-on: windows-latest
