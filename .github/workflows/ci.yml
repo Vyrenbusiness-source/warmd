@@ -14,7 +14,7 @@ jobs:
       matrix:
         group:
           - generic
-          - perf ship docs digest install mergelist where
+          - perf ship docs digest install mergelist where state
           - team tune map ledger bgwait models
           - core
           - hook bars gain daemon godot_lint
