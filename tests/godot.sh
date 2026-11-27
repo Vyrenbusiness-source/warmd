@@ -208,7 +208,9 @@ expect "peek saves nothing" '^clean$' "$(s="$(git status --porcelain | grep -vE 
 G="${WARMD_GODOT:-godot}"
 S="$TMP/ship"; mkdir -p "$S"; cd "$S" || exit 1
 git init -q -b main .; git config user.name t; git config user.email t@example.com
-printf 'config_version=5\n[application]\nconfig/name="s"\nrun/main_scene="res://main.tscn"\nconfig/features=PackedStringArray("4.4")\n' > project.godot
+# The project is pinned to the engine's own major.minor (CI runs 4.4, a local engine may be newer)
+GV="$("$G" --version 2>/dev/null | tr -d '\r' | grep -oE '^[0-9]+\.[0-9]+' | head -1)"; GVR="${GV/./\\.}"
+printf 'config_version=5\n[application]\nconfig/name="s"\nrun/main_scene="res://main.tscn"\nconfig/features=PackedStringArray("%s")\n' "$GV" > project.godot
 printf '.warmd\n.godot\n' > .gitignore
 printf 'extends Node2D\n\nfunc _ready() -> void:\n\tprint("main ready")\n' > main.gd
 printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://main.gd" id="1"]\n\n[node name="Main" type="Node2D"]\nscript = ExtResource("1")\n\n[node name="Box" type="ColorRect" parent="."]\noffset_right = 200.0\noffset_bottom = 120.0\ncolor = Color(1, 0, 0, 1)\n' > main.tscn
@@ -221,7 +223,7 @@ git add -A; git commit -qm init
 out="$("$WARMD" doctor)"
 expect "doctor: .godot ignored" '^ok \.godot/ ignored' "$out"
 expect "doctor: .uid and .import versioned" '^ok \.uid and \.import files versioned' "$out"
-expect "doctor: the engine matches the pinned version" '^ok Godot 4\.4[^ ]* matches the pin 4\.4 \(config/features' "$out"
+expect "doctor: the engine matches the pinned version" "^ok Godot $GVR[^ ]* matches the pin $GVR \\(config/features" "$out"
 touch extra.gd.uid
 expect "doctor: an unversioned .uid is an error" '^ERROR 1 \.uid/\.import files not versioned \(extra\.gd\.uid\)' "$("$WARMD" doctor)"
 rm extra.gd.uid
@@ -229,7 +231,7 @@ printf '.warmd\n' > .gitignore
 expect "doctor: .godot not ignored is an error" '^ERROR \.godot/ is not ignored' "$("$WARMD" doctor)"
 git checkout -q .gitignore
 echo 'godot_version=3.5' > warmd.conf
-expect "doctor: another engine than the pin is an error" '^ERROR Godot 4\.4[^ ]* is not the pinned 3\.5 \(godot_version' "$("$WARMD" doctor)"
+expect "doctor: another engine than the pin is an error" "^ERROR Godot $GVR[^ ]* is not the pinned 3\\.5 \\(godot_version" "$("$WARMD" doctor)"
 rm warmd.conf; cp project.godot project.godot.orig; sed -i.bak '/config\/features/d' project.godot; rm project.godot.bak
 expect "doctor: no pin is an error" '^ERROR Godot version not pinned' "$("$WARMD" doctor)"
 mv project.godot.orig project.godot

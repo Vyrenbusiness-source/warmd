@@ -48,7 +48,8 @@ godot_errors() {
 # "<rel>: leaked at exit" makes it noise.
 godot_exit_leak() {
   local n
-  n="$(tr -d '\r' < "$1" | grep -E 'ObjectDB instances leaked at exit|resources still in use at exit' | head -1 | cut -c1-120)"
+  # Godot 4.4: "ObjectDB instances leaked at exit", 4.7: "1 ObjectDB instance was leaked at exit" (with the count)
+  n="$(tr -d '\r' < "$1" | grep -E 'ObjectDB instances? (was |were )?leaked at exit|resources? still in use at exit' | head -1 | cut -c1-120)"
   [ -n "$n" ] || return 1
   [ -n "${CFG_godot_allow_errors:-}" ] && printf '%s: leaked at exit\n' "$2" | grep -qE -- "$CFG_godot_allow_errors" && return 1
   echo "leaks at exit: ${n#WARNING: } (run it with --verbose for the list)"
@@ -518,15 +519,33 @@ a_package() {
       rm -rf "$tmp"; return 1
     fi
   fi
-  if [ $how = pack ]; then run=("$exe" --main-pack "$(native_path "$tmp/game.pck")")
-  elif { [ "$platform" = "Windows Desktop" ] && [ "$OS" = win ]; } || { [ "$ext" = .x86_64 ] && [ "$OS" != win ] && [ "$OS" != mac ]; }; then run=("$tmp/game$ext")
-  else echo "OK export of \"$preset\" made $(native_path "$tmp/game$ext"), a $platform build does not start on this machine: no smoke run"; return 0; fi
-  timeout "${CFG_export_run_timeout:-120}" "${run[@]}" --headless --quit-after "$frames" > "$runlog" 2>&1; r=$?
-  bad="$( { godot_errors "$runlog"; tr -d '\r' < "$runlog" | grep -E "$GODOT_LOAD_ERR|Failed loading resource|Cannot open file|Resource file not found" | { if [ -n "${CFG_godot_allow_errors:-}" ]; then grep -vE -- "$CFG_godot_allow_errors"; else cat; fi; }; } | awk '!s[$0]++' | head -3 | cut -c1-200)"
+  # A release build reports no GDScript error (no debugger in it): it proves the start, a crash or a load error. The same
+  # pack on the editor binary (--main-pack) then shows the script errors the release build swallows.
+  local start="" said
+  if [ $how = release ]; then
+    if { [ "$platform" = "Windows Desktop" ] && [ "$OS" = win ]; } || { [ "$ext" = .x86_64 ] && [ "$OS" != win ] && [ "$OS" != mac ]; }; then
+      export_run release "$tmp/game$ext" || { rm -rf "$tmp"; return 1; }
+      start="the release build and "
+    else echo "(a $platform build does not start on this machine: only its pack runs)"; fi
+    if [ ! -s "$tmp/game.pck" ]; then   # the pack is embedded in the binary: export it on its own
+      timeout "${CFG_export_timeout:-600}" "$exe" --headless --path "$(native_path "$PROJECT")" --export-pack "$preset" "$(native_path "$tmp/game.pck")" > "$log" 2>&1
+      [ -s "$tmp/game.pck" ] || { echo "FAIL export smoke: --export-pack made no pack, see $(native_path "$log")"; rm -rf "$tmp"; return 1; }
+    fi
+  fi
+  export_run pack "$exe" --main-pack "$(native_path "$tmp/game.pck")" || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
-  if [ $r != 0 ]; then echo "FAIL export smoke: the exported build ($how) ended with $(runner_why "$r" "$runlog" "${CFG_export_run_timeout:-120}"), see $(native_path "$runlog")"; [ -n "$bad" ] && echo "$bad"; return 1; fi
-  if [ -n "$bad" ]; then echo "FAIL export smoke: the exported build ($how) has errors, see $(native_path "$runlog")"; echo "$bad"; return 1; fi
-  echo "OK export smoke: \"$preset\" exported ($([ $how = pack ] && echo "pack on the editor binary, no export templates for this engine" || echo release)), started headless for $frames frames, no script error, no crash"
+  said="release export"; [ $how = pack ] && said="pack only, no export templates for this engine"
+  echo "OK export smoke: \"$preset\" exported ($said), ${start}its pack on the editor binary ran headless for $frames frames, no script error, no crash"
+}
+# export_run <label> <command...>: the exported build headless for export_frames frames. Red on a crash, a non-zero exit,
+# a script error, a load error (minus godot_allow_errors).
+export_run() {
+  local label="$1" r bad runlog="$RUN/export_run_$1.log" frames="${CFG_export_frames:-120}" t="${CFG_export_run_timeout:-120}"; shift
+  timeout "$t" "$@" --headless --quit-after "$frames" > "$runlog" 2>&1; r=$?
+  bad="$( { godot_errors "$runlog"; tr -d '\r' < "$runlog" | grep -E "$GODOT_LOAD_ERR|Failed loading resource|Cannot open file|Resource file not found" | { if [ -n "${CFG_godot_allow_errors:-}" ]; then grep -vE -- "$CFG_godot_allow_errors"; else cat; fi; }; } | awk '!s[$0]++' | head -3 | cut -c1-200)"
+  if [ $r != 0 ]; then echo "FAIL export smoke: the exported build ($label) ended with $(runner_why "$r" "$runlog" "$t"), see $(native_path "$runlog")"; [ -n "$bad" ] && echo "$bad"; return 1; fi
+  if [ -n "$bad" ]; then echo "FAIL export smoke: the exported build ($label) has errors, see $(native_path "$runlog")"; echo "$bad"; return 1; fi
+  return 0
 }
 a_init() {
   mkdir -p "$PROJECT/addons/warmd"
