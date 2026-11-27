@@ -96,8 +96,8 @@ shell_check() {
   local t list=""; for t in $SH_TESTS; do list="${list:+$list }tests/$t.sh"; done
   echo "(affected: $list)"
   slot_take
-  # every file runs, the exit code counts the red ones
-  cached "test|sh:$SH_TESTS" run_bounded test in_project bash -c 'f=0; for t in "$@"; do bash "tests/$t.sh" || f=$((f+1)); done; exit $f' _ $SH_TESTS
+  # every file runs, the exit code counts the red ones; a killed or timed out file (exit 124 and up) says so, so the red cache does not keep it
+  cached "test|sh:$SH_TESTS" run_bounded test in_project bash -c 'f=0; for t in "$@"; do bash "tests/$t.sh"; r=$?; [ $r -ge 124 ] && echo "$t killed (exit $r)"; [ $r = 0 ] || f=$((f+1)); done; exit $f' _ $SH_TESTS
 }
 
 a_shot() { echo "warmd shot needs a web, Unity or Godot project"; return 2; }

@@ -21,15 +21,21 @@ Unity 6000.0.0f1 warm, pid 22734
 ```
 
 ### warmd build
-Fastest compile or typecheck for the detected stack. Exit 1 on errors.
+Fastest compile or typecheck for the detected stack. Exit 1 on errors. A green compile is cached like a test run (see Cache under `warmd test`). Godot: the cache key holds the code including `project.godot`, the engine fingerprint and the warmd version; a red compile names each error as `file:line message`. Strict GDScript warnings at level 2 (`debug/gdscript/warnings/untyped_declaration`, `unsafe_*`) count as red, proven in CI with Godot 4.4.1.
 ```text
 warmd build
 OK nothing to compile
 ```
 
 ### warmd test
-Runs the tests. A green result is cached by code hash, a red one never. Exit 1 on red, with only the error lines and the path of the full log.
+Runs the tests. Exit 1 on red, with only the error lines and the path of the full log.
 Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window] [--sound]`. Unity runs are muted (the daemon sets `EditorUtility.audioMasterMute` before every run and `AudioListener.volume = 0` in PlayMode), `--sound` lets one run be heard. `WARMD_NOCACHE=1` ignores the cache.
+
+Cache: a green result is kept 7 days, a red one 2 hours, per code state and engine fingerprint (engine version and binary, warmd version, `export_presets.cfg`, `WARMD_GODOT`, `WARMD_UNITY`, `WARMD_GFX`, `WARMD_WINDOW`, `WARMD_FULL`). A red hit prints `RED cached, code unchanged: <line>. Change code first. Log: <path>`, keeps the exit code and answers at once, without waiting for a slot or RAM. Timeouts, kills (exit 124 and up, also one killed test in a sh suite, which prints `<test> killed (exit N)`), a missing engine, RAM waits and crashes are never kept. `WARMD_NOCACHE=1` bypasses both caches.
+
+Godot: a test that stops on a script error or ran no assert is red, and so is a runner that prints `SCRIPT ERROR` and still exits 0. `godot_allow_errors=<regex>` in `warmd.conf`, matched against `file:line message`, is the only way to let such an error pass, addons included. Old copies of `addons/warmd/warmd_test.gd` count no asserts until `warmd init` runs again.
+
+<!-- godot-runners: runners in one process and the scene/resource check go here -->
 
 Unity `--window` (or `WARMD_WINDOW=1`) runs the tests with graphics in batchmode, like `WARMD_GFX=1`, with the hang detector on: a visible editor hung in a real run without `HUNG` firing. `WARMD_WINDOW_REAL=1` with it runs the tests in an editor with a window, for tests that skip their work in batchmode, PlayMode screenshots for example. `-monitor` is a player argument that an editor ignores, so the daemon moves its own main window through Win32 to monitor `WARMD_MONITOR` (default 2, monitor 1 is the primary) and maximizes it there; with one monitor it stays where it opened and says so. Before the start warmd removes `Temp/__Backupscenes` (the dialog Recovering Scene Backups) and stops when the manifest names a local package that is missing (the dialog Packages with Errors). Any other modal dialog during the start ends the editor at once with its title, text and buttons, nothing is answered. A headless daemon on the project makes way, and the window closes after the run. The window run has its own cache key.
 ```text
@@ -66,13 +72,21 @@ FOUND 2 layout problems
 ```
 
 ### warmd map
-Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`. With no file it prints a repo map: files ranked by how many files import them, each with the symbols its importers use, trimmed to `--budget N` tokens (default 1500).
+Outline with line numbers instead of the whole file. Syntax: `warmd map <file>`. With no file it prints a repo map: files ranked by how many files import them, each with the symbols its importers use, trimmed to `--budget N` tokens (default 1500). The repo map ranks Godot scenes too.
+For a scene, `warmd map <scene.tscn>` prints its outline with line numbers: each node with its depth, type, script, instanced scene, groups and `%unique` name, then its signals as `line signal from -> to method`. At most `WARMD_MAP_NODES` nodes (default 80).
 ```text
 warmd map src/cart.js
 == cart.js
 2 function lineTotal(item) {
 6 function discount(total, code) {
 ```
+
+### warmd where
+Finds a term in a few lines instead of a search. Syntax: `warmd where <term>`. Prints at most 5 lines `file:line what` from a symbol index (`.gd`, `.tscn`, input actions, autoloads, groups, C#, TS, Python), path words, `# warmd: feature=a,b` tags and notes with `file:line`; German and English synonyms count. Then it lists what changed since the agent last read those places: moved, changed or gone. The index is kept per file hash in the git dir. A note whose file changed is found again through its symbol or marked `STALE`.
+`warmd where --changed [ref]` lists every moved, changed, gone or added symbol since the last read, or since a git state.
+
+### warmd peek
+Plays a Godot scene headless and prints what it looks like as text. Syntax: `warmd peek <scene|res://path|Name> [frames]` (default 10 frames). Runs at a fixed 60 fps and lists per node its type, position, hidden state, animation, script and exported vars; it saves nothing. At most `WARMD_PEEK_NODES` nodes (default 80), the run ends after `WARMD_PEEK_TIMEOUT` seconds (default 120).
 
 ### warmd audit
 Shows what your agents pay for on every turn, biggest cost first.
@@ -182,7 +196,7 @@ OK trace-sound dropped (user does not want it): worktree and branch warmd/trace-
 Builds the batch marker again from the open tasks: every task worktree with uncommitted work, commits not yet in the base, or a task file newer than its last commit. Same path form as `warmd split` writes, so the marker is never written by hand. Only tasks of the latest batch count: named in its shared brief, a task file from after the batch start, or an agent transcript that moved in the last 120 minutes; worktrees of earlier batches with unmerged commits stay out. Use it when the marker was lost while agents still work.
 
 ### warmd perf
-Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline. The load time is the median of at least 5 loads after one discarded warm-up load, alternating with a tiny reference page from memory: when the reference loads slower than at `--save` (a busy CI runner), that difference is taken out before the compare. A regression needs a second measurement before it fails.
+Compares load time and bundle size to a stored baseline and refuses a regression over 5%. Syntax: `warmd perf [--save]`. Exit 2 without a baseline. The load time is the median of at least 5 loads after one discarded warm-up load, alternating with a tiny reference page from memory: when the reference loads slower than at `--save` (a busy CI runner), that difference is taken out before the compare. A regression needs a second measurement before it fails. Godot: `perf_scene=res://<scene>.tscn` in `warmd.conf` measures the frame time of that scene: wall time of 330 frames minus 30 frames without vsync, so the engine start cancels out. `perf_cmd` times any command (median of 3 runs) in every project. With `perf` set in `warmd.conf`, `warmd merge` runs the same compare and refuses a regression over `perf_tolerance` (5%).
 ```text
 warmd perf
 FAIL perf: no baseline, run warmd perf --save first
@@ -301,9 +315,11 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
+| `perf_scene` | Godot: scene whose frame time `warmd perf` measures | none |
+| `godot_allow_errors` | Godot: regex on `file:line message` of script errors that do not make a build or test red | none |
 | `port_env` | Env variable that gets a stable port per worktree | none |
 | `mcp_words` | Regex (case-insensitive) on the task goal: a match routes the task to `warmd-worker-mcp` | `roblox studio|mcp` |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 | `worktree_links` | Globs of git-ignored files or folders (relative to the project, e.g. `tools/luau/*.exe`) that `warmd split` copies (files) or links (folders) into each new worktree, so tool binaries exist there | none |
 
-Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
+Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`, `WARMD_MAP_NODES=80`, `WARMD_PEEK_NODES=80`, `WARMD_PEEK_TIMEOUT=120`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
