@@ -5,7 +5,8 @@
 reg ship "warmd ship [--base B] [--release vX.Y.Z] <branch>...  merge task branches, one PR, wait for CI, merge on green" ship_main
 reg ci   "warmd ci [branch]             wait for the CI of the current branch, one line per job" ci_main
 
-# A conflict hunk is safe when every line on both sides is a usage line or a dispatch line.
+# A conflict hunk is safe when every line on both sides is a usage line, a dispatch line or a ci.yml step
+# "- run: bash tests/<suite>.sh" (two branches that each add a suite to one job). Suites need no list line (tests/run.sh).
 # Resolution keeps both sides, ours first, without duplicates.
 ship_union() { # file -> 0 resolved, 1 not safe
   awk '
@@ -19,7 +20,7 @@ ship_union() { # file -> 0 resolved, 1 not safe
     }
     inc { if (side==1) a[++n1]=$0; else if (side==2) b[++n2]=$0; next }
     { out[++o]=$0 }
-    function safe(l) { return l ~ /^  warmd / || l ~ /^ +[a-z][a-z-]*\) / || l ~ /^ +--/ || l ~ /^ *$/ }
+    function safe(l) { return l ~ /^  warmd / || l ~ /^ +[a-z][a-z-]*\) / || l ~ /^ +--/ || l ~ /^ *$/ || l ~ /^      - run: bash tests\/[a-z_]+\.sh$/ }
     END { if (bad) exit 1; for (i=1;i<=o;i++) print out[i] }
   ' "$1" > "$1.warmd-union" || { rm -f "$1.warmd-union"; return 1; }
   mv "$1.warmd-union" "$1"
@@ -242,7 +243,7 @@ ship_run() {
     # No conflicted file: git refused for another reason, its own first line says which
     [ -n "$files" ] || { git merge --abort 2>/dev/null; echo "FAIL $b not merged: $(echo "$merr" | grep -v '^ ' | head -1)"; return 1; }
     for f in $files; do
-      [ "$f" = bin/warmd ] && ship_union "$f" && git add "$f" || { safe=0; break; }
+      case "$f" in bin/warmd|.github/workflows/ci.yml) ship_union "$f" && git add "$f" || { safe=0; break; };; *) safe=0; break;; esac
     done
     if [ $safe = 1 ] && [ -n "$files" ] && git -c core.editor=true commit -q --no-edit >/dev/null 2>&1; then
       echo "ok   merged $b, usage/dispatch conflict resolved"

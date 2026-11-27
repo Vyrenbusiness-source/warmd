@@ -136,6 +136,14 @@ printf '# nothing\n' > tasks.txt
 expect "split stops at the daily cost limit" '^FAIL daily cost limit reached: about \$2\.00 spent today' "$(w split tasks.txt)"
 expect "WARMD_COST_LIMIT=off lets one split through" '^$' "$(WARMD_COST_LIMIT=off w split tasks.txt | grep 'daily cost limit')"
 
+
+# ship joins two branches' new suite steps in one ci.yml job instead of stopping at the conflict
+printf '    steps:\n<<<<<<< HEAD\n      - run: bash tests/nightly.sh\n=======\n      - run: bash tests/godot_lint.sh\n>>>>>>> b\n' > "$TMP/ci.yml"
+bash -c "reg() { :; }; . '$HERE/lib/ship.sh'; ship_union '$TMP/ci.yml'" && ok "ship_union resolves two ci.yml suite steps" || no "ship_union refused two ci.yml suite steps"
+expect "both steps are kept, ours first" '^nightly godot_lint$' "$(grep -o 'tests/[a-z_]*' "$TMP/ci.yml" | sed 's#tests/##' | paste -sd' ' -)"
+printf '<<<<<<< HEAD\n          - a b\n=======\n          - a c\n>>>>>>> b\n' > "$TMP/ci2.yml"
+bash -c "reg() { :; }; . '$HERE/lib/ship.sh'; ship_union '$TMP/ci2.yml'" && no "ship_union joined matrix group lines" || ok "ship_union leaves matrix group lines to a person"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails
