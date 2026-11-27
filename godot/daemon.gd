@@ -16,6 +16,87 @@ var allow := RegEx.new()
 var allow_on := OS.get_environment("WARMD_ALLOW_ERRORS") != "" and allow.compile(OS.get_environment("WARMD_ALLOW_ERRORS")) == OK
 var at_rx := RegEx.create_from_string("^\\s*at: .*\\((.+:\\d+)\\)\\s*$")
 var ansi_rx := RegEx.create_from_string("\u001b\\[[0-9;]*[A-Za-z]")
+# A runner (extends SceneTree) becomes a guest of this engine: its extends line names RefCounted, GUEST_HOST adds the
+# SceneTree members it uses at the end. One that uses a member the host lacks does not compile as a guest and gets an
+# engine of its own, so a gap costs time, never a verdict. The extends line keeps its place: error lines stay true.
+var guest_rx := RegEx.create_from_string("(?m)^((?:@tool[ \\t]+)?)(?:class_name[ \\t]+\\w+[ \\t]+)?extends[ \\t]+SceneTree\\b")
+var class_rx := RegEx.create_from_string("(?m)^class_name[ \\t]+\\w+[ \\t]*$")
+var indent_rx := RegEx.create_from_string("(?m)^([ \\t]+)\\S")
+var success_rx := RegEx.create_from_string("(?m)^(ALL OK|=== .* 0 fehlgeschlagen ===|FAILED: 0)")
+const GUEST_HOST: Array[String] = [
+	"",
+	"# ---- warmd: SceneTree members for a runner that shares one engine with other runners ----",
+	"var __warmd_quit: bool = false",
+	"var __warmd_code: int = 0",
+	"func __warmd_tree() -> SceneTree:",
+	"\treturn Engine.get_main_loop() as SceneTree",
+	"func quit(exit_code: int = 0) -> void:",
+	"\t__warmd_code = exit_code",
+	"\t__warmd_quit = true",
+	"var root: Window:",
+	"\tget:",
+	"\t\treturn __warmd_tree().root",
+	"func get_root() -> Window:",
+	"\treturn __warmd_tree().root",
+	"var current_scene: Node:",
+	"\tget:",
+	"\t\treturn __warmd_tree().current_scene",
+	"\tset(value):",
+	"\t\t__warmd_tree().current_scene = value",
+	"var paused: bool:",
+	"\tget:",
+	"\t\treturn __warmd_tree().paused",
+	"\tset(value):",
+	"\t\t__warmd_tree().paused = value",
+	"var auto_accept_quit: bool:",
+	"\tget:",
+	"\t\treturn __warmd_tree().auto_accept_quit",
+	"\tset(value):",
+	"\t\t__warmd_tree().auto_accept_quit = value",
+	"var process_frame: Signal:",
+	"\tget:",
+	"\t\treturn __warmd_tree().process_frame",
+	"var physics_frame: Signal:",
+	"\tget:",
+	"\t\treturn __warmd_tree().physics_frame",
+	"var node_added: Signal:",
+	"\tget:",
+	"\t\treturn __warmd_tree().node_added",
+	"var node_removed: Signal:",
+	"\tget:",
+	"\t\treturn __warmd_tree().node_removed",
+	"var tree_changed: Signal:",
+	"\tget:",
+	"\t\treturn __warmd_tree().tree_changed",
+	"func create_timer(time_sec: float, process_always: bool = true, process_in_physics: bool = false, ignore_time_scale: bool = false) -> SceneTreeTimer:",
+	"\treturn __warmd_tree().create_timer(time_sec, process_always, process_in_physics, ignore_time_scale)",
+	"func create_tween() -> Tween:",
+	"\treturn __warmd_tree().create_tween()",
+	"func get_frame() -> int:",
+	"\treturn __warmd_tree().get_frame()",
+	"func get_node_count() -> int:",
+	"\treturn __warmd_tree().get_node_count()",
+	"func get_nodes_in_group(group: StringName) -> Array[Node]:",
+	"\treturn __warmd_tree().get_nodes_in_group(group)",
+	"func get_first_node_in_group(group: StringName) -> Node:",
+	"\treturn __warmd_tree().get_first_node_in_group(group)",
+	"func get_node_count_in_group(group: StringName) -> int:",
+	"\treturn __warmd_tree().get_node_count_in_group(group)",
+	"func has_group(group: StringName) -> bool:",
+	"\treturn __warmd_tree().has_group(group)",
+	"func change_scene_to_file(path: String) -> Error:",
+	"\treturn __warmd_tree().change_scene_to_file(path)",
+	"func change_scene_to_packed(packed_scene: PackedScene) -> Error:",
+	"\treturn __warmd_tree().change_scene_to_packed(packed_scene)",
+	"func reload_current_scene() -> Error:",
+	"\treturn __warmd_tree().reload_current_scene()",
+	"func unload_current_scene() -> void:",
+	"\t__warmd_tree().unload_current_scene()",
+	"func get_processed_tweens() -> Array[Tween]:",
+	"\treturn __warmd_tree().get_processed_tweens()",
+	"func queue_delete(obj: Object) -> void:",
+	"\t__warmd_tree().queue_delete(obj)",
+]
 
 
 func _init() -> void:
@@ -80,6 +161,8 @@ func _run(job: Dictionary) -> Array:
 			return await _test(str(job.get("filter", "")))
 		"call":
 			return await _call_script(str(job.get("script", "")))
+		"runners":
+			return await _runners(str(job.get("list", "")))
 	return [false, ["unknown job"]]
 
 
@@ -179,6 +262,99 @@ func _call_script(path: String) -> Array:
 	return [true, ["%s" % result]]
 
 
+## Every runner of the list ("res://path|timeout", comma between) in this one engine, one after another. Each verdict lands
+## in runners.txt as it is known, current.txt names the runner that runs: when a runner ends the engine, warmd knows which.
+func _runners(list: String) -> Array:
+	_remove("runners.txt")
+	var n := 0
+	for item: String in list.split(",", false):
+		var parts := item.split("|")
+		var limit := float(parts[1]) if parts.size() > 1 else 900.0
+		_write("current.txt", parts[0])
+		print("== ", parts[0].trim_prefix("res://"))
+		var verdict: String = await _guest(parts[0], limit)
+		_append("runners.txt", "%s\t%s\n" % [parts[0].trim_prefix("res://"), verdict])
+		n += 1
+	_remove("current.txt")
+	return [true, ["%d runners in one engine" % n]]
+
+
+## One runner as a guest: _init, _initialize, then _process and _physics_process each frame until it quits. Its verdict is
+## "OK", "FAIL\t<why>" or "ALONE\t<why>" (it needs an engine of its own). What it added to the tree goes with it.
+func _guest(path: String, limit: float) -> String:
+	var src := FileAccess.get_file_as_string(path).replace("\r", "")
+	if src == "" or guest_rx.search(src) == null:
+		return "ALONE\tits extends line is not plain SceneTree"
+	var unit := "\t"
+	var first := indent_rx.search(src)
+	if first != null and first.get_string(1).begins_with(" "):
+		unit = first.get_string(1)
+	var host: PackedStringArray = []
+	for line: String in GUEST_HOST:
+		host.append(line.replace("\t", unit))
+	var script := GDScript.new()
+	script.source_code = class_rx.sub(guest_rx.sub(src, "$1extends RefCounted"), "", true) + "\n" + "\n".join(host) + "\n"
+	script.resource_path = path   # its errors name the runner's own file and line: the host only adds lines at the end
+	if script.reload() != OK or not script.can_instantiate():
+		return "ALONE\tdoes not compile as a guest of the shared engine"
+	var kids := root.get_children()
+	var was_paused := paused
+	var mark := _log_marks()
+	var start := Time.get_ticks_msec()
+	var guest: Object = script.new()
+	var physics := func() -> void:
+		if guest.has_method("_physics_process") and not bool(guest.get("__warmd_quit")):
+			guest.call("_physics_process", 1.0 / Engine.physics_ticks_per_second)
+	physics_frame.connect(physics)
+	if guest.has_method("_initialize"):
+		guest.call("_initialize")
+	var why := ""
+	var last := Time.get_ticks_usec()
+	while true:
+		await process_frame
+		var now := Time.get_ticks_usec()
+		if guest.has_method("_process"):
+			var ended: Variant = guest.call("_process", (now - last) / 1000000.0)
+			if ended is bool and ended:
+				break
+		last = now
+		if bool(guest.get("__warmd_quit")):
+			break
+		if Time.get_ticks_msec() - start > limit * 1000.0:
+			why = "timeout after %ds" % int(limit)
+			break
+	physics_frame.disconnect(physics)
+	if why == "" and guest.has_method("_finalize"):
+		guest.call("_finalize")
+	var code := int(guest.get("__warmd_code"))
+	var errs := _log_errors(mark)
+	var said_ok := success_rx.search(_log_text(mark)) != null
+	# What the runner left behind would leak into the next one: its connections to the tree, its nodes, a paused tree
+	for s: Dictionary in get_signal_list():
+		var sig: StringName = s["name"]
+		for c: Dictionary in get_signal_connection_list(sig):
+			var cb: Callable = c["callable"]
+			if cb.get_object() == guest:
+				disconnect(sig, cb)
+	physics = Callable()
+	guest = null
+	for i: int in 2:   # a scene change lands one frame later
+		for node: Node in root.get_children():
+			if not kids.has(node):
+				node.queue_free()
+		await process_frame
+	paused = was_paused
+	var bad := errs[0].left(200) if not errs.is_empty() else ""
+	var tail := ": " + bad if bad != "" else ""
+	if why != "":
+		return "FAIL\t(%s)%s" % [why, tail]
+	if code != 0:
+		return "FAIL\t(exit %d%s)%s" % [code, " after success output" if said_ok else "", tail]
+	if bad != "":
+		return "FAIL\tscript error %s (exit 0)" % bad
+	return "OK"
+
+
 func _scripts(from: String) -> PackedStringArray:
 	var found: PackedStringArray = []
 	var d := DirAccess.open(from)
@@ -242,6 +418,26 @@ func _log_errors(marks: PackedInt64Array) -> PackedStringArray:
 			if not found.has(entry):
 				found.append(entry)
 	return found
+
+
+## All the engine printed since the marks.
+func _log_text(marks: PackedInt64Array) -> String:
+	var text := ""
+	for i: int in logs.size():
+		var f := FileAccess.open(logs[i], FileAccess.READ)
+		if marks[i] < 0 or f == null or f.get_length() <= marks[i]:
+			continue
+		f.seek(marks[i])
+		text += f.get_buffer(f.get_length() - marks[i]).get_string_from_utf8().replace("\r", "") + "\n"
+	return ansi_rx.sub(text, "", true)
+
+
+func _append(file: String, text: String) -> void:
+	var path := dir.path_join(file)
+	var f := FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE)
+	if f != null:
+		f.seek_end()
+		f.store_string(text)
 
 
 func _write(file: String, text: String) -> void:

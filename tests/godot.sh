@@ -16,6 +16,7 @@ printf 'extends WarmdTest\n\nfunc test_add() -> void:\n\tassert_eq(Score.add(2, 
 git add -A; git commit -qm init
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: $3"; fails=$((fails+1)); fi; }
+refuse() { if echo "$3" | grep -qE "$2"; then echo "FAIL $1: $(echo "$3" | grep -E "$2" | head -1)"; fails=$((fails+1)); else echo "ok   $1"; fi; }
 expect "compile" 'scripts parse' "$("$WARMD" build)"
 # The first import writes .uid files (Godot 4.4), new files change the code key once: the build after them is the cached one
 "$WARMD" build > /dev/null
@@ -118,6 +119,38 @@ cp warmd.conf warmd.conf.orig 2>/dev/null; printf 'godot_allow_errors=run_err\\.
 expect "an allowlisted runner error passes" '2 runners passed|OK .*test' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 if [ -f warmd.conf.orig ]; then mv warmd.conf.orig warmd.conf; else rm warmd.conf; fi
 rm tests/run_err.gd
+# All runners in one engine start: awaits, timers and nodes work as a guest, the order comes from a printed seed
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tawait create_timer(0.2).timeout\n\tawait process_frame\n\troot.add_child(Node.new())\n\tquit(0)\n' > tests/run_wait.gd
+printf 'extends SceneTree\n\nvar frames := 0\n\nfunc _process(_delta: float) -> bool:\n\tframes += 1\n\treturn frames >= 3\n' > tests/run_frames.gd
+WARMD_NOCACHE=1 "$WARMD" test > /dev/null; log="$(tr -d '\r' < .warmd/run/last.log)"
+expect "three runners share one engine" '3 runners passed \(3 in one engine, 0 alone\)' "$log"
+expect "one engine start for all of them" '^1$' "$(printf '%s\n' "$log" | grep -c '^Godot Engine v')"
+expect "the order's seed is printed" 'runner order from seed [0-9]+, WARMD_SEED=[0-9]+ replays it' "$log"
+WARMD_SEED=4 "$WARMD" test > /dev/null; one="$(tr -d '\r' < .warmd/run/last.log | grep '^== ')"
+WARMD_SEED=4 "$WARMD" test > /dev/null; two="$(tr -d '\r' < .warmd/run/last.log | grep '^== ')"
+expect "WARMD_SEED replays the order" '^same$' "$([ -n "$one" ] && [ "$one" = "$two" ] && echo same || printf 'differs: %s | %s' "$one" "$two")"
+printf '# warmd: isolate\nextends SceneTree\n\nfunc _initialize() -> void:\n\tquit(0)\n' > tests/run_solo.gd
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tprint(debug_collisions_hint)\n\tquit(0)\n' > tests/run_odd.gd
+WARMD_NOCACHE=1 "$WARMD" test > /dev/null; log="$(tr -d '\r' < .warmd/run/last.log)"
+expect "an isolate runner gets its own engine" '^== tests/run_solo\.gd \(own engine\)' "$log"
+expect "a runner the guest host cannot compile gets its own engine" 'runner tests/run_odd\.gd gets its own engine' "$log"
+expect "and every runner still counts" '5 runners passed \(3 in one engine, 2 alone\)' "$log"
+rm tests/run_wait.gd tests/run_frames.gd tests/run_solo.gd tests/run_odd.gd
+# A guest that never quits is timed out inside the engine, the others keep their verdicts
+printf 'extends SceneTree\n# warmd: timeout=3\n\nfunc _initialize() -> void:\n\twhile true:\n\t\tawait process_frame\n' > tests/run_hang.gd
+expect "a hanging guest is red with its timeout" 'FAIL runner tests/run_hang\.gd \(timeout after 3s\)' "$(WARMD_NOCACHE=1 "$WARMD" test; tr -d '\r' < .warmd/run/last.log)"
+rm tests/run_hang.gd
+# A crash ends the shared engine: the crashed runner is red by name, the others are judged in a new engine
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tOS.crash("warmd test crash")\n' > tests/run_crash.gd
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(1)\n' > tests/run_bad.gd
+for seed in 4 2; do   # seed 4 runs the crash first, seed 2 last
+  log="$(WARMD_SEED=$seed WARMD_NOCACHE=1 "$WARMD" test; tr -d '\r' < .warmd/run/last.log)"
+  expect "seed $seed: the crashed runner is named" 'FAIL runner tests/run_crash\.gd \(.*the shared engine ended in it\)' "$log"
+  expect "seed $seed: a red runner beside the crash stays red" 'FAIL runner tests/run_bad\.gd \(exit 1\)' "$log"
+  refuse "seed $seed: no green after a crash" 'runners passed' "$log"
+done
+expect "after a crash first, the rest run in a new engine" '^2$' "$(WARMD_SEED=4 WARMD_NOCACHE=1 "$WARMD" test > /dev/null; tr -d '\r' < .warmd/run/last.log | grep -c '^Godot Engine v')"
+rm tests/run_crash.gd tests/run_bad.gd
 # A runner whose extends line carries class_name is found too; no test of any kind is a WARN, never a silent green
 printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(1)\n' > tests/run_cn.gd
 expect "a runner with class_name before extends is found" 'FAIL runner tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"
