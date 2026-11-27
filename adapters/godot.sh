@@ -263,6 +263,8 @@ job_oneshot() {
   local rc=$?
   if [ ! -f "$RUN/result.txt" ]; then
     [ $rc = 124 ] && echo "FAIL timeout after ${TIMEOUT}s in $(cat "$RUN/current.txt" 2>/dev/null)" || echo "FAIL Godot ended without a result (exit $rc), see $(native_path "$RUN/last.log")"
+    # The engine's own reason (warmd's script does not load, a parse error in it), so nobody has to open the log
+    { godot_errors "$RUN/last.log"; tr -d '\r' < "$RUN/last.log" | grep -E "$GODOT_LOAD_ERR"; } | awk '!seen[$0]++' | head -3 | cut -c1-200
     return 1
   fi
   head -15 "$RUN/result.txt" | tr -d '\r' | sed '1s/^[^ ]* //'

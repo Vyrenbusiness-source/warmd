@@ -354,7 +354,7 @@ func _guest(path: String, limit: float) -> String:
 	var start := Time.get_ticks_msec()
 	var guest: Object = script.new()
 	var physics := func() -> void:
-		if guest.has_method("_physics_process") and not bool(guest.get("__warmd_quit")):
+		if guest.has_method("_physics_process") and guest.get("__warmd_quit") != true:
 			guest.call("_physics_process", 1.0 / Engine.physics_ticks_per_second)
 	physics_frame.connect(physics)
 	if guest.has_method("_initialize"):
@@ -369,7 +369,7 @@ func _guest(path: String, limit: float) -> String:
 			if ended is bool and ended:
 				break
 		last = now
-		if bool(guest.get("__warmd_quit")):
+		if guest.get("__warmd_quit") == true:
 			break
 		if Time.get_ticks_msec() - start > limit * 1000.0:
 			why = "timeout after %ds" % int(limit)
@@ -377,7 +377,7 @@ func _guest(path: String, limit: float) -> String:
 	physics_frame.disconnect(physics)
 	if why == "" and guest.has_method("_finalize"):
 		guest.call("_finalize")
-	var code := int(guest.get("__warmd_code"))
+	var code: int = guest.get("__warmd_code")
 	var errs := _log_errors(mark)
 	var said_ok := success_rx.search(_log_text(mark)) != null
 	# What the runner left behind would leak into the next one: its connections to the tree, its nodes, a paused tree
