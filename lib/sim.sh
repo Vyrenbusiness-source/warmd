@@ -103,7 +103,7 @@ sim_run() {
     k="$(tr -d '\r' < "$f" | sed -n 's/^[[:space:]]*scene[[:space:]]\{1,\}\([^[:space:]#]*\).*/\1/p' | head -1)"
     if [ -z "$k" ]; then echo "FAIL $n: no scene line"; red=$((red + 1)); continue; fi
     case "$k" in res://*) [ -f "$PROJECT/${k#res://}" ] || { echo "FAIL $n: no scene $k"; red=$((red + 1)); continue; };; esac
-    k="$(tr -d '' < "$f" | { sha1sum 2>/dev/null || shasum; } | cut -c1-40)"   # CRLF and LF copies are one scenario
+    k="$(tr -d '\r' < "$f" | { sha1sum 2>/dev/null || shasum; } | cut -c1-40)"   # CRLF and LF copies are one scenario
     if [ -n "$base" ]; then
       key="$(sha_of "$base|$k|seed $SIM_SEED")"
       # The cache holds the verdict without the name: two scenario files with the same content share it
