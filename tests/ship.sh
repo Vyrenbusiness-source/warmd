@@ -74,6 +74,10 @@ git checkout -q main; echo base2 > README; git commit -qam "base moves"; git pus
 
 git clone -q "$TMP/remote.git" "$TMP/install" 2>/dev/null   # the installed copy, a clean clone of the same repo
 echo 41 > "$FAKE/run_id"; run_done success > "$FAKE/jobs"
+before="$(git --git-dir="$TMP/remote.git" rev-parse main)"
+out="$("$WARMD" ship --release v0.1.0 alpha 2>&1)"; rc=$?
+expect "release refused when its tag exists on origin" '^FAIL tag v0.1.0 exists, pick the next version$' "$out"
+[ $rc = 2 ] && [ "$(git --git-dir="$TMP/remote.git" rev-parse main)" = "$before" ] && ok "existing tag: refused before any merge" || no "existing tag: rc $rc, main moved"
 out="$("$WARMD" ship --release v0.2.0 alpha beta 2>&1)"
 expect "first branch merges clean" 'ok   merged alpha$' "$out"
 expect "usage/dispatch conflict resolved" 'merged beta, usage/dispatch conflict resolved' "$out"

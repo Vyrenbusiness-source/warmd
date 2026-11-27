@@ -226,6 +226,10 @@ ship_run() {
   done
   [ ${#branches[@]} -gt 0 ] || { echo "usage: warmd ship [--base B] [--release vX.Y.Z] <branch>..."; return 2; }
   [ -z "$release" ] || echo "$release" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL release must look like v1.2.3"; return 2; }
+  # A tag that exists already fails gh release create only after the merge: main then says vX and the work has no tag.
+  if [ -n "$release" ] && [ -n "$(git ls-remote --tags origin "refs/tags/$release" 2>/dev/null)" ]; then
+    echo "FAIL tag $release exists, pick the next version"; return 2
+  fi
   # Local changes make the merges below fail with no conflict to name: refuse up front and say where.
   local dirty; dirty="$(git status --porcelain --untracked-files=no | head -5 | cut -c4- | paste -sd' ' -)"
   [ -z "$dirty" ] || { echo "FAIL uncommitted changes in $(native_path "$(pwd)"): $dirty. Commit or discard them, then ship again"; return 1; }

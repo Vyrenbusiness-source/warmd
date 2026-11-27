@@ -122,19 +122,19 @@ anchored_root() { [ -f "$1/warmd.conf" ] || [ -d "$1/.warmd/run" ]; }
 detect_project() {
   local d k sub rel anchored=0
   d="${WARMD_PROJECT:-$PWD}"; d="$(cd "$d" && pwd)"
-  # Toplevel and prefix in one call: the start folder is rebuilt from git's spelling of the root, so a short 8.3 path
-  # (C:/Users/RUNNER~1) or a mount alias (/tmp) in $PWD still compares equal to GIT_ROOT on the walk up.
-  local top pre; { IFS= read -r top; IFS= read -r pre; } < <(git -C "$d" rev-parse --show-toplevel --show-prefix 2>/dev/null)
+  # Toplevel and prefix in one call. The walk compares paths in the caller's spelling only: the root is the start folder
+  # minus the prefix's depth, never git's absolute path, which can be spelled differently (8.3 C:/Users/RUNNER~1 against
+  # git's C:/Users/runneradmin, /tmp against C:/.../Temp). PROJECT keeps the caller's spelling: editors started with it match.
+  local top pre root=""; { IFS= read -r top; IFS= read -r pre; } < <(git -C "$d" rev-parse --show-toplevel --show-prefix 2>/dev/null)
   GIT_ROOT=""
   if [ -n "$top" ]; then
     GIT_ROOT="$(cd "${top%$'\r'}" && pwd)"; pre="${pre%$'\r'}"; pre="${pre%/}"
-    d="$GIT_ROOT${pre:+/$pre}"
-    # Started from $PWD: move into the same folder in git's spelling once, so every later relative path (warmd peek
-    # main.tscn) resolves to the spelling of PROJECT and GIT_ROOT. Same folder, so nothing else changes for the caller.
-    [ -n "${WARMD_PROJECT:-}" ] || cd "$d" 2>/dev/null || true
+    root="$d"
+    while [ -n "$pre" ]; do root="${root%/*}"; case "$pre" in */*) pre="${pre#*/}";; *) pre="";; esac; done
+    [ -n "$root" ] || root=/
   fi
   PROJECT=""; KIND=""
-  local start="$d" stop="${GIT_ROOT:-}"
+  local start="$d" stop="$root"
   if [ -n "${WARMD_PROJECT:-}" ]; then
     PROJECT="$d"; KIND="$(kind_of "$d")"; KIND="${KIND:-none}"
   fi
