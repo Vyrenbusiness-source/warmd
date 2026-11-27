@@ -61,6 +61,7 @@ Everyday
   warmd check                  build, then only the tests your change touches
   warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
+  warmd shot [scene] --golden  Godot: the shot against this machine's reference, SAME or DIFF p% in region
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
   warmd map [file]             repo map by import rank, or one outline with line numbers
@@ -98,7 +99,7 @@ Setup
   warmd disk [--free]          free space; --free gives finished worktrees' engine caches back
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
-  warmd package                build a player with your own method (Unity)
+  warmd package                build a player with your own method (Unity), export smoke (Godot)
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit | --window | --sound (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
