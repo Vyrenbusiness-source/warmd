@@ -16,6 +16,12 @@ route_tier() { # goal files
       n="$(grep -c "^escalated	$area$" "$STATE/history.tsv" 2>/dev/null)"
       [ "${n:-0}" -ge 2 ] && tier=top
     fi
+    # Routing learns only upward: an area the ledger raised once stays raised, later successes never lower it again.
+    # Only learning writes it: a goal word that asks for top raises that task, not its area.
+    if [ "$tier" = top ]; then
+      grep -qxF "$area" "$STATE/route-up" 2>/dev/null || { mkdir -p "$STATE"; echo "$area" >> "$STATE/route-up"; }
+    elif grep -qxF "$area" "$STATE/route-up" 2>/dev/null; then tier=top
+    fi
   fi
   apply_floor "$tier"
 }
@@ -28,7 +34,21 @@ apply_floor() {
   esac
 }
 area_of() { echo "$1" | cut -d, -f1 | sed 's#/[^/]*$##'; }
-tier_model() { case "$1" in cheap) echo "$CFG_cheap";; top) echo "$CFG_top";; *) echo "$CFG_mid";; esac; }
+. "$WARMD_HOME/lib/models.sh"
+# role_scout sets the cheap tier's model, role_worker the mid and top tiers': only when it ranks at least as high as the
+# tier's own model, so an escalation always climbs (lib/models.sh).
+tier_model() {
+  local t m=""
+  case "$1" in cheap) t="$CFG_cheap"; role_model scout && m="$REPLY";; top) t="$CFG_top"; role_model worker && m="$REPLY";; *) t="$CFG_mid"; role_model worker && m="$REPLY";; esac
+  if [ -n "$m" ]; then model_rank "$m"; local a=$REPLY; model_rank "$t"; [ "$a" -ge "$REPLY" ] && t="$m"; fi
+  echo "$t"
+}
+# task_model <tier> <role>: a qa task runs on role_qa when it ranks at least as high as the tier's model
+task_model() {
+  local t m; t="$(tier_model "$1")"
+  [ "$2" = qa ] && role_model qa && { m="$REPLY"; model_rank "$m"; local a=$REPLY; model_rank "$t"; [ "$a" -ge "$REPLY" ] && t="$m"; }
+  echo "$t"
+}
 tier_budget() { case "$1" in cheap) echo "$CFG_budget_cheap";; top) echo "$CFG_budget_top";; *) echo "$CFG_budget_mid";; esac; }
 tier_next() { case "$1" in cheap) echo mid;; mid) echo top;; *) echo "";; esac; }
 # tier_agent <tier> [text]: text that names MCP tools (mcp_words in warmd.conf) gets warmd-worker-mcp, the only agent without a tools list
@@ -364,10 +384,42 @@ worktree_links() { # from to
   done
 }
 
+# Time budget per tier in minutes (time_budget_cheap/mid/top in warmd.conf). warmd watch escalates a task past it.
+tier_minutes() { case "$1" in cheap) echo "${CFG_time_budget_cheap:-30}";; top) echo "${CFG_time_budget_top:-120}";; *) echo "${CFG_time_budget_mid:-60}";; esac; }
+# The author never reviews itself: the reviewer is role_reviewer (default the top model), never the author's model and
+# never below floor. Without such a model only the done check (a criteria script) judges.
+review_model() { # author model -> REPLY, empty when no other model qualifies
+  local c min; floor_rank; min=$REPLY
+  role_model reviewer || REPLY="$CFG_top"
+  for c in "$REPLY" "$CFG_top" "$CFG_mid" "$CFG_cheap"; do
+    [ -n "$c" ] && [ "$c" != "$1" ] || continue
+    model_rank "$c"; [ "$REPLY" -ge "$min" ] && { REPLY="$c"; return 0; }
+  done
+  REPLY=""; return 1
+}
+review_line() { # author model
+  if review_model "$1"; then echo "Review: the done check, or a reviewer agent on $REPLY. Never $1 (the author) on its own work."
+  else echo "Review: the done check only (criteria script), no model other than $1 (the author) is allowed by floor."; fi
+}
+# The agent file of a role is only registered in projects with warmd init. A session started elsewhere cannot spawn it:
+# the FALLBACK line carries the worker rules inline for a general-purpose agent.
+agent_fallback() { # name agent model taskfile
+  local d="${CLAUDE_PROJECT_DIR:-$GIT_ROOT}" rules
+  [ -z "${AGENT_NS:-}" ] || return 0   # the plugin registers its agents itself
+  [ -f "$d/.claude/agents/${2#*:}.md" ] && return 0
+  [ -f "$WARMD_HOME/agents/${2#*:}.md" ] || return 0
+  rules="$(awk 'f>=2 && /^- / {sub(/^- /, ""); printf "%s ", $0} /^---$/ {f++}' "$WARMD_HOME/agents/${2#*:}.md" | tr '"' "'")"
+  echo "FALLBACK $1 (no ${2#*:} agent in $(native_path "$d")/.claude/agents): subagent_type=general-purpose model=$3 prompt=\"You are a warmd worker. ${rules}Read $4 and do it.\""
+}
+
 write_task() { # name tier goal done files wt
-  local name="$1" tier="$2" goal="$3" check="$4" files="$5" wt="$6" f port
+  local name="$1" tier="$2" goal="$3" check="$4" files="$5" wt="$6" f port role model area
   mkdir -p "$STATE/tasks"; f="$STATE/tasks/$name.md"
   port=$(( 7830 + $(ls "$STATE/tasks" | wc -l) * 10 ))
+  role_of "$name" "$goal" "$files"; role="$REPLY"
+  model="$(task_model "$tier" "$role")"
+  area="$role"; [ "$role" = worker ] && { area_role "$files"; area="$REPLY"; }
+  [ "$role" = scout ] || role_file_init "$area"
   {
     echo "Task $name. First run: cd \"$(native_path "$wt")\". Every command of this task runs there: start each Bash call with cd \"$(native_path "$wt")\" &&, the shell goes back to the main checkout after every call. Port block: $port."
     echo "Goal: $goal"
@@ -376,9 +428,14 @@ write_task() { # name tier goal done files wt
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
+    echo "Time budget: $(tier_minutes "$tier") min. warmd watch escalates the task past it: commit before."
+    review_line "$model"
+    [ "$role" = scout ] || echo "Role $area: read $(native_path "$(role_file "$area")") first, its Learned lines come from rolled-back merges."
   } > "$f"
+  printf '%s\n' "$area" > "$STATE/tasks/$name.role"; printf '%s\n' "$model" > "$STATE/tasks/$name.model"; date +%s > "$STATE/tasks/$name.start"
   handoff_register "$name" "$(native_path "$f")" "$tier"
-  echo "AGENT $name: subagent_type=$(task_agent "$tier" "$f") model=$(tier_model "$tier") prompt=\"Read $(native_path "$f") and do it.\""
+  echo "AGENT $name: subagent_type=$(task_agent "$tier" "$f") model=$model prompt=\"Read $(native_path "$f") and do it.\""
+  agent_fallback "$name" "$(task_agent "$tier" "$f")" "$model" "$(native_path "$f")"
 }
 
 # Warm start for agents: the slow first start runs before the agent arrives, in the background and through the normal queue.
@@ -522,9 +579,21 @@ watch_drain() {
   return 4
 }
 
+# task_over <name>: past its time budget? REPLY says by how much. Builtins only, warmd watch asks this every round.
+task_over() { # name [taskdir]
+  local st="" tier=mid now b d="${2:-$STATE/tasks}"
+  [ -f "$d/$1.start" ] && read -r st < "$d/$1.start" || return 1
+  [ -f "$d/$1.tier" ] && read -r tier < "$d/$1.tier"
+  printf -v now '%(%s)T' -1
+  case "$tier" in cheap) b="${CFG_time_budget_cheap:-30}";; top) b="${CFG_time_budget_top:-120}";; *) b="${CFG_time_budget_mid:-60}";; esac
+  [[ $st =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]] || return 1
+  [ $(( now - st )) -gt $(( b * 60 )) ] || return 1
+  REPLY="$(( (now - st) / 60 )) min, time budget $b min ($tier)"
+}
+
 team_watch() {
   need_git
-  local once=0 limit=5 batch wt age name stalled reason
+  local once=0 limit=5 batch wt age name stalled reason over_h out
   local common live paused ci ci_seen=" "
   local -A WATCH_LIVE=()
   common="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)"
@@ -539,7 +608,7 @@ team_watch() {
   while :; do
     watch_drain "$common" "$batch"; case $? in 3) return 3;; 4) return 4;; esac   # an automatic escalation waits for the session to start the next agent
     [ -f "$batch" ] || { echo "OK batch ended"; return 0; }
-    stalled=0; live=0; paused=""
+    stalled=0; live=0; paused=""; over_h=0
     while IFS= read -r wt; do
       [ -d "$wt" ] || continue
       wt_task_r "$wt"; name="$REPLY"
@@ -555,6 +624,14 @@ team_watch() {
         echo "$name" >> "$batch-dead"; stalled=1; continue
       fi
       live=1; WATCH_LIVE[$wt]=1   # it got past the start once: agent_dead (git and find) is not asked again
+      # Past its time budget: the task goes to the next tier (its AGENT line says to stop the old agent), at the top a human decides
+      if task_over "$name"; then
+        echo "OVER $name: $REPLY"
+        if out="$(team_escalate "$name")"; then printf '%s
+' "$out"; stalled=1
+        else echo "ESCALATE $name: past its time budget at the top tier, stop its agent or raise time_budget_top in warmd.conf"; echo "$name" >> "$batch-dead"; over_h=1; fi
+        continue
+      fi
       if ci="$(wt_ci_eta "$wt")"; then   # once per run, the line changes only with the run
         case "$ci_seen" in *" $name:${ci%%,*} "*) ;; *) echo "CI $name: $ci"; ci_seen="$ci_seen$name:${ci%%,*} ";; esac
       fi
@@ -565,6 +642,7 @@ team_watch() {
       fi
     done < "$batch"
     [ $stalled = 1 ] && return 3
+    [ $over_h = 1 ] && { echo "OPEN batch still runs, the line above needs you; start warmd watch again"; return 4; }
     [ $live = 1 ] && touch "$batch-alive"   # agents work: batch_guard keeps a marker older than 240 minutes
     [ $live = 0 ] && [ -n "$paused" ] && { echo "OK no agent runs, paused:$paused"; return 0; }
     [ $once = 1 ] && { echo "OK all worktrees moved in the last $limit minutes${paused:+, paused:$paused}"; return 0; }
@@ -637,13 +715,48 @@ task_fields() {
 # A new batch starts clean: no worktrees, no finished or dead marks, and no queued lines of the batch before it.
 # An ESCALATE line of a task merged long ago stopped the first warmd watch of the next batch with exit 4.
 # warmd-batch-start marks its start: warmd batch-resume tells the tasks of this batch from older worktrees by it.
+# Scene ownership from the dependency graph: a task holds the scenes it owns and every scene that loads one of its files
+# (ext_resource res:// paths, one level: the scenes whose text a change can break). Folders hold their scenes and the
+# scenes that load anything inside them. Godot projects only; other projects have no scene graph.
+task_scenes() { # files -> project-relative scene paths, one per line
+  [ -f "$PROJECT/project.godot" ] || return 0
+  local f p rel; rel="$(rel_project)"
+  for f in ${1//,/ }; do
+    f="${f#./}"; f="${f%/}"; [ -n "$rel" ] && f="${f#"$rel"/}"
+    if [ -d "$PROJECT/$f" ]; then
+      (cd "$PROJECT" && find "$f" -name '*.tscn' -not -path '*/.godot/*' 2>/dev/null)
+      p="res://$f/"
+    else
+      case "$f" in *.tscn) echo "$f";; esac
+      p="res://$f\""
+    fi
+    (cd "$PROJECT" && grep -rlF --include='*.tscn' --exclude-dir=.godot -e "$p" . 2>/dev/null | sed 's#^\./##')
+  done | sort -u
+}
+# Is one of these scenes held by another task still in the batch (running, or finished and not merged)? REPLY names it.
+scene_taken() { # common name scenes
+  local wt live=" " sc t
+  [ -s "$1/warmd-batch-scenes" ] || return 1
+  while IFS= read -r wt; do [ -d "$wt" ] && live="$live$(wt_task "$wt") "; done < "$1/warmd-batch"
+  while IFS=$'\t' read -r sc t; do
+    [ "$t" != "$2" ] || continue
+    case "$live" in *" $t "*) ;; *) continue;; esac
+    printf '%s\n' "$3" | grep -qxF "$sc" && { REPLY="scene $sc is held by $t"; return 0; }
+  done < "$1/warmd-batch-scenes"
+  return 1
+}
+scene_hold() { # common name scenes
+  local sc
+  while IFS= read -r sc; do [ -n "$sc" ] && printf '%s\t%s\n' "$sc" "$2"; done <<< "$3" >> "$1/warmd-batch-scenes"
+}
+
 batch_fresh() { # common
-  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-dead" "$1/warmd-batch-dropped" "$1/warmd-batch-done" "$1/warmd-auto/queue"; : > "$1/warmd-batch-start"
+  : > "$1/warmd-batch"; rm -f "$1/warmd-batch-scenes" "$1/warmd-batch-dead" "$1/warmd-batch-dropped" "$1/warmd-batch-done" "$1/warmd-auto/queue"; : > "$1/warmd-batch-start"
 }
 
 team_split() {
   need_git
-  local file="${1:-}" name goal check files tier wt seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
+  local file="${1:-}" name goal check files tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
   rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
@@ -676,6 +789,15 @@ team_split() {
       echo "WAIT $name: $running of $cap agents run (agents= in warmd.conf), split it again when one is done"; waited=$((waited+1)); continue
     else running=$((running+1)); own="$own- $name: ${files:-none}"$'\n'
     fi
+    # Two tasks on the same scene never run in parallel: the later one waits until the earlier one left the batch
+    sc=""
+    if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then
+      sc="$(task_scenes "$files")"
+      if [ -n "$sc" ] && scene_taken "${batch%/warmd-batch}" "$name" "$sc"; then
+        echo "WAIT $name: $REPLY, two tasks on one scene never run in parallel. Split it again when ${REPLY##* } is merged"
+        waited=$((waited+1)); running=$((running-1)); continue
+      fi
+    fi
     tier="$(route_tier "$goal" "$files")"
     # A worktree without its engine cache gets a copy: only with room for it plus disk_min_mb, after freeing finished ones
     if [ -n "$files" ] && [ "$files" != none ] && disk_cache_name && [ ! -d "$(worktree_dir)/$name${rel:+/$rel}/$REPLY" ] && ! disk_room "$PROJECT" 1 "$(dirname "$GIT_ROOT")"; then
@@ -687,6 +809,7 @@ team_split() {
     if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then wt_old_renew "$name" || { echo "FAIL worktree $name: old branch warmd/$name could not move to $(base_branch)"; return 1; }; fi
     if [ -z "$files" ] || [ "$files" = none ]; then wt="$GIT_ROOT"; else wt="$(wt_create "$name")" || { echo "FAIL worktree $name"; return 1; }; USED_WT="${USED_WT:-} $(cd "$wt" && pwd)"; fi
     write_task "$name" "$tier" "$goal" "$check" "$files" "$wt"
+    [ -z "$sc" ] || scene_hold "${batch%/warmd-batch}" "$name" "$sc"
     if [ -n "$files" ] && [ "$files" != none ]; then
       grep -qxF "$(cd "$wt" && pwd)" "$batch" || ( cd "$wt" && pwd ) >> "$batch"
       # A reused worktree may still carry the "finished" line of its previous task: the new task is not finished,
@@ -717,10 +840,16 @@ team_escalate() {
   sed -i.bak '/^Earlier commits: /d' "$f"; rm -f "$f.bak"
   [ -n "$log" ] && echo "Earlier commits: $log" >> "$f"
   echo "$next" > "$STATE/tasks/$name.tier"
-  sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./" "$f"; rm -f "$f.bak"
+  sed -i.bak "s/^Budget: .*/Budget: under $(tier_budget "$next")k tokens./; s/^Time budget: [0-9]* min/Time budget: $(tier_minutes "$next") min/" "$f"; rm -f "$f.bak"
+  local role model; role="$(cat "$STATE/tasks/$name.role" 2>/dev/null)"; [ "$role" = qa ] || role=worker
+  model="$(task_model "$next" "$role")"; printf '%s\n' "$model" > "$STATE/tasks/$name.model"; date +%s > "$STATE/tasks/$name.start"   # the next tier's clock starts now
+  if grep -q '^Review: ' "$f"; then
+    sed -i.bak '/^Review: /d' "$f"; rm -f "$f.bak"
+    review_line "$model" >> "$f"
+  fi
   handoff_register "$name" "$(native_path "$f")" "$next"   # a later handoff or restart starts the new tier, not the old one
   local wt; wt="$(sed -n '1s/.*cd "\([^"]*\)".*/\1/p' "$f")"
-  echo "AGENT $name: subagent_type=$(task_agent "$next" "$f") model=$(tier_model "$next") prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
+  echo "AGENT $name: subagent_type=$(task_agent "$next" "$f") model=$model prompt=\"Read $(native_path "$f") and do it.$(agent_state "$wt")\""
 }
 
 # For the prompt of a next agent on a running task: where the branch stands, and that the old agent must be stopped first.
@@ -758,7 +887,8 @@ team_finish() {
   # so the next split frees its files once it is merged
   local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\t%s\n' "$GIT_ROOT" ok "$br" >> "$common/warmd-batch-done"; fi
-  echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}"
+  local over=""; task_over "${br#warmd/}" "$(ledger_taskdir)" && over=", OVER time budget: $REPLY"
+  echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
 }
 
 # The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
@@ -878,6 +1008,7 @@ team_merge() {
 ' ' ')"
         [ -z "$fl" ] || m="${m%:}: ${fl% }"
         merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $m, not rolled back: $REPLY"; return 3; }
+        role_learn "$br" "$m"
         echo "FAIL merge $br: $m, nothing merged"
       fi
       return 1; }
@@ -894,6 +1025,7 @@ team_merge() {
   # Not rolled back: exit 3, the caller stops merging on top of it.
   mfail() {
     merge_rollback "$start" "$mine" || { echo "FAIL merge $br: $*; not rolled back: $REPLY"; return 3; }
+    local b; for b in "${merged[@]}"; do role_learn "$b" "$*"; done   # each rolled-back task leaves one rule line in its role file
     local left; left="$(git -C "$GIT_ROOT" status --porcelain -uno | grep -vE '^ M .*\.uid$' | cut -c4- | head -5 | tr '\n' ' ')"
     echo "FAIL merge $br: $*${left:+; kept uncommitted (written by the gate or by someone meanwhile): ${left% }}"; return 1
   }
