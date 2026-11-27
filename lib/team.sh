@@ -915,6 +915,8 @@ team_finish() {
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
   dirty="$(wt_work "$GIT_ROOT" | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
   if git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1; then git -C "$GIT_ROOT" push -q -u origin "$br" 2>/dev/null && up=pushed || up=NOT_pushed; else up=local; fi
+  # The open PR of the branch conflicts (main moved after a ship): GitHub runs no CI for it, say so now (lib/ship.sh)
+  [ "$up" = pushed ] && command -v gh >/dev/null 2>&1 && type ci_conflict >/dev/null 2>&1 && ci_conflict "$br"
   last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '\r' | cut -c1-70)"
   # finish is the task's own "done": mark it finished in the batch, also when its agent was stopped and no stop hook ran,
   # so the next split frees its files once it is merged

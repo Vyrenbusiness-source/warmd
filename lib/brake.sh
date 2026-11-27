@@ -100,5 +100,30 @@ brake_doctor() {
     p="$(command -v "$n" 2>/dev/null)"
     case "$p" in *[Ww]indows[Aa]pps*) echo "WARN $n is the Windows Store stub ($p): it hangs about 120 s. Use py or a real python; write scripts to the scratchpad dir, Windows python sees no Git Bash /tmp";; esac
   done
+  brake_godot_doctor
   return 0
+}
+
+# warmd doctor: a Godot that is on the PC but not on PATH and not in WARMD_GODOT made agents wait for CI for every
+# GDScript error. Common places are searched once, the find is remembered in the cache (godot.path) and printed.
+brake_godot_find() { # -> REPLY path, empty when none
+  local c f="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/godot.path"
+  REPLY=""
+  [ -f "$f" ] && read -r c < "$f" && [ -x "$c" ] && { REPLY="$c"; return 0; }
+  local h="$HOME" pf="/c/Program Files" px="/c/Program Files (x86)"
+  for c in "$h"/Desktop/Godot*console*.exe "$h"/Desktop/*/Godot*console*.exe "$h"/Downloads/Godot*console*.exe "$h"/Downloads/*/Godot*console*.exe \
+           "$pf"/Godot*/Godot*console*.exe "$px"/Steam/steamapps/common/Godot*/godot*.exe "$h"/scoop/apps/godot*/current/godot*.exe \
+           "$h"/.local/bin/godot* "$h"/Applications/Godot*.app/Contents/MacOS/Godot /Applications/Godot*.app/Contents/MacOS/Godot; do
+    [ -f "$c" ] && [ -x "$c" ] || continue
+    REPLY="$c"; mkdir -p "${f%/*}" && printf '%s\n' "$c" > "$f"; return 0
+  done
+  return 1
+}
+brake_godot_doctor() {
+  [ -f "${PROJECT:-.}/project.godot" ] || return 0
+  [ -n "${WARMD_GODOT:-}" ] && [ -x "$WARMD_GODOT" ] && return 0
+  command -v godot >/dev/null 2>&1 || command -v godot4 >/dev/null 2>&1 || command -v Godot >/dev/null 2>&1 && return 0
+  brake_godot_find || { echo "WARN no Godot found: GDScript errors only show in CI. Set WARMD_GODOT to the console exe"; return 0; }
+  local v="${REPLY##*/}"; v="${v#Godot_v}"; v="${v%%-*}"; v="${v%%_*}"
+  echo "WARN found Godot ${v:-?} at $REPLY, not on PATH: set WARMD_GODOT=\"$(native_path "$REPLY" 2>/dev/null || echo "$REPLY")\" (remembered in the warmd cache, godot.path)"
 }

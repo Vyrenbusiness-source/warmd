@@ -156,6 +156,13 @@ expect "the owned worktree keeps its task's branch" '^warmd/a$' "$(git -C "$TMP/
 expect "the new task gets a folder of its own" 'still owned: using b-[0-9]+' "$out"
 w batch-done >/dev/null
 
+
+# doctor finds a Godot outside PATH in the common places, says how to set it and remembers it
+mkdir -p "$TMP/home/Desktop/rhyg" "$TMP/gp"; printf '#!/bin/sh\nexit 0\n' > "$TMP/home/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe"; chmod +x "$TMP/home/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe"
+out="$(cd "$TMP/gp" && : > project.godot && HOME="$TMP/home" WARMD_GODOT= bash -c ". '$HERE/lib/platform.sh'; reg() { :; }; . '$HERE/lib/brake.sh'; PROJECT=.; brake_godot_doctor")"
+expect "doctor names the Godot it found" '^WARN found Godot 4\.7 at .*rhyg/Godot_v4\.7-stable_win64_console\.exe, not on PATH: set WARMD_GODOT=' "$out"
+[ -s "$XDG_CACHE_HOME/warmd/godot.path" ] && ok "the found path is remembered" || no "godot.path not written"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails
