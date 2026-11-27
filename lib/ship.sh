@@ -215,7 +215,7 @@ ship_main() {
 }
 
 ship_run() {
-  local base=main release="" into="warmd-ship" branches=() b
+  local base=main release="" into="" branches=() b
   while [ $# -gt 0 ]; do
     case "$1" in
       --base) base="$2"; shift 2;;
@@ -234,6 +234,9 @@ ship_run() {
   local dirty; dirty="$(git status --porcelain --untracked-files=no | head -5 | cut -c4- | paste -sd' ' -)"
   [ -z "$dirty" ] || { echo "FAIL uncommitted changes in $(native_path "$(pwd)"): $dirty. Commit or discard them, then ship again"; return 1; }
   git fetch -q origin || { echo "FAIL git fetch origin"; return 1; }
+  # One integration branch per ship call: two sessions shipping at once on one remote must never share it
+  # (both pushed warmd-ship, one session then merged and released the other's PR)
+  [ -n "$into" ] || into="${WARMD_SHIP_INTO:-warmd-ship-$(date +%s)-$$}"
   # Another worktree (a second ship in flight) holds the integration branch: take a fresh one instead of failing
   if git worktree list --porcelain | grep -qx "branch refs/heads/$into" && [ "$(git branch --show-current)" != "$into" ]; then
     into="$into-$(date +%s)"; echo "(integration branch busy in another worktree, using $into)"
@@ -259,7 +262,7 @@ ship_run() {
   ship_docs_pending || return 1
   [ -z "$release" ] || ship_smoke || return 1
   [ -z "$release" ] || ship_bump "$release" || return 1
-  git push -q --force-with-lease -u origin "$into" 2>/dev/null || git push -q -f -u origin "$into" || { echo "FAIL push $into"; return 1; }
+  git push -q --force-with-lease -u origin "$into" || { echo "FAIL push $into: changed on origin by someone else"; return 1; }
   local pr
   pr="$(gh pr list --head "$into" --state open --json number --jq '.[0].number' 2>/dev/null)"
   if [ -n "$pr" ]; then echo "ok   updated PR #$pr"
@@ -269,7 +272,10 @@ ship_run() {
     echo "ok   opened PR #$pr"
   fi
   ci_wait "$into" || { echo "FAIL CI red, PR #$pr not merged"; return 1; }
-  gh pr merge "$pr" --merge >/dev/null 2>&1 || { echo "FAIL gh pr merge $pr"; return 1; }
+  # Merge only what this call built: a head another session pushed is not ours to merge or release
+  local head; head="$(gh pr view "$pr" --json headRefOid --jq .headRefOid 2>/dev/null)"
+  [ "$head" = "$(git rev-parse HEAD)" ] || { echo "FAIL PR #$pr head is ${head:0:8}, this ship built $(git rev-parse --short=8 HEAD): someone else pushed $into, not merged"; return 1; }
+  gh pr merge "$pr" --merge --match-head-commit "$head" >/dev/null 2>&1 || { echo "FAIL gh pr merge $pr"; return 1; }
   echo "ok   merged PR #$pr into $base"
   git fetch -q origin
   for b in "${branches[@]}"; do   # merged task branches leave origin, unmerged ones stay
