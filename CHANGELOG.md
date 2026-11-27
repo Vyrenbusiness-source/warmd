@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-27
+
 ### Fixed
 
 - Godot: a missing `godot.path` cache file no longer prints `No such file or directory` on every run.
@@ -481,7 +483,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
