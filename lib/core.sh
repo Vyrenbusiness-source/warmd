@@ -129,6 +129,9 @@ detect_project() {
   if [ -n "$top" ]; then
     GIT_ROOT="$(cd "${top%$'\r'}" && pwd)"; pre="${pre%$'\r'}"; pre="${pre%/}"
     d="$GIT_ROOT${pre:+/$pre}"
+    # Started from $PWD: move into the same folder in git's spelling once, so every later relative path (warmd peek
+    # main.tscn) resolves to the spelling of PROJECT and GIT_ROOT. Same folder, so nothing else changes for the caller.
+    [ -n "${WARMD_PROJECT:-}" ] || cd "$d" 2>/dev/null || true
   fi
   PROJECT=""; KIND=""
   local start="$d" stop="${GIT_ROOT:-}"
