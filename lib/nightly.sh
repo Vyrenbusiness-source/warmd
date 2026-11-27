@@ -192,6 +192,8 @@ nightly_main() {
       [ $trc = 0 ] || { echo "FAIL tests without cache:"; echo "$NR_OUT" | grep -E '^(FAIL|RED)' | head -5 | cut -c1-200; }
     fi
     nightly_sim
+    # export smoke (export_smoke=1 in warmd.conf): the exported build must start, a red one turns the night red
+    PKG_RC=0; [ "${CFG_export_smoke:-0}" = 1 ] && { nightly_run package; PKG_RC=$?; [ $PKG_RC = 0 ] || { echo "FAIL export smoke:"; echo "$NR_OUT" | grep -E '^(FAIL|RED|  )' | head -5 | cut -c1-200; }; }
     # mutate: the lines changed since the last nightly run, else since the commit before
     line4="mutate: off (mutate=off in warmd.conf)"
     if [ $nomut = 1 ]; then line4="mutate: skipped (--no-mutate)"
@@ -213,7 +215,7 @@ nightly_main() {
     fi
   } > "$out" 2>&1
   cat "$out"
-  line1="nightly $(date '+%F %H:%M') $sha: build $([ $brc = 0 ] && echo OK || echo RED), tests $([ $trc = 0 ] && echo OK || echo RED) (fresh, no cache$([ $N_RUNNERS -gt 0 ] && echo ", $N_RUNNERS runners one engine each"))"
+  line1="nightly $(date '+%F %H:%M') $sha: build $([ $brc = 0 ] && echo OK || echo RED), tests $([ $trc = 0 ] && echo OK || echo RED) (fresh, no cache$([ $N_RUNNERS -gt 0 ] && echo ", $N_RUNNERS runners one engine each"))$([ "${CFG_export_smoke:-0}" = 1 ] && echo ", export $([ $PKG_RC = 0 ] && echo OK || echo RED)")"
   line3="graph: no load log (Godot runners only)"
   [ $N_RUNNERS -gt 0 ] && line3="graph: $N_RUNNERS runners load-logged, $N_GAPS gaps$([ $N_GAPS -gt 0 ] && echo ' (selection errors, extra edges kept in warmd-edges.tsv)')"
   {
@@ -226,7 +228,7 @@ nightly_main() {
   rm -f "$out"
   quality_record nightly "$N_COMPARED" "$N_MISMATCH" "$N_GAPS" "$N_FLAKY"
   git -C "$PROJECT" rev-parse HEAD > "$STATE/nightly.last"
-  [ $brc = 0 ] && [ $trc = 0 ] && [ $N_MISMATCH = 0 ] && [ "$SIM_DIFF" = 0 ] || rc=1
+  [ $brc = 0 ] && [ $trc = 0 ] && [ $N_MISMATCH = 0 ] && [ "$SIM_DIFF" = 0 ] && [ "$PKG_RC" = 0 ] || rc=1
   return $rc
 }
 
