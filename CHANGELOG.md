@@ -15,7 +15,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - Godot: a green compile is cached like a test run. The key holds the code including `project.godot`, the engine fingerprint (engine version and binary, warmd version, `export_presets.cfg`, `WARMD_GODOT`, `WARMD_UNITY`, `WARMD_GFX`, `WARMD_WINDOW`, `WARMD_FULL`)
 - `godot_allow_errors=<regex>` in `warmd.conf`, matched against `file:line message`: the only way to let a Godot script error pass, addons included
 - `perf_scene` (Godot frame time of a scene, 5% limit at merge) is now documented in docs/COMMANDS.md
-<!-- godot-runners: runners in one process and the scene/resource check go here -->
+- Godot test: all runners (`tests/run_*.gd`) in one engine start, run one after another by `godot/daemon.gd`, each with its own verdict. Random order from a printed seed, `WARMD_SEED=<n>` replays it. `# warmd: isolate` in a runner's first 10 lines gives it an engine of its own, so does a runner that does not compile as a guest or quits through the real tree. A crash or hang names the runner and the rest get a new engine
+- Godot build: every changed `.tscn` and `.tres` (against HEAD and the base branch) is loaded and instantiated headless, never saved. Engine errors are red as `file: message` (dead paths, missing scripts, broken inherited scenes, signals connected to missing methods); `godot_allow_errors` applies, the changed files are in the build's cache key
 - `worktree_links` in `warmd.conf`: globs of git-ignored files (e.g. `tools/luau/*.exe`) that `warmd split` copies into every new or reused worktree (folders are linked). Default empty
 
 ### Fixed
