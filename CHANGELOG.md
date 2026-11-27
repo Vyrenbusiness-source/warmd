@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- Godot: a missing `godot.path` cache file no longer prints `No such file or directory` on every run.
+
 ## [0.6.1] - 2026-11-27
 
 ### Fixed
