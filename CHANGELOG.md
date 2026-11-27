@@ -4,6 +4,16 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+- `warmd lint [files...]`: Godot lints on changed `.gd`, `.tscn`, `.tres`. ERROR only when the headless engine (`godot/lint.gd`) or the disk proves it: unknown input action, `/root/` autoload, `tr` key, missing `res://` path, `res://` case differs from disk, collision layer outside 1-32. Everything else is WARN, capped by `WARMD_LINT_WARN` (10); `WARMD_LINT_NODES` (300), `WARMD_LINT_SUBRES_KB` (64). The engine starts once, only for open candidates. Exit 1 on errors. First step of `check` in Godot projects
+- `warmd nightly [--schedule|--report] [--no-mutate]`: build and tests without cache in separate processes. `MISMATCH` (cache key wrong, confirmed by a second fresh run, exit 1) or `FLAKY`. Godot runners each in their own engine with `--verbose`; loads the static graph did not predict are `GAP` and become edges in `warmd-edges.tsv`. Then `warmd mutate` on the lines since the last night; 5-line report in `.warmd/nightly.txt`. `--schedule` prints the schtasks/cron one-liner and installs nothing
+- `warmd mutate [--base REF] [--limit S] [--cmd C]`: one mutant per changed line (GDScript, sh, Python, JS/TS, never test files), each must turn a test red, else `SURVIVED file:line` and exit 1. Restored by trap even on kill, nothing committed. `mutate_cmd=`, `mutate_limit=` (900), `mutate=merge`, `warmd: nomutate`. Score in `warmd-quality.tsv`
+- `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`: one model per role (`role_<role>=provider:model`, roles producer worker qa reviewer merge scout), WinForms window on Windows, text prompt elsewhere; `--list` shows success per model from the ledger. Reviewer and merge never below `floor`, worker and qa never cheap. The first interactive `init` asks once. New conf keys `time_budget_cheap/mid/top` (30, 60, 120 min) and `cost_limit_day` (stored, not enforced yet)
+
+### Changed
+- Studio rules: two tasks on the same scene never run in parallel (the second gets `WAIT`; scenes from `res://` refs in `.tscn`, one level); every task file names a reviewer model other than the author's; `watch` escalates a task over its time budget (`OVER` plus `AGENT` line), `finish` reports `OVER`; routing only learns upward; a rolled-back merge writes a rule line into `.warmd/roles/<role>.md`; `split` prints a `FALLBACK` general-purpose line with inline rules when the `warmd-worker` agent file is missing; every agent records slowdowns as `BRAKE`
+- docs: lint, nightly, mutate, models and the studio rules in docs/COMMANDS.md and the README
+
 ## [0.5.1] - 2026-11-27
 
 ### Changed

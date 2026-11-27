@@ -90,6 +90,16 @@ Finds a term in a few lines instead of a search. Syntax: `warmd where <term>`. P
 ### warmd peek
 Plays a Godot scene headless and prints what it looks like as text. Syntax: `warmd peek <scene|res://path|Name> [frames]` (default 10 frames). Runs at a fixed 60 fps and lists per node its type, position, hidden state, animation, script and exported vars; it saves nothing. At most `WARMD_PEEK_NODES` nodes (default 80), the run ends after `WARMD_PEEK_TIMEOUT` seconds (default 120).
 
+### warmd lint
+Godot lints on the changed `.gd`, `.tscn` and `.tres` files, or on the given ones. Syntax: `warmd lint [files...]`. Runs as the first step of `warmd check` in a Godot project. Exit 1 on errors.
+- ERROR only when the engine (headless, `godot/lint.gd`) or the disk proves it: unknown input action, `/root/` autoload, `tr` key, missing `res://` path, `res://` case that differs from the disk, collision layer outside 1-32.
+- Everything else is WARN, at most `WARMD_LINT_WARN` (10): unconfirmed strings, groups nobody adds, layer names, `load`/`get_node` in `_process`, physics in `_process` or input, a shared `.tres` changed without `duplicate()`, unseeded random, wall clock, editable sub-scene children, scenes over `WARMD_LINT_NODES` (300) nodes, sub_resources over `WARMD_LINT_SUBRES_KB` (64) KB.
+- The engine starts once, and only when candidates are still open.
+```text
+warmd lint
+OK lint: no Godot file changed
+```
+
 ### warmd audit
 Shows what your agents pay for on every turn, biggest cost first.
 It also lists every MCP server from `~/.claude.json` and `.mcp.json`, says which ones load their tool lists upfront (`"alwaysLoad": true`, `ENABLE_TOOL_SEARCH=false` or `auto`, a denied `ToolSearch`) and names the setting that defers them.
@@ -116,6 +126,20 @@ Names the cheapest model tier that fits a goal. Syntax: `warmd route <goal> [fil
 warmd route fix typo in cart.js
 mid model=sonnet budget=100k agent=warmd-worker
 ```
+Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down.
+
+### warmd models
+One model per role, kept in `warmd.conf` as `role_<role>=provider:model`. Syntax: `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`. Roles: `producer`, `worker`, `qa`, `reviewer`, `merge`, `scout`. Without arguments it opens a WinForms window on Windows and a text prompt elsewhere; the first interactive `warmd init` asks once. `--list` shows the success per model from the ledger. `reviewer` and `merge` never go below `floor`, `worker` and `qa` never get the cheap tier. `cost_limit_day` is stored, not enforced yet.
+```text
+warmd models --list
+producer  (default)              model=opus         ok 18/18
+worker    (default)              model=sonnet       ok 17/17
+qa        (default)              model=sonnet       ok 17/17
+reviewer  (default)              model=opus         ok 18/18
+merge     (default)              model=sonnet       ok 17/17
+scout     (default)              model=haiku        no data
+cost_limit_day=none floor=top
+```
 
 ### warmd split
 A task whose goal names MCP tools (`roblox studio` or `mcp`, case-insensitive; change the pattern with `mcp_words` in `warmd.conf`) gets `subagent_type=warmd-worker-mcp` instead of `warmd-worker`/`warmd-scout`. That agent has no `tools` line, so the MCP tools of the session (Roblox Studio, any `mcp__*`) reach it; `warmd-worker` lists only Bash, Read, Edit, Write and would fail such a task silently. `warmd init` installs it, `warmd escalate`, `warmd handoff` and `warmd route` keep it. `init --slim` leaves it unrestricted.
@@ -126,6 +150,11 @@ AGENT fix-total: subagent_type=warmd-worker model=sonnet prompt="Read <project>/
 AGENT add-tests: subagent_type=warmd-worker model=sonnet prompt="Read <project>/.warmd/tasks/add-tests.md and do it."
 OK 2 tasks split. Start now, in the background: warmd watch
 ```
+Studio rules:
+- Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` and is split again when the first is merged. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
+- Every task file names a reviewer model that is not the author's model (`role_reviewer`, default the top tier).
+- When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline.
+- Every agent records its slowdowns with `warmd note "BRAKE: ..."`.
 
 ### warmd note
 Adds one finding to the brief all agents of a batch share. Syntax: `warmd note "<one line>"`. Exit 2 without a batch.
@@ -142,6 +171,7 @@ Records cost, pushes, prints a one-line report. Syntax: `warmd finish [--tokens 
 warmd finish
 DONE main 3e64022, 0 ahead, 0 uncommitted, local
 ```
+A task past its time budget (`time_budget_cheap`, `time_budget_mid`, `time_budget_top`) gets `, OVER time budget: ...` in this line.
 
 ### warmd report
 Cost per tier and what escalation wasted.
@@ -171,14 +201,14 @@ fix-total                  warmd/fix-total            0m      0      0
 ```
 
 ### warmd watch
-Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again.
+Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again. A task over its time budget is escalated: an `OVER <task>: ...` line and the `AGENT` line for the next tier.
 ```text
 warmd watch --once
 OK no batch running
 ```
 
 ### warmd merge
-Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>... [--no-gate]`. Several branches are merged one after the other, one commit each, then one gate runs over all of them and one player build follows, not one per branch; red rolls every branch of the call back. After a conflict, resolve it and run `warmd merge --continue`: it commits the resolved branch and merges the ones after it. In a Godot project a conflict only in one-line lists of `project.godot` (`locale/translations=PackedStringArray(...)`, `editor_plugins/enabled`, ...) is joined on its own: HEAD's order stays, the branch's new entries are appended, an entry one side removed stays out, and one `resolved project.godot list <key>: +n entries` line names it. Any other conflict stops as before. The gate is `check`, or `gate=` from `warmd.conf`; `--no-gate` skips it for an integration a human released. With `package_dir` the merge starts `warmd package` in the background, so the player is always the merged base; without it the merge says that no player follows. Afterwards the engine caches of finished worktrees are freed (see `warmd disk`). The automatic merge at the end of a batch merges all green branches in one call and goes one by one only when that is red. Exit 1 on red.
+Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>... [--no-gate]`. Several branches are merged one after the other, one commit each, then one gate runs over all of them and one player build follows, not one per branch; red rolls every branch of the call back. After a conflict, resolve it and run `warmd merge --continue`: it commits the resolved branch and merges the ones after it. In a Godot project a conflict only in one-line lists of `project.godot` (`locale/translations=PackedStringArray(...)`, `editor_plugins/enabled`, ...) is joined on its own: HEAD's order stays, the branch's new entries are appended, an entry one side removed stays out, and one `resolved project.godot list <key>: +n entries` line names it. Any other conflict stops as before. The gate is `check`, or `gate=` from `warmd.conf`; `--no-gate` skips it for an integration a human released. With `package_dir` the merge starts `warmd package` in the background, so the player is always the merged base; without it the merge says that no player follows. Afterwards the engine caches of finished worktrees are freed (see `warmd disk`). The automatic merge at the end of a batch merges all green branches in one call and goes one by one only when that is red. A rolled-back merge writes a rule line into `.warmd/roles/<role>.md`, so the next agent of that role reads it. With `mutate=merge` in `warmd.conf` the merge also runs `warmd mutate`. Exit 1 on red.
 
 ```text
 warmd merge warmd/a warmd/b warmd/c
@@ -202,6 +232,28 @@ Compares load time and bundle size to a stored baseline and refuses a regression
 ```text
 warmd perf
 FAIL perf: no baseline, run warmd perf --save first
+```
+
+### warmd mutate
+Proves that the tests notice the lines you changed. Syntax: `warmd mutate [--base REF] [--limit S] [--cmd C]`. One mutant per changed line (GDScript, sh, Python, JS and TS, never test files): each must turn a test red, else `SURVIVED file:line` and exit 1. The file is restored by a trap, also on a kill, and nothing is committed. The judge is `warmd check` without cache, or `--cmd`/`mutate_cmd=`; `--limit`/`mutate_limit=` caps the seconds (900). `mutate=merge` runs it in `warmd merge`. A line with `warmd: nomutate` is skipped. The score goes to `warmd-quality.tsv`.
+```text
+warmd mutate --base HEAD
+OK mutate: no changed line to mutate since HEAD
+```
+
+### warmd nightly
+Runs build and tests once without cache, each in its own process, and compares them with the cache. Syntax: `warmd nightly [--schedule|--report] [--no-mutate]`.
+- `MISMATCH <name>`: the cached result differs and a second fresh run confirms it, so the cache key misses an input. Exit 1.
+- `FLAKY <name>`: the second fresh run agrees with the cache, the result changes without a code change.
+- Godot: every runner runs in its own engine with `--verbose`. A load the static graph did not predict is a `GAP` line and becomes an edge in `warmd-edges.tsv`.
+- Then `warmd mutate` on the lines since the last night (`--no-mutate` or `mutate=off` skips it).
+- A 5-line report goes to `.warmd/nightly.txt`, `--report` prints it. `--schedule` prints the schtasks and cron one-liner and installs nothing.
+```text
+warmd nightly --schedule
+warmd nightly is not installed as a task by itself. One line, once, in a shell you trust:
+  schtasks /Create /SC DAILY /ST 03:00 /TN "warmd nightly <name>" /TR "\"C:\Program Files\Git\usr\bin\bash.exe\" -lc \"cd '<project>' && warmd nightly >> .warmd/nightly.log 2>&1\""
+  cron: 0 3 * * * cd '<project>' && warmd nightly >> .warmd/nightly.log 2>&1
+The morning report: warmd nightly --report
 ```
 
 ### warmd ship
@@ -323,5 +375,10 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `mcp_words` | Regex (case-insensitive) on the task goal: a match routes the task to `warmd-worker-mcp` | `roblox studio|mcp` |
 | `seed_links` | Untracked folders linked into new worktrees | none |
 | `worktree_links` | Globs of git-ignored files or folders (relative to the project, e.g. `tools/luau/*.exe`) that `warmd split` copies (files) or links (folders) into each new worktree, so tool binaries exist there | none |
+| `role_<role>` | Model per role as `provider:model`, roles `producer worker qa reviewer merge scout`; set with `warmd models` | preset quality |
+| `time_budget_cheap`, `time_budget_mid`, `time_budget_top` | Time budget per tier in minutes; `watch` escalates a task past it, `finish` reports `OVER` | 30, 60, 120 |
+| `cost_limit_day` | Daily cost limit in USD, stored, not enforced yet | none |
+| `mutate` | `merge` runs `warmd mutate` in `warmd merge`, `off` skips it in `warmd nightly` | none |
+| `mutate_cmd`, `mutate_limit` | Judge command of `warmd mutate` and its time limit in seconds | `warmd check` without cache, 900 |
 
-Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`, `WARMD_MAP_NODES=80`, `WARMD_PEEK_NODES=80`, `WARMD_PEEK_TIMEOUT=120`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
+Environment: `WARMD_NOCACHE=1`, `WARMD_SELECT=1` (always select affected tests), `WARMD_RAM_WAIT=1800` (longest RAM wait in seconds), `WARMD_UPDATE_CHECK=0` (no update check in `status` and `doctor`), `WARMD_CI_MAX=<minutes>` (cap of the CI wait), `WARMD_TIMEOUT=900`, `WARMD_PROJECT=<path>`, `WARMD_UNITY`, `WARMD_GODOT`, `WARMD_BROWSER`, `WARMD_GFX=1`, `WARMD_WINDOW=1`, `WARMD_MONITOR=2`, `WARMD_MAP_NODES=80`, `WARMD_PEEK_NODES=80`, `WARMD_PEEK_TIMEOUT=120`, `WARMD_LINT_WARN=10`, `WARMD_LINT_NODES=300`, `WARMD_LINT_SUBRES_KB=64`. Options: `-p <port>`, `--speed <N>`, `--play`, `--edit`, `--window`, `--sound`. Unity also has `warmd call Namespace.Class.Method`.
