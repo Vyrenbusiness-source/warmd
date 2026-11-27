@@ -17,6 +17,8 @@ git add -A; git commit -qm init
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: $3"; fails=$((fails+1)); fi; }
 expect "compile" 'scripts parse' "$("$WARMD" build)"
+# The first import writes .uid files (Godot 4.4), new files change the code key once: the build after them is the cached one
+"$WARMD" build > /dev/null
 expect "an unchanged compile is cached" 'OK cached, code unchanged' "$("$WARMD" build)"
 expect "green test" '1 passed, 0 failed, 1 asserts' "$("$WARMD" test)"
 # A runtime error ends only the test method, it returns like one that passed: the engine's output makes it red
