@@ -442,3 +442,6 @@ warmd state
 ACTIVE batch, 1 agents
 ```
 VS Code extension in `vscode/`: `$(zap) warmd` idle (dim), `$(sync~spin) warmd <test|check|build|merge>` during a run, `$(organization) warmd N agents` in a batch, `$(cloud) CI` while waiting for CI, `$(pass)`/`$(error)` for 10 s after a result. The tooltip shows the state and the last line; a click runs `warmd status`. Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.
+
+### Project detection
+warmd walks up from the current folder to the git root, then one level down, so an engine project in a subfolder of the repo is found too. `WARMD_PROJECT=<path>` always wins. A git root with its own `warmd.conf` (or warmd state in `.warmd/run`) stays the project: a `package.json` or `index.html` below it does not take over, only a Unity or Godot project in a subfolder does. Tooling folders (`vscode/`, `.vscode/`, `.github/`, `docs/`, `tools/`, `node_modules/`) never become the project. `warmd status` names the project in its first line.
