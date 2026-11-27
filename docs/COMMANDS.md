@@ -129,7 +129,7 @@ mid model=sonnet budget=100k agent=warmd-worker
 Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down.
 
 ### warmd models
-One model per role, kept in `warmd.conf` as `role_<role>=provider:model`. Syntax: `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`. Roles: `producer`, `worker`, `qa`, `reviewer`, `merge`, `scout`. Without arguments it opens a WinForms window on Windows and a text prompt elsewhere; the first interactive `warmd init` asks once. `--list` shows the success per model from the ledger. `reviewer` and `merge` never go below `floor`, `worker` and `qa` never get the cheap tier. `cost_limit_day` is stored, not enforced yet.
+One model per role, kept in `warmd.conf` as `role_<role>=provider:model`. Syntax: `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`. Roles: `producer`, `worker`, `qa`, `reviewer`, `merge`, `scout`. Without arguments it opens a WinForms window on Windows and a text prompt elsewhere; the first interactive `warmd init` asks once. `--list` shows the success per model from the ledger. `reviewer` and `merge` never go below `floor`, `worker` and `qa` never get the cheap tier. `split` stops at `cost_limit_day` (`WARMD_COST_LIMIT=off` bypasses).
 ```text
 warmd models --list
 producer  (default)              model=opus         ok 18/18
@@ -356,6 +356,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `test_timeout` | Unity: seconds one test may run before it counts as hung and red; the test gets a `HUNG <test>` line and the run goes on after it (`hung_resume`) | off |
 | `hung_resume` | Unity: how often a run goes on in a fresh editor after a `HUNG` test, the hung test and the finished ones left out; 0 stops at the first `HUNG` | 10 |
 | `warm` | Keep a Godot process running | 0 |
+| `export_smoke` | `warmd ship --release` and `warmd nightly` run the Godot export smoke (`warmd package`) first, red stops | 0 |
 | `cheap`, `mid`, `top` | Model per tier | haiku, sonnet, opus |
 | `floor` | Lowest tier this project accepts: `mid` or `top` | none |
 | `top_paths` | Paths that need the top tier (regex) | none |
@@ -377,7 +378,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `worktree_links` | Globs of git-ignored files or folders (relative to the project, e.g. `tools/luau/*.exe`) that `warmd split` copies (files) or links (folders) into each new worktree, so tool binaries exist there | none |
 | `role_<role>` | Model per role as `provider:model`, roles `producer worker qa reviewer merge scout`; set with `warmd models` | preset quality |
 | `time_budget_cheap`, `time_budget_mid`, `time_budget_top` | Time budget per tier in minutes; `watch` escalates a task past it, `finish` reports `OVER` | 30, 60, 120 |
-| `cost_limit_day` | Daily cost limit in USD, stored, not enforced yet | none |
+| `cost_limit_day` | Daily cost limit in USD: `warmd split` stops when the day's ledger cost reaches it, `WARMD_COST_LIMIT=off` bypasses | none |
 | `mutate` | `merge` runs `warmd mutate` in `warmd merge`, `off` skips it in `warmd nightly` | none |
 | `mutate_cmd`, `mutate_limit` | Judge command of `warmd mutate` and its time limit in seconds | `warmd check` without cache, 900 |
 
