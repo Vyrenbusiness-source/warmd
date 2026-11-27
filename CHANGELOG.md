@@ -4,6 +4,16 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-27
+
+### Changed
+- docs: 1 pending command entries into docs/COMMANDS.md
+- ship: own integration branch per call, merge only the PR head this call built
+- fix(detect): keep the caller's path spelling, compare spelling-independent; ship refuses an existing release tag
+- fix(detect): cd into git's spelling of the start folder, relative paths match PROJECT
+- fix(detect): walk up in git's spelling of the root, 8.3 short paths compared unequal
+- fix(detect): git root with warmd.conf stays the project, tooling folders never win
+
 ## [0.6.2] - 2026-11-27
 
 ### Fixed
@@ -483,7 +493,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...v0.6.0
