@@ -30,6 +30,19 @@ expect "an allowlisted script error is noise" '2 passed, 0 failed' "$("$WARMD" t
 rm warmd.conf test/test_boom.gd
 printf 'extends WarmdTest\n\nfunc test_empty() -> void:\n\tpass\n' > test/test_empty.gd
 expect "a test without an assert is red" 'RED test_empty: no assert ran' "$("$WARMD" test)"
+# A project set up before v0.6.0 keeps its old warmd_test.gd without the assert counter: the next test updates it
+# in place (the .uid stays), so a test without an assert is red there too, without a manual warmd init
+uid="$(cat addons/warmd/warmd_test.gd.uid 2>/dev/null)"
+grep -v asserts "$HERE/godot/warmd_test.gd" > addons/warmd/warmd_test.gd
+out="$(WARMD_NOCACHE=1 "$WARMD" test)"
+expect "an old warmd_test.gd is updated" 'updated addons/warmd/warmd_test.gd to warmd ' "$out"
+expect "and a test without an assert is red with it" 'RED test_empty: no assert ran' "$out"
+expect "the updated copy is warmd's" 'same' "$(cmp -s addons/warmd/warmd_test.gd "$HERE/godot/warmd_test.gd" && echo same)"
+expect "its .uid is kept" "^${uid}\$" "$(cat addons/warmd/warmd_test.gd.uid 2>/dev/null)"
+refuse "an up to date copy is left alone" 'updated addons' "$("$WARMD" test)"
+printf 'class_name WarmdTest\nextends RefCounted\n# my own\n' > addons/warmd/warmd_test.gd
+refuse "a warmd_test.gd the user wrote is never replaced" 'updated addons' "$("$WARMD" build)"
+git checkout -q addons/warmd/warmd_test.gd
 rm test/test_empty.gd
 # A node made and never freed outlives the test: red with the count (debug build), the allowlist makes it noise
 printf 'extends WarmdTest\n\nfunc test_leak() -> void:\n\tvar n := Node.new()\n\tn.name = "kept"\n\tassert_true(true)\n\nfunc test_freed() -> void:\n\tvar n := Node.new()\n\tn.queue_free()\n\tassert_true(true)\n' > test/test_leak.gd
