@@ -61,17 +61,21 @@ Everyday
   warmd check                  build, then only the tests your change touches
   warmd bench [filter]         cold, warm and cached timings on your own project
   warmd shot [url|path]        desktop and phone screenshot, small enough for an agent
+  warmd shot [scene] --golden  Godot: the shot against this machine's reference, SAME or DIFF p% in region
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
   warmd map [file]             repo map by import rank, or one outline with line numbers
   warmd where <term>           at most five file:line places for a term (Laufen, projectile), then what changed
   warmd where --changed [ref]  every moved, changed, gone or added symbol since your last read or a git state
   warmd peek <scene> [frames]  node tree and chosen properties as text after N frames
+  warmd sim [--seed N] [file]  Godot scenarios headless under a fixed tick, one line of metrics against limits each
+  warmd sim --record <scene>   play the scene, every input per tick goes to tests/sim/<name>.sim, a replayable scenario
   warmd audit                  what your agents really pay for, biggest first
   warmd stop [--force]         end the warm process for real, and other editors on this project
 
 Agents
   warmd route <goal> [files]   cheapest fitting model tier
+  warmd models [--list | --set role=model]  model per role (window on Windows, else a prompt)
   warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
@@ -95,7 +99,7 @@ Setup
   warmd disk [--free]          free space; --free gives finished worktrees' engine caches back
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
-  warmd package                build a player with your own method (Unity)
+  warmd package                build a player with your own method (Unity), export smoke (Godot)
 
 Options   -p <port>   --speed <N> (test time lapse, Unity)   --play | --edit | --window | --sound (Unity)
 Env       WARMD_NOCACHE=1 (run even if cached)   WARMD_TIMEOUT=900   WARMD_PROJECT=<path>
@@ -133,10 +137,12 @@ case "$CMD" in
   map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *.tscn) . "$WARMD_HOME/lib/map.sh"; scene_map "$@";; *) code_map "$@";; esac;;
   where)   . "$WARMD_HOME/lib/where.sh"; where_main "$@";;
   peek)    . "$WARMD_HOME/lib/map.sh"; scene_peek "$@";;
+  sim)     . "$WARMD_HOME/lib/sim.sh"; sim_main "$@";;
   audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit; mcp_audit;;
   feedback) common_feedback;;
   update)  common_update;;
   route)   route_print "$@";;
+  models)  models_main "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
   handoff) team_handoff "$@";;
@@ -149,8 +155,8 @@ case "$CMD" in
   perf)    perf_run "$@";;
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
-  init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
-  doctor)  common_doctor; install_behind; a_doctor; disk_doctor;;
+  init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; models_first_run; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
+  doctor)  common_doctor; install_behind; a_doctor; disk_doctor; brake_doctor;;
   disk)    if [ "${1:-}" = --free ]; then disk_reclaim; echo "OK freed the cache of $REPLY finished worktrees${DISK_FREED:+:$DISK_FREED}"; else disk_doctor; fi;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac

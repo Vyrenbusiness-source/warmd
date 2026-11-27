@@ -117,8 +117,10 @@ if "$WARMD" watch --once | grep -q 'DEAD a'; then echo "FAIL spec text in a tool
 # Windows machines never give back (64 starts a second ate 40 GB in 40 minutes). Wait loops use nap, nap uses no program.
 out="$(grep -nE '(^|[;{ ]|then |else |do )sleep [0-9."$]' "$HERE"/lib/core.sh "$HERE"/lib/daemon.sh "$HERE"/lib/tune.sh "$HERE"/lib/team.sh "$HERE"/lib/platform.sh "$HERE"/lib/ship.sh "$HERE"/lib/hook.sh "$HERE"/adapters/unity.sh "$HERE"/adapters/web.sh | grep -v 'sleep "\$1"$')"
 expect "wait loops use nap, not sleep" '^$' "${out:-}"
-out="$(bash -c '. "$1/lib/platform.sh"; nap_init || exit 9; t0=$SECONDS; PATH=/nonexistent; nap 1 || echo rc; nap 1; echo "waited $((SECONDS - t0))"' _ "$HERE" 2>&1)"
-expect "nap waits without any program on PATH" '^waited [12]$' "$out"
+# Measured in tenths of a second with the EPOCHREALTIME builtin: whole SECONDS ticks made two 1 s naps read as 3 s on CI.
+# At least 1.8 s proves both naps waited, under 5 s that neither hung; a busy runner may add a second.
+out="$(bash -c '. "$1/lib/platform.sh"; nap_init || exit 9; t=${EPOCHREALTIME/[.,]/}; t0=$((10#$t / 100000)); PATH=/nonexistent; nap 1 || echo rc; nap 1; t=${EPOCHREALTIME/[.,]/}; dt=$((10#$t / 100000 - t0)); [ "$dt" -ge 18 ] && [ "$dt" -lt 50 ] && echo "waited 2 s" || echo "waited $dt tenths"' _ "$HERE" 2>&1)"
+expect "nap waits without any program on PATH" '^waited 2 s$' "$out"
 
 # (q) a queued run judges the places with builtins: while every place has a live owner it starts no program
 mkdir -p "$TMP/held/1" "$TMP/held/2" "$TMP/half/1"; echo $$ > "$TMP/held/1/pid"; echo $$ > "$TMP/held/2/pid"; echo $$ > "$TMP/half/1/pid"

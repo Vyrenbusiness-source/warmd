@@ -188,6 +188,58 @@ out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge warmd/f 2>&1)
 [ $rc = 0 ] && ! git show --stat --format= HEAD | grep -q foreign.txt && [ "$(cat foreign.txt)" = edited ] && echo "$out" | grep -q 'WARN.*foreign.txt' && ok "an edit made during the gate stays out of the merge commit and is named" || no "foreign edit: rc=$rc $out; $(git show --stat --format= HEAD)"
 cd "$TMP" || exit 1
 
+# Studio rules (Godot plan section 5 and 7)
+S="$TMP/studio"; mkdir -p "$S/scenes" "$S/scripts"; cd "$S" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+printf '[application]\nconfig/name="s"\n' > project.godot
+printf '[gd_scene format=3]\n[ext_resource type="Script" path="res://scripts/player.gd" id="1"]\n[node name="P" type="Node2D"]\nscript = ExtResource("1")\n' > scenes/level.tscn
+printf '[gd_scene format=3]\n[node name="M" type="Control"]\n' > scenes/menu.tscn
+echo 'extends Node2D' > scripts/player.gd; echo 'extends Node' > scripts/enemy.gd
+printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+printf 'a | move the player | y | scripts/player.gd\nb | redo the level | y | scenes/level.tscn\nc | menu | y | scenes/menu.tscn\n' > "$TMP/scn.txt"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn.txt" 2>&1)"
+echo "$out" | grep -q '^WAIT b: scene scenes/level.tscn is held by a' && ok "two tasks on one scene never run in parallel: the script's scene holds it" || no "scene wait: $out"
+echo "$out" | grep -q '^AGENT c:' && ok "a task on another scene runs in parallel" || no "other scene: $out"
+grep -q '^Review: .*reviewer agent on opus. Never sonnet (the author)' .warmd/tasks/a.md && ok "the reviewer model is never the author model" || no "review line: $(grep Review .warmd/tasks/a.md)"
+grep -q '^Time budget: 60 min' .warmd/tasks/a.md && ok "the task file states its time budget" || no "time budget line: $(cat .warmd/tasks/a.md)"
+echo "$out" | grep -q '^FALLBACK a (no warmd-worker agent in .*): subagent_type=general-purpose model=sonnet prompt="You are a warmd worker\. .*Read .*a\.md and do it\."' && ok "without the agent file split prints a general-purpose fallback with the rules inline" || no "fallback: $out"
+grep -q 'gameplay\|worker' .warmd/tasks/a.role && [ -f ".warmd/roles/$(cat .warmd/tasks/a.role).md" ] && ok "a worker task gets its role file" || no "role file: $(ls .warmd/roles 2>&1)"
+mkdir -p .claude/agents; cp "$HERE/agents/warmd-worker.md" .claude/agents/
+printf 'd | enemy | y | scripts/enemy.gd\n' > "$TMP/d.txt"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/d.txt" 2>&1)"
+echo "$out" | grep -q '^FALLBACK' && no "fallback printed although the agent file is there: $out" || ok "no fallback when the agent file is registered"
+printf 'floor=top\n' > warmd.conf
+printf 'e | edit | y | scripts/e.gd\n' > "$TMP/e.txt"; out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/e.txt" 2>&1)"
+grep -q '^Review: the done check only' .warmd/tasks/e.md && ok "floor=top with an opus author: only the criteria script reviews" || no "floor review: $(grep Review .warmd/tasks/e.md)"
+: > warmd.conf
+# time budget: watch escalates a task past it
+echo $(( $(date +%s) - 3700 )) > .warmd/tasks/c.start
+out="$(WARMD_WATCH_POLL=1 timeout 60 "$HERE/bin/warmd" watch --once 2>&1)"; rc=$?
+echo "$out" | grep -q '^OVER c: 6[0-9] min, time budget 60 min (mid)' && echo "$out" | grep -q '^AGENT c: subagent_type=warmd-worker model=opus' && [ $rc = 3 ] && ok "watch escalates a task past its time budget" || no "over budget rc=$rc: $out"
+[ "$(cat .warmd/tasks/c.tier)" = top ] && grep -q '^Time budget: 120 min' .warmd/tasks/c.md && ok "the next tier gets its own time budget and clock" || no "after over: $(cat .warmd/tasks/c.tier)"
+"$HERE/bin/warmd" batch-done > /dev/null 2>&1
+cd "$TMP" || exit 1
+
+# Routing learns only upward: an area raised once stays raised when later tasks succeed
+U="$TMP/up"; mkdir -p "$U/.warmd/tasks"; cd "$U" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+echo '{ "name": "t", "scripts": { "test": "true" } }' > package.json; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+L="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-ledger.tsv"
+printf '1\tx\tmid\tsrc\t-\t-\t1\tescalated\n2\ty\tmid\tsrc\t-\t-\t1\tescalated\n' > "$L"
+"$HERE/bin/warmd" route 'fix a bug' src/a.js | grep -q '^top' && ok "two escalations raise the area" || no "not raised"
+for i in 3 4 5 6 7; do printf '%s\tz%s\tmid\tsrc\t-\t-\t1\tok\n' "$i" "$i" >> "$L"; done
+"$HERE/bin/warmd" route 'fix a bug' src/a.js | grep -q '^top' && ok "later successes never lower a raised area" || no "area went back down"
+"$HERE/bin/warmd" route 'fix the crash' lib/a.js > /dev/null
+"$HERE/bin/warmd" route 'fix a bug' lib/a.js | grep -q '^mid' && ok "a goal word raises the task, not its area" || no "goal word made the area sticky"
+
+# A rolled-back merge leaves one rule line in the role file of its task
+printf 'gate=false\n' > warmd.conf; git add warmd.conf; git commit -qm conf
+git checkout -qb warmd/r; echo r > r.txt; git add r.txt; git commit -qm r; git checkout -q main
+echo gameplay > .warmd/tasks/r.role
+out="$(WARMD_BASE=1 WARMD_BASE_BRANCH=main "$HERE/bin/warmd" merge warmd/r 2>&1)"
+[ "$(grep -c ' r rolled back: ' .warmd/roles/gameplay.md 2>/dev/null)" = 1 ] && ! [ -f r.txt ] && ok "a rolled-back merge leaves one rule line in the role file" || no "rule line: $out; $(cat .warmd/roles/gameplay.md 2>&1)"
+cd "$TMP" || exit 1
+
 echo
 [ $fails = 0 ] && echo "all green" || echo "$fails failed"
 cd "$HERE" || exit 1; rm -rf "$TMP" 2>/dev/null

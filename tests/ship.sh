@@ -122,6 +122,14 @@ expect "release commits are not listed" '^$' "$(echo "$cl" | grep -- '- release 
 ci_hist="$(git rev-parse --path-format=absolute --git-common-dir)/warmd-ci.tsv"
 expect "run duration recorded" '	41	warmd-ship	[0-9]+	success$' "$(cat "$ci_hist")"
 
+# export_smoke=1: the release runs warmd package first, a red one (here the generic adapter's) stops it before the bump
+git checkout -q main; git pull -q origin main 2>/dev/null; git checkout -q -b delta; echo export_smoke=1 > warmd.conf; git add -A; git commit -qm "smoke on"; git push -q origin delta
+git checkout -q main; : > "$FAKE/log"
+out="$("$WARMD" ship --release v0.4.0 delta 2>&1)"; rc=$?
+expect "export smoke red stops the release" 'FAIL export smoke red .*no release' "$out"
+[ $rc -ne 0 ] && [ -z "$(grep 'release create' "$FAKE/log")" ] && ok "no release after a red export smoke" || no "release made after a red export smoke"
+git checkout -q -f main
+
 # Second ship updates the same PR. CI red: names failing tests, no merge.
 : > "$FAKE/log"; polls; run_done failure > "$FAKE/jobs"
 printf 'self-test\tRun\tFAIL detect godot from a subfolder: wanted x\nself-test\tRun\tok   other\n' > "$FAKE/failed_log"

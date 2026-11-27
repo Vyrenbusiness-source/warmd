@@ -6,6 +6,7 @@ export WARMD_ALLOW_ERRORS="${CFG_godot_allow_errors:-}"
 
 godot_exe() {
   local c
+  [ -n "${WARMD_GODOT:-}" ] || read -r WARMD_GODOT < "$CACHE_ROOT/godot.path" 2>/dev/null
   for c in "${WARMD_GODOT:-}" godot godot4 Godot; do
     [ -n "$c" ] || continue
     if [ -x "$c" ]; then echo "$c"; return 0; fi
@@ -43,6 +44,17 @@ godot_errors() {
     END { if (pend != "") print pend }' | { if [ -n "${CFG_godot_allow_errors:-}" ]; then grep -vE -- "$CFG_godot_allow_errors"; else cat; fi; } | awk '!seen[$0]++'
   return 0
 }
+# godot_exit_leak <log> <rel>: a debug engine names what was never freed when it ends ("ObjectDB instances leaked",
+# "resources still in use"): prints the verdict and succeeds when the runner leaked. godot_allow_errors matching
+# "<rel>: leaked at exit" makes it noise.
+godot_exit_leak() {
+  local n
+  # Godot 4.4: "ObjectDB instances leaked at exit", 4.7: "1 ObjectDB instance was leaked at exit" (with the count)
+  n="$(tr -d '\r' < "$1" | grep -E 'ObjectDB instances? (was |were )?leaked at exit|resources? still in use at exit' | head -1 | cut -c1-120)"
+  [ -n "$n" ] || return 1
+  [ -n "${CFG_godot_allow_errors:-}" ] && printf '%s: leaked at exit\n' "$2" | grep -qE -- "$CFG_godot_allow_errors" && return 1
+  echo "leaks at exit: ${n#WARNING: } (run it with --verbose for the list)"
+}
 # Why a runner failed, for the FAIL line: exit code, timeout, Windows crash code, and whether it printed a success marker first.
 runner_why() {
   local r="$1" out="$2" t="$3" sig="" ok=""
@@ -78,7 +90,7 @@ runner_shuffle() {
 }
 # run_alone <exe> <runner>: the runner as the engine's main loop, one engine start for it
 run_alone() {
-  local exe="$1" f="$2" out r bad load where t rc=0
+  local exe="$1" f="$2" out r bad load where t leak rc=0
   out="$(mktemp)"
   echo "== ${f#"$PROJECT"/} (own engine)"
   t="$(runner_timeout "$f")"
@@ -90,7 +102,8 @@ run_alone() {
     where=""; [[ ${bad%% *} =~ :[0-9]+$ ]] && where=" at ${bad%% *}"
     load="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
     if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: $load$where"; rc=1
-    elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1; fi
+    elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1
+    elif leak="$(godot_exit_leak "$out" "${f#"$PROJECT"/}")"; then echo "FAIL runner ${f#"$PROJECT"/} $leak"; rc=1; fi
   fi
   rm -f "$out"
   return $rc
@@ -259,7 +272,10 @@ job_oneshot() {
   exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
   rm -f "$RUN/result.txt"
   { echo "id=$id"; echo "kind=$kind"; printf '%s\n' "$@"; echo "quit_after=1"; } > "$RUN/job.txt"
-  WARMD_DIR="$(native_path "$RUN")" WARMD_LOG="$(native_path "$RUN/last.log")" timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")" > "$RUN/last.log" 2>&1
+  # JOB_GFX=1: the engine renders (a graphics slot, the GPU warmd picked), else it runs headless
+  local -a view=(--headless)
+  if [ "${JOB_GFX:-0}" = 1 ]; then gfx_take; read -ra view <<< "$(tune_godot_gpu_flag "$exe")"; fi
+  WARMD_DIR="$(native_path "$RUN")" WARMD_LOG="$(native_path "$RUN/last.log")" timeout "$TIMEOUT" "$exe" "${view[@]}" --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")" > "$RUN/last.log" 2>&1
   local rc=$?
   if [ ! -f "$RUN/result.txt" ]; then
     [ $rc = 124 ] && echo "FAIL timeout after ${TIMEOUT}s in $(cat "$RUN/current.txt" 2>/dev/null)" || echo "FAIL Godot ended without a result (exit $rc), see $(native_path "$RUN/last.log")"
@@ -330,7 +346,79 @@ a_test() {
   cached "test|$filter" run_job test "filter=$filter"
 }
 
+# Budgets at merge (WARMD_BUDGET=1 runs them in any warmd check), set in warmd.conf next to perf_scene:
+#   budget_texture_px=2048        no changed texture longer than this on its long side (after process/size_limit)
+#   budget_texture_raw_px=512     no changed texture stored lossless or VRAM uncompressed (compress/mode 0 or 3) longer
+#   budget_<scene>=draw_calls=200,memory_mb=64,nodes=500   <scene>.tscn over budget_frames frames (default 60):
+#                                 its peak draw calls, memory and nodes. Draw calls need a renderer.
+#   rendered_smoke=1              the main scene runs with graphics on every merge (graphics slot): a script error is red
+# One engine start for all of it, rendered when a draw call budget or rendered_smoke asks for it.
+godot_budgets() {
+  local k spec f s rel w h long lim mode line kind a b c d e list_t="" list_s="" gfx=0 rc=0 main res
+  local -A tex=() scene_of=() want=()
+  [ -n "$(type -t aff_changed)" ] || . "$WARMD_HOME/lib/affected.sh"
+  if [ -n "${CFG_budget_texture_px:-}${CFG_budget_texture_raw_px:-}" ]; then
+    while IFS= read -r f; do
+      f="${f%.import}"
+      [ -f "$PROJECT/$f" ] && [ -f "$PROJECT/$f.import" ] && tr -d '\r' < "$PROJECT/$f.import" | grep -q '^importer="texture"' && tex["$f"]=1
+    done < <(aff_changed | grep -vE '(^|/)\.(godot|warmd)/')
+    for f in "${!tex[@]}"; do list_t="${list_t:+$list_t,}res://$f"; done
+  fi
+  for k in $(compgen -v CFG_budget_); do
+    s="${k#CFG_budget_}"
+    case "$s" in cheap|mid|top|texture_px|texture_raw_px|frames) continue;; esac
+    spec="${!k}"; [[ $spec == *=* ]] || continue
+    f="$(cd "$PROJECT" && find . \( -name .godot -o -name .git -o -name .warmd -o -name addons \) -prune -o -name "$s.tscn" -print 2>/dev/null | head -1)"
+    [ -n "$f" ] || { echo "FAIL budget_$s: no $s.tscn in the project"; rc=1; continue; }
+    f="res://${f#./}"; scene_of["$f"]="$s"; want["$s"]="$spec"; list_s="${list_s:+$list_s,}$f"
+    [[ $spec == *draw_calls=* ]] && gfx=1
+  done
+  if [ "${CFG_rendered_smoke:-0}" = 1 ]; then
+    gfx=1
+    main="$(tr -d '\r' < "$PROJECT/project.godot" | sed -n 's/^run\/main_scene="\(.*\)"/\1/p' | head -1)"
+    case "$main" in uid://*) main="";; esac   # a uid main scene: the engine resolves it, warmd cannot from here
+    [ -n "$main" ] && [ -z "${scene_of[$main]+x}" ] && list_s="${list_s:+$list_s,}$main"
+    [ -n "$main" ] || echo "WARN rendered_smoke=1 but no res:// main scene in project.godot"
+  fi
+  [ -n "$list_t$list_s" ] || return $rc
+  rm -f "$RUN/budget.txt"
+  res="$(JOB_GFX=$gfx job_oneshot budget ${list_t:+"textures=$list_t"} ${list_s:+"scenes=$list_s"} "frames=${CFG_budget_frames:-60}")" || { printf '%s\n' "$res"; return 1; }
+  printf '%s\n' "$res" | head -1
+  while IFS=$'\t' read -r kind a b c d e; do
+    case "$kind" in
+      texture)
+        rel="${a#res://}"; w="$b"; h="$c"; long=$(( w > h ? w : h ))
+        lim="$(tr -d '\r' < "$PROJECT/$rel.import" | sed -n 's/^process\/size_limit=\([0-9]*\)/\1/p' | head -1)"
+        [ "${lim:-0}" -gt 0 ] && [ "$long" -gt "$lim" ] && long="$lim"
+        mode="$(tr -d '\r' < "$PROJECT/$rel.import" | sed -n 's/^compress\/mode=\([0-9]*\)/\1/p' | head -1)"
+        case "${mode:-0}" in 0) mode=lossless;; 1) mode=lossy;; 2) mode="vram compressed";; 3) mode="vram uncompressed";; 4) mode=basis;; esac
+        if [ -n "${CFG_budget_texture_px:-}" ] && [ "$long" -gt "$CFG_budget_texture_px" ]; then
+          echo "FAIL budget: texture $rel ${w}x$h ($mode) is over budget_texture_px=$CFG_budget_texture_px"; rc=1
+        elif [ -n "${CFG_budget_texture_raw_px:-}" ] && [ "$long" -gt "$CFG_budget_texture_raw_px" ] && { [ "$mode" = lossless ] || [ "$mode" = "vram uncompressed" ]; }; then
+          echo "FAIL budget: texture $rel ${w}x$h is stored $mode, over budget_texture_raw_px=$CFG_budget_texture_raw_px: use VRAM compressed"; rc=1
+        fi;;
+      scene)
+        s="${scene_of[$a]:-}"; [ -n "$s" ] || continue
+        echo "(scene $s: $b $c $d)"
+        for line in ${want[$s]//,/ }; do
+          k="${line%%=*}"; spec="${line#*=}"
+          case "$k" in
+            draw_calls) [ "${e#rendered=}" = 1 ] || { echo "FAIL budget_$s: draw_calls need a renderer, this engine ran headless"; rc=1; continue; }; f="${d#draw_calls=}";;
+            memory_mb) f="${c#memory_mb=}";;
+            nodes) f="${b#nodes=}";;
+            *) echo "FAIL budget_$s: unknown key $k (draw_calls, memory_mb, nodes)"; rc=1; continue;;
+          esac
+          awk -v x="$f" -v m="$spec" 'BEGIN { exit !(x + 0 > m + 0) }' && { echo "FAIL budget_$s: $k $f is over $spec"; rc=1; }
+        done;;
+    esac
+  done < <(tr -d '\r' < "$RUN/budget.txt" 2>/dev/null)
+  [ $rc = 0 ] && echo "OK budgets kept"
+  return $rc
+}
+
 a_check() {
+  godot_lint || return 1
+  if [ "${WARMD_IN_MERGE:-0}" = 1 ] || [ "${WARMD_BUDGET:-0}" = 1 ]; then godot_budgets || return 1; fi
   . "$WARMD_HOME/lib/affected.sh"
   affected_select gd
   case "$AFF_MODE" in
@@ -346,26 +434,149 @@ a_check() {
 
 a_call() { [ -n "${1:-}" ] || { echo "warmd call res://path/script.gd"; return 2; }; run_job call "script=$1"; }
 
+# warmd shot [scene] [--golden | --golden-update] [--from image.png]
+#   --golden         the shot against this machine's reference (.warmd/golden/<machine>/<scene>.png), answer as text:
+#                    SAME, or DIFF 3.2% in region x,y,w,h. golden_tolerance=<percent> in warmd.conf (default 0.5).
+#   --golden-update  makes or renews the reference, the only way one changes: a DIFF never renews it.
+#   --from <png>     compares an image made elsewhere (a CI artifact) instead of taking a shot.
 a_shot() {
-  local exe scene="${1:-}" out="$RUN/shots/game.png"
-  gfx_take
-  exe="$(godot_exe)" || { echo "FAIL Godot not found"; return 1; }
-  mkdir -p "$RUN/shots"
-  # shellcheck disable=SC2046  # the GPU flag is one word or none, quoted it would pass an empty argument
-  WARMD_SHOT="$(native_path "$out")" WARMD_SCENE="$scene" run_bounded shot "$exe" $(tune_godot_gpu_flag "$exe") --path "$(native_path "$PROJECT")" --resolution 960x540 --script "$(native_path "$WARMD_HOME/godot/shot.gd")" || return 1
-  echo "image $(native_path "$out")"
+  local exe scene="" out="$RUN/shots/game.png" mode="" from=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --golden) mode=check;; --golden-update) mode=update;;
+      --from) from="${2:-}"; shift;;
+      -*) echo "FAIL unknown option $1: warmd shot [scene] [--golden|--golden-update] [--from image.png]"; return 2;;
+      *) scene="$1";;
+    esac; shift
+  done
+  if [ -n "$from" ]; then
+    [ -s "$from" ] || { echo "FAIL no image at $from"; return 1; }
+    out="$from"
+  else
+    gfx_take
+    exe="$(godot_exe)" || { echo "FAIL Godot not found"; return 1; }
+    mkdir -p "$RUN/shots"; rm -f "$out"
+    # shellcheck disable=SC2046  # the GPU flag is one word or none, quoted it would pass an empty argument
+    WARMD_SHOT="$(native_path "$out")" WARMD_SCENE="$scene" run_bounded shot "$exe" $(tune_godot_gpu_flag "$exe") --path "$(native_path "$PROJECT")" --resolution 960x540 --script "$(native_path "$WARMD_HOME/godot/shot.gd")"
+    local rc=$?
+    if [ ! -s "$out" ]; then
+      # A headless engine (no display, no GPU) renders nothing: there is no image to compare, never a SAME
+      [ -n "$mode" ] && echo "FAIL golden: the engine gave no image (exit $rc). Headless renders nothing: golden shots need graphics, run with WARMD_GFX=1 on a machine with a display and GPU"
+      return 1
+    fi
+    [ $rc = 0 ] || return 1
+  fi
+  [ -n "$mode" ] || { echo "image $(native_path "$out")"; return 0; }
+  golden "$mode" "$out" "$scene"
+}
+# golden <check|update> <image> <scene>: the reference lives per machine, a driver or GPU change renders differently
+golden() {
+  local mode="$1" img="$2" scene="$3" machine name ref res v rc
+  machine="${COMPUTERNAME:-$(uname -n 2>/dev/null)}"; machine="$(printf '%s' "${machine:-local}" | tr -c 'A-Za-z0-9._-' '_')"
+  name="${scene##*/}"; name="${name%.*}"; name="${name:-main}"
+  ref="$PROJECT/.warmd/golden/$machine/$name.png"
+  if [ "$mode" = update ]; then
+    mkdir -p "${ref%/*}" && cp "$img" "$ref" || { echo "FAIL golden: cannot write $ref"; return 1; }
+    echo "OK golden reference for $name on $machine: $(native_path "$ref")"; return 0
+  fi
+  [ -f "$ref" ] || { echo "FAIL golden: no reference for $name on $machine. warmd shot ${scene:+$scene }--golden-update makes one"; return 1; }
+  res="$(run_job golden "shot=$(native_path "$img")" "ref=$(native_path "$ref")" "tol=${CFG_golden_tolerance:-0.5}")"; rc=$?
+  v="$(printf '%s\n' "$res" | sed -n '2{/^\(SAME\|DIFF\)/p}')"
+  if [ -n "$v" ]; then echo "$v"; else printf '%s\n' "$res"; fi
+  [ $rc = 0 ] || { [ -n "$v" ] && echo "image $(native_path "$img"), reference $(native_path "$ref")"; return 1; }
 }
 
 a_stop() { daemon_stop; }
 a_status() { if [ "$CFG_warm" != 1 ]; then echo "Godot one-shot (starts in about 0.2 s, warm=1 keeps a process)"; elif daemon_alive; then echo "Godot warm, pid $(daemon_pid)"; else echo "Godot cold"; fi; }
 a_seed() { [ -d "$1/.godot" ] && [ ! -e "$2/.godot" ] && cp -R "$1/.godot" "$2/.godot"; return 0; }
 a_has_cache() { [ -d "$1/.godot" ]; }
-a_package() { echo "warmd package is for Unity"; return 2; }
+# warmd package: export smoke. The first preset of export_presets.cfg exported with --export-release into a temp folder,
+# the build started headless for export_frames frames (default 120): red on a script error, a load error or a crash.
+# This finds what the editor hides: files the export filter leaves out, loads that only work from the source tree.
+# An engine without export templates exports the pack (--export-pack) and runs it on the editor binary (--main-pack).
+a_package() {
+  local exe presets="$PROJECT/export_presets.cfg" preset platform tmp log="$RUN/export.log" runlog="$RUN/export_run.log" ext="" r
+  local frames="${CFG_export_frames:-120}" how=release bad
+  local -a run=()
+  exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
+  [ -f "$presets" ] || { echo "FAIL no export_presets.cfg: add an export preset in the editor (Project > Export)"; return 2; }
+  preset="$(tr -d '\r' < "$presets" | awk -F'"' '/^\[preset\.[0-9]+\]/ {on=1; next} /^\[/ {on=0} on && /^name=/ {print $2; exit}')"
+  platform="$(tr -d '\r' < "$presets" | awk -F'"' '/^\[preset\.[0-9]+\]/ {on=1; next} /^\[/ {on=0} on && /^platform=/ {print $2; exit}')"
+  [ -n "$preset" ] || { echo "FAIL export_presets.cfg names no preset"; return 2; }
+  tr -d '\r' < "$PROJECT/project.godot" | grep -q '^run/main_scene=' || { echo "FAIL no main scene in project.godot: the exported build would start nothing"; return 1; }
+  case "$platform" in "Windows Desktop") ext=.exe;; Linux*) ext=.x86_64;; esac
+  tmp="$(mktemp -d)"
+  slot_take
+  echo "(export: preset \"$preset\" ($platform) into $(native_path "$tmp"))"
+  timeout "${CFG_export_timeout:-600}" "$exe" --headless --path "$(native_path "$PROJECT")" --export-release "$preset" "$(native_path "$tmp/game$ext")" > "$log" 2>&1
+  if [ ! -s "$tmp/game$ext" ]; then
+    if tr -d '\r' < "$log" | grep -qi 'export template'; then
+      how=pack
+      timeout "${CFG_export_timeout:-600}" "$exe" --headless --path "$(native_path "$PROJECT")" --export-pack "$preset" "$(native_path "$tmp/game.pck")" > "$log" 2>&1
+    fi
+    if [ ! -s "$tmp/game$ext" ] && [ ! -s "$tmp/game.pck" ]; then
+      echo "FAIL export of \"$preset\" made no build, see $(native_path "$log")"
+      tr -d '\r' < "$log" | grep -E '^(ERROR|SCRIPT ERROR)|rror:' | awk '!s[$0]++' | head -3 | cut -c1-200
+      rm -rf "$tmp"; return 1
+    fi
+  fi
+  # A release build reports no GDScript error (no debugger in it): it proves the start, a crash or a load error. The same
+  # pack on the editor binary (--main-pack) then shows the script errors the release build swallows.
+  local start="" said
+  if [ $how = release ]; then
+    if { [ "$platform" = "Windows Desktop" ] && [ "$OS" = win ]; } || { [ "$ext" = .x86_64 ] && [ "$OS" != win ] && [ "$OS" != mac ]; }; then
+      export_run release "$tmp/game$ext" || { rm -rf "$tmp"; return 1; }
+      start="the release build and "
+    else echo "(a $platform build does not start on this machine: only its pack runs)"; fi
+    if [ ! -s "$tmp/game.pck" ]; then   # the pack is embedded in the binary: export it on its own
+      timeout "${CFG_export_timeout:-600}" "$exe" --headless --path "$(native_path "$PROJECT")" --export-pack "$preset" "$(native_path "$tmp/game.pck")" > "$log" 2>&1
+      [ -s "$tmp/game.pck" ] || { echo "FAIL export smoke: --export-pack made no pack, see $(native_path "$log")"; rm -rf "$tmp"; return 1; }
+    fi
+  fi
+  export_run pack "$exe" --main-pack "$(native_path "$tmp/game.pck")" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+  said="release export"; [ $how = pack ] && said="pack only, no export templates for this engine"
+  echo "OK export smoke: \"$preset\" exported ($said), ${start}its pack on the editor binary ran headless for $frames frames, no script error, no crash"
+}
+# export_run <label> <command...>: the exported build headless for export_frames frames. Red on a crash, a non-zero exit,
+# a script error, a load error (minus godot_allow_errors).
+export_run() {
+  local label="$1" r bad runlog="$RUN/export_run_$1.log" frames="${CFG_export_frames:-120}" t="${CFG_export_run_timeout:-120}"; shift
+  timeout "$t" "$@" --headless --quit-after "$frames" > "$runlog" 2>&1; r=$?
+  bad="$( { godot_errors "$runlog"; tr -d '\r' < "$runlog" | grep -E "$GODOT_LOAD_ERR|Failed loading resource|Cannot open file|Resource file not found" | { if [ -n "${CFG_godot_allow_errors:-}" ]; then grep -vE -- "$CFG_godot_allow_errors"; else cat; fi; }; } | awk '!s[$0]++' | head -3 | cut -c1-200)"
+  if [ $r != 0 ]; then echo "FAIL export smoke: the exported build ($label) ended with $(runner_why "$r" "$runlog" "$t"), see $(native_path "$runlog")"; [ -n "$bad" ] && echo "$bad"; return 1; fi
+  if [ -n "$bad" ]; then echo "FAIL export smoke: the exported build ($label) has errors, see $(native_path "$runlog")"; echo "$bad"; return 1; fi
+  return 0
+}
 a_init() {
   mkdir -p "$PROJECT/addons/warmd"
   cp "$WARMD_HOME/godot/warmd_test.gd" "$PROJECT/addons/warmd/"
   echo "OK test base class in addons/warmd/warmd_test.gd"
 }
+# Errors that break a clone or a teammate: .uid and .import files not versioned (Godot 4.4 links by uid), the import
+# cache .godot/ not ignored, an engine that is not the version the project is pinned to.
 a_doctor() {
-  godot_exe >/dev/null && echo "ok Godot" || echo "MISSING Godot, set WARMD_GODOT"
+  local exe="" v="" pin src bad n rc=0
+  if exe="$(godot_exe)"; then echo "ok Godot"; else exe=""; echo "MISSING Godot, set WARMD_GODOT"; fi
+  if [ -n "$GIT_ROOT" ]; then
+    if git -C "$PROJECT" check-ignore -q .godot/ 2>/dev/null; then echo "ok .godot/ ignored"
+    else echo "ERROR .godot/ is not ignored: the import cache would land in git. Fix: echo .godot/ >> .gitignore"; rc=1; fi
+    bad="$(git -C "$PROJECT" ls-files --others -- '*.uid' '*.import' ':!:.godot/*' ':!:.warmd/*' 2>/dev/null)"
+    if [ -z "$bad" ]; then echo "ok .uid and .import files versioned"
+    else
+      n="$(printf '%s\n' "$bad" | wc -l | tr -d ' ')"
+      echo "ERROR $n .uid/.import files not versioned ($(printf '%s\n' "$bad" | head -3 | tr '\n' ' ' | sed 's/ $//')): a clone without them loses uid links and import settings. Fix: git add them, take them out of .gitignore"; rc=1
+    fi
+  fi
+  src="godot_version in warmd.conf"; pin="${CFG_godot_version:-}"
+  if [ -z "$pin" ]; then
+    src="config/features in project.godot"
+    pin="$(tr -d '\r' < "$PROJECT/project.godot" 2>/dev/null | sed -n 's/^config\/features=PackedStringArray("\([0-9][0-9.]*\)".*/\1/p' | head -1)"
+  fi
+  [ -n "$exe" ] && v="$("$exe" --version 2>/dev/null | tr -d '\r' | grep -E '^[0-9]' | head -1)"
+  if [ -z "$pin" ]; then echo "ERROR Godot version not pinned: project.godot has no config/features version, warmd.conf no godot_version. Fix: godot_version=${v%%.stable*} in warmd.conf"; rc=1
+  elif [ -z "$v" ]; then echo "note: Godot $pin pinned ($src), no engine here to compare"
+  elif [ "$v" = "$pin" ] || [[ $v == "$pin".* ]]; then echo "ok Godot $v matches the pin $pin ($src)"
+  else echo "ERROR Godot $v is not the pinned $pin ($src): imports and .uid files would churn. Fix: WARMD_GODOT=<a $pin engine>"; rc=1; fi
+  return $rc
 }

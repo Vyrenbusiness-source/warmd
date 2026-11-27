@@ -164,7 +164,116 @@ func _run(job: Dictionary) -> Array:
 			return await _call_script(str(job.get("script", "")))
 		"runners":
 			return await _runners(str(job.get("list", "")))
+		"golden":
+			return _golden(str(job.get("shot", "")), str(job.get("ref", "")), float(str(job.get("tol", "0.5"))))
+		"budget":
+			return await _budget(str(job.get("textures", "")).split(",", false), str(job.get("scenes", "")).split(",", false), int(str(job.get("frames", "60"))))
 	return [false, ["unknown job"]]
+
+
+## Orphan nodes (debug builds only): nodes out of the tree that nobody frees. A test or runner that leaves some is red.
+func _orphans() -> int:
+	return int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)) if OS.is_debug_build() else 0
+
+
+## The leak verdict for <where>: "" when none was left or godot_allow_errors matches "<where>: N orphan nodes"
+func _leak(where: String, n: int) -> String:
+	if n <= 0:
+		return ""
+	if allow_on and allow.search("%s: %d orphan nodes" % [where, n]) != null:
+		return ""
+	return "%d orphan nodes left (leak, Node.print_orphan_nodes() lists them)" % n
+
+
+## Golden shot: the shot against the reference of this machine. Channels within 8 of each other count as equal (driver
+## noise), a share of differing pixels up to tol percent is SAME. The answer is text: SAME, or DIFF p% in region x,y,w,h.
+func _golden(shot: String, ref: String, tol: float) -> Array:
+	var a := Image.load_from_file(shot)
+	var b := Image.load_from_file(ref)
+	if a == null or a.is_empty():
+		return [false, ["DIFF no image at %s" % shot]]
+	if b == null or b.is_empty():
+		return [false, ["DIFF the reference %s does not load" % ref]]
+	if a.get_size() != b.get_size():
+		return [false, ["DIFF size %dx%d, reference %dx%d" % [a.get_width(), a.get_height(), b.get_width(), b.get_height()]]]
+	a.convert(Image.FORMAT_RGBA8)
+	b.convert(Image.FORMAT_RGBA8)
+	var da := a.get_data()
+	var db := b.get_data()
+	var w := a.get_width()
+	var h := a.get_height()
+	var row := w * 4
+	var n := 0
+	var x0 := w
+	var y0 := h
+	var x1 := -1
+	var y1 := -1
+	for y: int in h:
+		var s := y * row
+		if da.slice(s, s + row) == db.slice(s, s + row):
+			continue
+		for x: int in w:
+			var i := s + x * 4
+			if absi(da[i] - db[i]) > 8 or absi(da[i + 1] - db[i + 1]) > 8 or absi(da[i + 2] - db[i + 2]) > 8 or absi(da[i + 3] - db[i + 3]) > 8:
+				n += 1
+				x0 = mini(x0, x)
+				y0 = mini(y0, y)
+				x1 = maxi(x1, x)
+				y1 = maxi(y1, y)
+	if n == 0:
+		return [true, ["SAME"]]
+	var pct := 100.0 * n / float(w * h)
+	var region := "in region %d,%d,%d,%d" % [x0, y0, x1 - x0 + 1, y1 - y0 + 1]
+	if pct <= tol:
+		return [true, ["SAME (%.1f%% differs %s, within the tolerance of %.1f%%)" % [pct, region, tol]]]
+	return [false, ["DIFF %.1f%% %s" % [pct, region]]]
+
+
+## Budgets: the size of each texture, and per scene its nodes, memory and draw calls over <frames> frames. The numbers go
+## to budget.txt (one line each, tab between), warmd compares them with warmd.conf. A scene's script error is red: this
+## is also the rendered smoke run when the engine has graphics.
+func _budget(textures: PackedStringArray, scenes: PackedStringArray, frames: int) -> Array:
+	var out: PackedStringArray = []
+	var bad: PackedStringArray = []
+	for path: String in textures:
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img == null or img.is_empty():
+			bad.append("%s does not load as an image" % path)
+			continue
+		out.append("texture\t%s\t%d\t%d" % [path, img.get_width(), img.get_height()])
+	var rendered := DisplayServer.get_name() != "headless"
+	for path: String in scenes:
+		var mark := _log_marks()
+		var packed := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+		if packed == null:
+			bad.append("%s does not load" % path)
+			continue
+		var mem0 := Performance.get_monitor(Performance.MEMORY_STATIC)
+		var nodes0 := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+		var inst := packed.instantiate()
+		if inst == null:
+			bad.append("%s does not instantiate" % path)
+			continue
+		root.add_child(inst)
+		var draws := 0.0
+		var mem := 0.0
+		var nodes := 0.0
+		for i: int in maxi(frames, 1):
+			await process_frame
+			draws = maxf(draws, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+			mem = maxf(mem, Performance.get_monitor(Performance.MEMORY_STATIC) - mem0)
+			nodes = maxf(nodes, Performance.get_monitor(Performance.OBJECT_NODE_COUNT) - nodes0)
+		var errs := _log_errors(mark)
+		if is_instance_valid(inst):
+			inst.queue_free()
+		await process_frame
+		if not errs.is_empty():
+			bad.append("%s: script error %s" % [path, errs[0].left(200)])
+		out.append("scene\t%s\tnodes=%d\tmemory_mb=%.1f\tdraw_calls=%d\trendered=%d" % [path, int(nodes), mem / 1048576.0, int(draws), 1 if rendered else 0])
+	_write("budget.txt", "\n".join(out) + "\n")
+	if not bad.is_empty():
+		return [false, bad]
+	return [true, ["%d textures, %d scenes measured, %s" % [textures.size(), scenes.size(), "rendered" if rendered else "headless"]]]
 
 
 ## A red script names the engine's own line, "file:line message", so nobody has to open a log for it.
@@ -266,6 +375,7 @@ func _test(filter: String) -> Array:
 				continue
 			if filter != "" and rx.search(path.get_file().get_basename() + "." + name) == null:
 				continue
+			var orphans0 := _orphans()
 			var t: Object = script.new()
 			_write("current.txt", name)
 			var node := t as Node
@@ -288,6 +398,14 @@ func _test(filter: String) -> Array:
 				failed = "returned false"
 			elif count == 0:
 				failed = "no assert ran"
+			# Nodes the test made and left out of the tree: a queue_free lands at the frame's end, so a count above the
+			# start waits one frame before it counts
+			var left := _orphans() - orphans0
+			if left > 0:
+				await process_frame
+				left = _orphans() - orphans0
+			if failed == "":
+				failed = _leak(path.trim_prefix("res://"), left)
 			if failed == "":
 				passed += 1
 				asserts += maxi(count, 0)
@@ -352,6 +470,7 @@ func _guest(path: String, limit: float) -> String:
 	var was_paused := paused
 	var mark := _log_marks()
 	var start := Time.get_ticks_msec()
+	var orphans0 := _orphans()
 	var guest: Object = script.new()
 	var physics := func() -> void:
 		if guest.has_method("_physics_process") and guest.get("__warmd_quit") != true:
@@ -403,6 +522,10 @@ func _guest(path: String, limit: float) -> String:
 		return "FAIL\t(exit %d%s)%s" % [code, " after success output" if said_ok else "", tail]
 	if bad != "":
 		return "FAIL\tscript error %s (exit 0)" % bad
+	# Its own nodes are gone with it above: what is still out of the tree and not freed, it leaked
+	var leak := _leak(path.trim_prefix("res://"), _orphans() - orphans0)
+	if leak != "":
+		return "FAIL\t%s" % leak
 	return "OK"
 
 

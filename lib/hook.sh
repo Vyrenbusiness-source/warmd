@@ -62,6 +62,7 @@ hook_pre() {
 '
       return 0
     fi
+    hook_python_guard "$cmd" && return 0
   fi
   hook_engine_timeout "$cmd" && return 0
   hook_repeat_guard "$in" "$cmd" && return 0
@@ -272,7 +273,15 @@ hook_agent_line() { # common dir, task file [, state text for the prompt] -> AGE
   case "$tier" in cheap) agent=warmd-scout; model=haiku;; top) agent=warmd-worker; model=opus;; *) tier=mid; agent=warmd-worker; model=sonnet;; esac
   agent="${AGENT_NS:-}$agent"
   if [ -f "$HOOK_PROJ/warmd.conf" ]; then
-    while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; done < "$HOOK_PROJ/warmd.conf"
+    local rk=role_worker rv=""; [ "$tier" = cheap ] && rk=role_scout
+    while IFS='=' read -r k v || [ -n "$k" ]; do k="${k//[[:space:]]/}"; v="${v//[[:space:]\"]/}"; [ "$k" = "$tier" ] && [ -n "$v" ] && model="$v"; [ "$k" = "$rk" ] && rv="${v##*:}"; done < "$HOOK_PROJ/warmd.conf"
+    # role_scout / role_worker win like tier_model (lib/team.sh): only when they rank at least as high as the tier's model,
+    # a worker never below mid. Builtins only, models.sh is not loaded in a hook.
+    if [ -n "$rv" ]; then
+      local ra rt; case "$rv" in *haiku*) ra=1;; *opus*) ra=3;; *) ra=2;; esac; case "$model" in *haiku*) rt=1;; *opus*) rt=3;; *) rt=2;; esac
+      [ "$rk" = role_worker ] && [ $ra -lt 2 ] && ra=0
+      [ $ra -ge $rt ] && model="$rv"
+    fi
   fi
   note="$1/warmd-handoff/$name.md"
   if [ -f "$note" ]; then
@@ -783,4 +792,23 @@ hook_remove() {
   hook_py >/dev/null || { echo "FAIL warmd init --no-hooks needs python3 or python to edit $f"; return 1; }
   hook_edit remove "$f" "" || return 1
   echo "OK warmd hooks removed from $f"
+}
+
+# Python on Windows cost agents minutes per batch: the Store stub (python3 in WindowsApps) hangs 120 s, a bare python or
+# python - waits on a stdin no Bash tool call closes, and Windows python opens no Git Bash /tmp path written in its code.
+# Builtins only (command -v, regex), this runs for every tool call.
+hook_python_guard() { # command -> 0 when denied (decision printed)
+  local c="$1" p why="" re_py='(^|[;&(|])[[:space:]]*(python3?|py)(\.exe)?([[:space:]]|$)'
+  local re_stdin='(^|[;&(])[[:space:]]*(python3?|py)(\.exe)?([[:space:]]+-)?([[:space:]]+[0-9]*>[^[:space:];&|]*)*[[:space:]]*($|;|&&|\|\||\))'
+  case "$c" in *python*|*py\ *) ;; *) return 1;; esac
+  [[ $c =~ $re_py ]] || return 1
+  p="$(command -v "${BASH_REMATCH[2]}" 2>/dev/null)"
+  case "$p" in
+    *[Ww]indows[Aa]pps*) why="${BASH_REMATCH[2]} is the Windows Store stub ($p), it hangs about 120 s. Use py or the full path of a real python.";;
+  esac
+  [ -z "$why" ] && [[ $c =~ $re_stdin ]] && why="${BASH_REMATCH[2]} without a script reads stdin, which a Bash tool call never closes: it hangs until the timeout. Write the script to a file in your scratchpad dir, run python <file>."
+  [ -z "$why" ] && case "$c" in *\(\'/tmp/*|*\(\"/tmp/*) why="Windows python does not see the Git Bash /tmp in its code. Use a path in your scratchpad dir and pass paths as arguments.";; esac
+  [ -n "$why" ] || return 1
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"warmd: %s"}}\n' "${why//\"/\'}"
+  return 0
 }
