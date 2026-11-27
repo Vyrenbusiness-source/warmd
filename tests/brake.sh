@@ -54,6 +54,19 @@ expect "report shows the batch brake minutes" '^brakes: 31 min in 15 entries thi
 expect "finish shows the task and batch brake minutes" "brakes: lint 20 min, 31 min in 15 entries this batch" "$(WARMD_BASE=1 w finish | grep "^brakes:")"
 rm -f "$common/warmd-batch"
 
+
+# The PreToolUse hook stops python calls that hang on Windows: the Store stub, python reading a stdin nobody closes,
+# a Git Bash /tmp path inside python code. Commands are plain JSON strings here, no python needed to build them.
+mkdir -p "$TMP/WindowsApps"; printf '#!/bin/sh\nexit 9\n' > "$TMP/WindowsApps/python3"; chmod +x "$TMP/WindowsApps/python3"
+hk() { printf '{"session_id":"b1","transcript_path":"%s/none.jsonl","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"}}' "$TMP" "$TMP" "$1" \
+  | PATH="$TMP/WindowsApps:$PATH" WARMD_TEST_WIN=1 "$HERE/bin/warmd" hook-pre 2>&1; }
+expect "hook denies the Windows Store python stub" 'deny.*python3 is the Windows Store stub' "$(hk 'python3 x.py')"
+expect "hook denies python - with no input" 'deny.*reads stdin' "$(hk 'cd /x && python - 2>/dev/null; ls')"
+expect "hook denies a Git Bash /tmp path in python code" 'deny.*does not see the Git Bash /tmp' "$(hk "python -c \\\"open('/tmp/a')\\\"")"
+expect "hook leaves python with a script alone" '^$' "$(hk 'python x.py')"
+expect "hook leaves python fed by a pipe alone" '^$' "$(hk 'cat a.py | python -')"
+expect "doctor flags the Windows Store python stub" "WARN python3 is the Windows Store stub" "$(PATH="$TMP/WindowsApps:$PATH" "$HERE/bin/warmd" doctor)"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails

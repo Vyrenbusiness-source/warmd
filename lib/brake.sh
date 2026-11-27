@@ -92,3 +92,13 @@ brake_batch_line() { # [task]
     END { if (!n) exit
       printf "brakes: %s%d min in %d entries %s (warmd brakes ranks them)\n", (task != "" ? sprintf("%s %d min, ", task, tm) : ""), m, n, label }' "$f"
 }
+
+# warmd doctor: a python that is the Windows Store stub hangs about 120 s per call (the hook denies it, this says so up front)
+brake_doctor() {
+  local n p
+  for n in python python3; do
+    p="$(command -v "$n" 2>/dev/null)"
+    case "$p" in *[Ww]indows[Aa]pps*) echo "WARN $n is the Windows Store stub ($p): it hangs about 120 s. Use py or a real python; write scripts to the scratchpad dir, Windows python sees no Git Bash /tmp";; esac
+  done
+  return 0
+}

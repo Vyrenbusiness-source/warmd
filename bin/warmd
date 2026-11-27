@@ -152,7 +152,7 @@ case "$CMD" in
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; models_first_run; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
-  doctor)  common_doctor; install_behind; a_doctor; disk_doctor;;
+  doctor)  common_doctor; install_behind; a_doctor; disk_doctor; brake_doctor;;
   disk)    if [ "${1:-}" = --free ]; then disk_reclaim; echo "OK freed the cache of $REPLY finished worktrees${DISK_FREED:+:$DISK_FREED}"; else disk_doctor; fi;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac
