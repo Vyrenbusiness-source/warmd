@@ -15,7 +15,7 @@ jobs:
         group:
           - generic
           - perf ship docs digest install mergelist where
-          - team tune map ledger bgwait
+          - team tune map ledger bgwait models
           - core
           - hook bars gain daemon
           - auto affected brakes audit unity slim layout

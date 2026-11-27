@@ -72,6 +72,7 @@ Everyday
 
 Agents
   warmd route <goal> [files]   cheapest fitting model tier
+  warmd models [--list | --set role=model]  model per role (window on Windows, else a prompt)
   warmd split <tasks.txt>      worktrees, models and one-line prompts for parallel agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
@@ -137,6 +138,7 @@ case "$CMD" in
   feedback) common_feedback;;
   update)  common_update;;
   route)   route_print "$@";;
+  models)  models_main "$@";;
   split)   team_split "$@";;
   escalate) team_escalate "$@";;
   handoff) team_handoff "$@";;
@@ -149,7 +151,7 @@ case "$CMD" in
   perf)    perf_run "$@";;
   gain)    . "$WARMD_HOME/lib/gain.sh"; gain_run "$@";;
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
-  init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
+  init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; models_first_run; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
   doctor)  common_doctor; install_behind; a_doctor; disk_doctor;;
   disk)    if [ "${1:-}" = --free ]; then disk_reclaim; echo "OK freed the cache of $REPLY finished worktrees${DISK_FREED:+:$DISK_FREED}"; else disk_doctor; fi;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
