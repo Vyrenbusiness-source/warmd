@@ -4,6 +4,14 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
+### Changed
+- docs: Godot runners in one engine start and the changed scene/resource check
+- godot: a one-shot engine that ends without a result shows its first error; guest reads stay typed under strict warnings
+- godot: the build loads and instantiates changed .tscn and .tres, engine errors red with the file
+- godot: all runners in one engine start, random order from a printed seed, # warmd: isolate
+
 ## [0.5.0] - 2026-11-27
 
 ### Added
@@ -15,7 +23,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - Godot: a green compile is cached like a test run. The key holds the code including `project.godot`, the engine fingerprint (engine version and binary, warmd version, `export_presets.cfg`, `WARMD_GODOT`, `WARMD_UNITY`, `WARMD_GFX`, `WARMD_WINDOW`, `WARMD_FULL`)
 - `godot_allow_errors=<regex>` in `warmd.conf`, matched against `file:line message`: the only way to let a Godot script error pass, addons included
 - `perf_scene` (Godot frame time of a scene, 5% limit at merge) is now documented in docs/COMMANDS.md
-<!-- godot-runners: runners in one process and the scene/resource check go here -->
+- Godot test: all runners (`tests/run_*.gd`) in one engine start, run one after another by `godot/daemon.gd`, each with its own verdict. Random order from a printed seed, `WARMD_SEED=<n>` replays it. `# warmd: isolate` in a runner's first 10 lines gives it an engine of its own, so does a runner that does not compile as a guest or quits through the real tree. A crash or hang names the runner and the rest get a new engine
+- Godot build: every changed `.tscn` and `.tres` (against HEAD and the base branch) is loaded and instantiated headless, never saved. Engine errors are red as `file: message` (dead paths, missing scripts, broken inherited scenes, signals connected to missing methods); `godot_allow_errors` applies, the changed files are in the build's cache key
 - `worktree_links` in `warmd.conf`: globs of git-ignored files (e.g. `tools/luau/*.exe`) that `warmd split` copies into every new or reused worktree (folders are linked). Default empty
 
 ### Fixed
@@ -427,7 +436,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52
 [0.4.51]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...v0.4.51
