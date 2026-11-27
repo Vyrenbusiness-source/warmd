@@ -23,6 +23,7 @@ case "$1 $2" in
     *) n=$(( $(cat "$FAKE/n" 2>/dev/null || echo 0) + 1 )); echo $n > "$FAKE/n"   # jobs.N answers poll N, jobs every later one
        if [ -f "$FAKE/jobs.$n" ]; then cat "$FAKE/jobs.$n"; else cat "$FAKE/jobs"; fi;; esac;;
   "pr list") cat "$FAKE/pr" 2>/dev/null;;
+  "pr view") if [ -f "$FAKE/head" ]; then cat "$FAKE/head"; else git rev-parse HEAD; fi;;
   "pr create") echo 7 > "$FAKE/pr"; echo "https://github.com/o/r/pull/7";;
   "pr merge") git push -q origin warmd-ship:main;;
   "release create") ;;
@@ -31,6 +32,7 @@ esac
 EOF
 chmod +x "$FAKE/bin/gh"
 export PATH="$FAKE/bin:$PATH"
+export WARMD_SHIP_INTO=warmd-ship   # fixed name so the fake remote can be inspected; a real call gets warmd-ship-<time>-<pid>
 # Poll answers as ci_poll prints them: run|status|conclusion|createdAt, then name|status|conclusion|open|failed|step|steps
 iso() { date -u -d "@$(( $(date +%s) - $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 run_done() { # conclusion of self-test
@@ -74,6 +76,10 @@ git checkout -q main; echo base2 > README; git commit -qam "base moves"; git pus
 
 git clone -q "$TMP/remote.git" "$TMP/install" 2>/dev/null   # the installed copy, a clean clone of the same repo
 echo 41 > "$FAKE/run_id"; run_done success > "$FAKE/jobs"
+before="$(git --git-dir="$TMP/remote.git" rev-parse main)"
+out="$("$WARMD" ship --release v0.1.0 alpha 2>&1)"; rc=$?
+expect "release refused when its tag exists on origin" '^FAIL tag v0.1.0 exists, pick the next version$' "$out"
+[ $rc = 2 ] && [ "$(git --git-dir="$TMP/remote.git" rev-parse main)" = "$before" ] && ok "existing tag: refused before any merge" || no "existing tag: rc $rc, main moved"
 out="$("$WARMD" ship --release v0.2.0 alpha beta 2>&1)"
 expect "first branch merges clean" 'ok   merged alpha$' "$out"
 expect "usage/dispatch conflict resolved" 'merged beta, usage/dispatch conflict resolved' "$out"
@@ -146,6 +152,14 @@ out="$("$WARMD" ship bad 2>&1)"; rc=$?
 expect "real conflict refused" 'FAIL bad conflicts outside the usage/dispatch block: README' "$out"
 [ $rc -ne 0 ] && ok "refused exit code" || no "refused exit code"
 expect "merge aborted" '^$' "$(git status --porcelain | grep -v '^??')"
+
+# Another session pushed the shared integration branch while CI ran: its PR head is not what this call built, so no merge
+git reset -q --hard; polls; run_done success > "$FAKE/jobs"; echo 0123456789abcdef0123456789abcdef01234567 > "$FAKE/head"; : > "$FAKE/log"
+out="$("$WARMD" ship alpha 2>&1)"; rc=$?
+expect "a PR head moved by someone else is not merged" 'FAIL PR #[0-9]+ head is 01234567, this ship built [0-9a-f]{8}: someone else pushed warmd-ship, not merged' "$out"
+[ $rc -ne 0 ] && ok "foreign head exit code" || no "foreign head exit code"
+expect "no merge call for a foreign head" '^$' "$(grep 'pr merge' "$FAKE/log")"
+rm -f "$FAKE/head"; git checkout -q main 2>/dev/null; git reset -q --hard
 
 # Staged leftovers in the checkout: refused before any merge, with the file names, nothing touched.
 echo staged > README; git add README; : > "$FAKE/log"

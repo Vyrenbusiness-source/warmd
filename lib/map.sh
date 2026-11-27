@@ -221,11 +221,27 @@ $SCENE_AWK" "$f"
   done
 }
 
+# path_inside <path> <root>: prints <path> relative to <root> when it lies inside, spelling-independent: a plain prefix
+# match first (no program start), else both sides canonical once (cygpath -l on Windows, pwd -P elsewhere).
+canon_path() { # a file: its folder canonical plus its name (cygpath -l expands only names that exist)
+  local d="$1" n=""; [ -d "$d" ] || { n="/${d##*/}"; d="$(dirname "$d")"; }
+  case "${OSTYPE:-}" in msys*|cygwin*) d="$(cygpath -ml "$d" 2>/dev/null)";; *) d="$(cd -P "$d" 2>/dev/null && pwd -P)";; esac # -l only with -m/-w
+  [ -n "$d" ] && printf '%s\n' "${d%/}$n"
+}
+path_inside() {
+  local p="$1" r="${2%/}"
+  case "$p" in "$r"/*) printf '%s\n' "${p#"$r"/}"; return 0;; esac
+  p="$(canon_path "$p")"; r="$(canon_path "$r")"; r="${r%/}"
+  [ -n "$p" ] && [ -n "$r" ] || return 1
+  case "$p" in "$r"/*) printf '%s\n' "${p#"$r"/}"; return 0;; esac
+  return 1
+}
+
 # warmd peek <scene> [frames]: the scene runs headless at a fixed 60 fps for N frames (default 10), then godot/peek.gd prints
 # its live node tree, one line per node: type, position, hidden, current animation, script and its exported vars.
 # Text instead of a screenshot. Nothing is saved: the scene is played, never opened in the editor.
 scene_peek() {
-  local scene="${1:-}" frames="${2:-10}" exe res f rc log
+  local scene="${1:-}" frames="${2:-10}" exe res f rc log rel
   [ "$KIND" = godot ] && [ -n "$(type -t godot_exe)" ] || { echo "FAIL warmd peek is for Godot projects"; return 2; }
   [ -n "$scene" ] || { echo "warmd peek <scene.tscn | res://path | name> [frames]"; return 2; }
   case "$frames" in ''|*[!0-9]*) echo "FAIL frames wants a number, got $frames"; return 2;; esac
@@ -240,7 +256,8 @@ scene_peek() {
         [ "$(printf '%s\n' "$f" | wc -l)" -gt 1 ] && { echo "FAIL $scene names more than one scene, give the path:"; printf '%s\n' "$f" | sed "s#^$PROJECT/#  #"; return 1; }
       fi
       f="$(cd "$(dirname "$f")" && pwd)/${f##*/}"
-      case "$f" in "$PROJECT"/*) res="res://${f#"$PROJECT"/}";; *) echo "FAIL $scene is outside the project $(native_path "$PROJECT")"; return 1;; esac;;
+      # spelling-independent: main.tscn resolved against an 8.3 $PWD is still inside a long-spelled PROJECT
+      if rel="$(path_inside "$f" "$PROJECT")"; then res="res://$rel"; else echo "FAIL $scene is outside the project $(native_path "$PROJECT")"; return 1; fi;;
   esac
   exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
   slot_take

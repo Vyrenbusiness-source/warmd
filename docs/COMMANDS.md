@@ -257,7 +257,7 @@ The morning report: warmd nightly --report
 ```
 
 ### warmd ship
-Builds the integration branch `warmd-ship` from `origin/<base>`, merges the finished task branches one by one, pushes, opens or updates one PR, waits for CI and merges on green. A conflict is resolved only when every conflicting line in `bin/warmd` is a usage or dispatch line, both sides are kept. Any other conflict stops with the file names. On red it names the failing tests and does not merge. `--release vX.Y.Z` first sets the version in `bin/warmd` and moves the Unreleased part of `CHANGELOG.md` to it, then creates the release with notes from `git log` since the last tag, deletes the merged task branches on `origin` and updates the installed copy when it is a clean clone of the same repo. Syntax: `warmd ship [--base B] [--release vX.Y.Z] <branch>...`. Needs `gh`.
+Builds a fresh integration branch `warmd-ship-<time>-<pid>` from `origin/<base>` (never shared between two ship calls or sessions; `--into` names one), merges the finished task branches one by one, pushes, opens or updates one PR, waits for CI and merges on green, and only when the PR head is the commit this call built (another session that pushed the branch stops it: `FAIL PR #N head is ..., not merged`). A conflict is resolved only when every conflicting line in `bin/warmd` is a usage or dispatch line, both sides are kept. Any other conflict stops with the file names. On red it names the failing tests and does not merge. `--release vX.Y.Z` first sets the version in `bin/warmd` and moves the Unreleased part of `CHANGELOG.md` to it, then creates the release with notes from `git log` since the last tag, deletes the merged task branches on `origin` and updates the installed copy when it is a clean clone of the same repo. Syntax: `warmd ship [--base B] [--release vX.Y.Z] <branch>...`. Needs `gh`.
 ```text
 warmd ship alpha beta
 ok   merged alpha
@@ -442,3 +442,6 @@ warmd state
 ACTIVE batch, 1 agents
 ```
 VS Code extension in `vscode/`: `$(zap) warmd` idle (dim), `$(sync~spin) warmd <test|check|build|merge>` during a run, `$(organization) warmd N agents` in a batch, `$(cloud) CI` while waiting for CI, `$(pass)`/`$(error)` for 10 s after a result. The tooltip shows the state and the last line; a click runs `warmd status`. Install: `(cd vscode && npx @vscode/vsce package --skip-license) && code --install-extension vscode/warmd-*.vsix`.
+
+### Project detection
+warmd walks up from the current folder to the git root, then one level down, so an engine project in a subfolder of the repo is found too. `WARMD_PROJECT=<path>` always wins. A git root with its own `warmd.conf` (or warmd state in `.warmd/run`) stays the project: a `package.json` or `index.html` below it does not take over, only a Unity or Godot project in a subfolder does. Tooling folders (`vscode/`, `.vscode/`, `.github/`, `docs/`, `tools/`, `node_modules/`) never become the project. `warmd status` names the project in its first line.
