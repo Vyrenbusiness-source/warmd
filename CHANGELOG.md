@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-27
+
 ### Added
 
 - `warmd where <term>`: at most 5 lines `file:line what` from a symbol index (`.gd`, `.tscn`, input actions, autoloads, groups, C#, TS, Python), path words, `# warmd: feature=a,b` tags and notes with `file:line`, German and English synonyms included; then what changed since the agent last read (moved, changed, gone). The index is kept per file hash in the git dir; a note whose file changed is found again through its symbol or marked `STALE`. `warmd where --changed [ref]` lists all changes since the last read or a git state
@@ -425,7 +427,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52
 [0.4.51]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...v0.4.51
 [0.4.50]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...v0.4.50
