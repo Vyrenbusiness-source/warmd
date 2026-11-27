@@ -127,6 +127,15 @@ expect "restart line uses role_worker" 'model=opus ' "$(al 'role_worker=claude:o
 expect "restart line keeps the tier model over a weaker role" 'model=sonnet ' "$(al 'role_worker=haiku')"
 expect "restart line still reads the tier key" 'model=claude-x ' "$(al 'mid=claude-x')"
 
+
+# cost_limit_day is enforced: warmd split refuses new tasks once today's ledger estimate reached it
+mkdir -p "$TMP/cl"; cd "$TMP/cl" || exit 1; git init -q -b main .; cfg
+printf 'mid=sonnet\ncost_limit_day=1\n' > warmd.conf; printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
+printf '%s\tt\tmid\tlib\t1000000\t5\t60\tok\n' "$(date +%s)" > .git/warmd-ledger.tsv
+printf '# nothing\n' > tasks.txt
+expect "split stops at the daily cost limit" '^FAIL daily cost limit reached: about \$2\.00 spent today' "$(w split tasks.txt)"
+expect "WARMD_COST_LIMIT=off lets one split through" '^$' "$(WARMD_COST_LIMIT=off w split tasks.txt | grep 'daily cost limit')"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails

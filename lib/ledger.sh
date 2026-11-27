@@ -83,3 +83,27 @@ ci_median() {
   awk -F'\t' '$5 == "success" && $4 ~ /^[0-9]+$/ { print $4 }' "$f" | tail -n 9 | sort -n |
     awk '{ v[++n]=$1 } END { if (n) print (n % 2 ? v[(n+1)/2] : int((v[n/2] + v[n/2+1]) / 2)), n }'
 }
+
+# cost_limit_day (warmd models --set cost_limit_day=N): USD of today's ledger rows, an estimate from measured tokens only:
+# each row's tokens at the input price of its tier's model (lib/gain.sh price table, newest matching row). Rows without
+# tokens count 0. -> REPLY dollars with two decimals.
+ledger_spent_day() {
+  local f now mid prices; f="$(ledger_file)"; REPLY=0.00; [ -s "$f" ] || return 0
+  type gain_price_table >/dev/null 2>&1 || . "$WARMD_HOME/lib/gain.sh"
+  prices="$(gain_price_table)"
+  now="$(date +%s)"; mid=$(( now - 10#$(date +%H) * 3600 - 10#$(date +%M) * 60 - 10#$(date +%S) ))
+  REPLY="$(awk -F'\t' -v mid="$mid" -v prices="$prices" -v m1="$(tier_model cheap)" -v m2="$(tier_model mid)" -v m3="$(tier_model top)" '
+    function rate(m,  i, n, L, c) { n = split(prices, L, "\n"); for (i = 1; i <= n; i++) { split(L[i], c, "\t"); if (c[1] != "" && (index(m, c[1]) || index(c[1], m))) return c[2] } return 0 }
+    BEGIN { r["cheap"] = rate(m1); r["mid"] = rate(m2); r["top"] = rate(m3) }
+    $1 >= mid && $5 ~ /^[0-9]+$/ { usd += $5 / 1000000 * r[$3] }
+    END { printf "%.2f", usd }' "$f")"
+}
+
+# warmd split refuses new tasks once today's estimate reached cost_limit_day. WARMD_COST_LIMIT=off lets one split through.
+ledger_cost_gate() {
+  [ -n "${CFG_cost_limit_day:-}" ] && [ "${CFG_cost_limit_day}" != none ] && [ "${WARMD_COST_LIMIT:-}" != off ] || return 0
+  ledger_spent_day
+  awk -v s="$REPLY" -v l="$CFG_cost_limit_day" 'BEGIN { exit !(s + 0 >= l + 0) }' || return 0
+  echo "FAIL daily cost limit reached: about \$$REPLY spent today (ledger tokens at input price), cost_limit_day=$CFG_cost_limit_day. Raise it with warmd models --set cost_limit_day=N, or WARMD_COST_LIMIT=off warmd split for this one"
+  return 1
+}

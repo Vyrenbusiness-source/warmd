@@ -763,6 +763,7 @@ team_split() {
   local file="${1:-}" name goal check files tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
   rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
+  ledger_cost_gate || return 2
   batch="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   # A batch already runs: append to it. Overwriting would drop its worktrees from watch and the batch guard.
   if [ -f "$batch" ]; then batch_prune "${batch%/warmd-batch}"; append=1; running="$(team_running "$batch")"; seen="$(shared_owned)"; fi
