@@ -46,6 +46,18 @@ rm -rf raw
 printf 'func broken(:\n' > bad.gd
 expect "parse error is found with file:line" 'bad.gd:1 .*Error' "$("$WARMD" build)"
 rm bad.gd
+# Strict typing: these warnings at level 2 in project.godot. GDScript.reload() has to fail on them, warmd's own scripts
+# have to load under them.
+cp project.godot project.godot.orig
+printf '[debug]\ngdscript/warnings/untyped_declaration=2\ngdscript/warnings/unsafe_property_access=2\ngdscript/warnings/unsafe_method_access=2\ngdscript/warnings/unsafe_cast=2\ngdscript/warnings/unsafe_call_argument=2\n' >> project.godot
+expect "strict typing: typed code compiles" 'scripts parse' "$("$WARMD" build)"
+expect "strict typing: warmd's daemon and test class load" '1 passed, 0 failed' "$("$WARMD" test)"
+printf 'extends RefCounted\n\nfunc loose(a):\n\tvar x = a\n\treturn x\n' > loose.gd
+expect "strict typing: an untyped declaration is red with file:line" 'loose.gd:[0-9]+ ' "$("$WARMD" build)"
+printf 'extends RefCounted\n\nfunc size_of(a: Variant) -> int:\n\treturn a.size()\n' > loose.gd
+expect "strict typing: an unsafe method access is red with file:line" 'loose.gd:[0-9]+ ' "$("$WARMD" build)"
+rm loose.gd
+mv project.godot.orig project.godot
 echo 'warm=1' > warmd.conf
 expect "warm mode" '1 passed, 0 failed' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
