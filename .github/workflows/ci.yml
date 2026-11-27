@@ -19,7 +19,7 @@ jobs:
           - core
           - hook bars gain daemon
           - auto affected brakes audit unity slim layout
-          - mutate
+          - mutate nightly
     runs-on: windows-latest
     defaults:
       run:
@@ -66,6 +66,7 @@ jobs:
           unzip -q godot.zip -d "$HOME/godot"
           echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
+      - run: bash tests/nightly.sh
 
   plugin:
     runs-on: windows-latest
