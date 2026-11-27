@@ -4,6 +4,17 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-27
+
+### Changed
+- docs: 5 pending command entries into docs/COMMANDS.md
+- fix(detect): cd into git's spelling of the start folder, relative paths match PROJECT
+- fix(detect): walk up in git's spelling of the root, 8.3 short paths compared unequal
+- tests/run.sh: the unity suite runs tests/unity.sh too, not only the fixture check
+- unity: renew warmd's own files on check too, CRLF copy counts as current
+- fix(detect): git root with warmd.conf stays the project, tooling folders never win
+- godot: refresh an old addons/warmd/warmd_test.gd on every build, test and check
+
 ## [0.6.0] - 2026-11-27
 
 ### Added
@@ -471,7 +482,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
