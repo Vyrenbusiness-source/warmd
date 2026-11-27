@@ -67,6 +67,8 @@ Everyday
   warmd where <term>           at most five file:line places for a term (Laufen, projectile), then what changed
   warmd where --changed [ref]  every moved, changed, gone or added symbol since your last read or a git state
   warmd peek <scene> [frames]  node tree and chosen properties as text after N frames
+  warmd sim [--seed N] [file]  Godot scenarios headless under a fixed tick, one line of metrics against limits each
+  warmd sim --record <scene>   play the scene, every input per tick goes to tests/sim/<name>.sim, a replayable scenario
   warmd audit                  what your agents really pay for, biggest first
   warmd stop [--force]         end the warm process for real, and other editors on this project
 
@@ -133,6 +135,7 @@ case "$CMD" in
   map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *.tscn) . "$WARMD_HOME/lib/map.sh"; scene_map "$@";; *) code_map "$@";; esac;;
   where)   . "$WARMD_HOME/lib/where.sh"; where_main "$@";;
   peek)    . "$WARMD_HOME/lib/map.sh"; scene_peek "$@";;
+  sim)     . "$WARMD_HOME/lib/sim.sh"; sim_main "$@";;
   audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit; mcp_audit;;
   feedback) common_feedback;;
   update)  common_update;;

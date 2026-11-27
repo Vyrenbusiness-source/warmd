@@ -65,6 +65,7 @@ jobs:
           unzip -q godot.zip -d "$HOME/godot"
           echo "WARMD_GODOT=$HOME/godot/Godot_v4.4.1-stable_win64_console.exe" >> "$GITHUB_ENV"
       - run: bash tests/godot.sh
+      - run: bash tests/sim.sh
 
   plugin:
     runs-on: windows-latest
