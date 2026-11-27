@@ -1,5 +1,8 @@
 # Godot: the warm thing is a headless engine running godot/daemon.gd. Nothing to install for GDScript checks.
 export WARMD_IDLE_MIN="$CFG_idle_min"
+# godot_allow_errors=<regex> in warmd.conf: script errors it matches, as "file:line message", are noise. Every other
+# script error is red, an addon's too: noise passes only by name, never silently.
+export WARMD_ALLOW_ERRORS="${CFG_godot_allow_errors:-}"
 
 godot_exe() {
   local c
@@ -29,6 +32,17 @@ godot_runners() {
 }
 # A runner that does not parse or compile still ends with exit 0 (Godot even runs what it could load): its load errors count as red.
 GODOT_LOAD_ERR='(Parse|Compile) Error:|Failed to load script|Can.t load (the )?script|does not inherit from a MainLoop'
+# godot_errors <log>: the engine's script errors as "file:line message" and its aborts, one line each, minus the allowlist.
+# A runtime error ends only the function it happens in, the runner still quits with 0: the output is the one witness.
+godot_errors() {
+  tr -d '\r' < "$1" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | awk '
+    pend != "" { at = ""; if ($0 ~ /^[[:space:]]*at: .*\(.*:[0-9]+\)[[:space:]]*$/) { at = $0; sub(/^.*\(/, "", at); sub(/\)[[:space:]]*$/, "", at); sub(/^res:\/\//, "", at) }
+                 print (at != "" ? at " " : "") pend; pend = "" }
+    /^SCRIPT ERROR:/ { pend = $0; sub(/^SCRIPT ERROR:[[:space:]]*/, "", pend); next }
+    /Program crashed|CrashHandlerException/ { print "engine abort: " $0 }
+    END { if (pend != "") print pend }' | { if [ -n "${CFG_godot_allow_errors:-}" ]; then grep -vE -- "$CFG_godot_allow_errors"; else cat; fi; } | awk '!seen[$0]++'
+  return 0
+}
 # Why a runner failed, for the FAIL line: exit code, timeout, Windows crash code, and whether it printed a success marker first.
 runner_why() {
   local r="$1" out="$2" t="$3" sig="" ok=""
@@ -50,7 +64,7 @@ runner_timeout() {
   echo "${t:-$TIMEOUT}"
 }
 run_runners() {
-  local exe="$1" f rc=0 n=0 out r bad t; shift
+  local exe="$1" f rc=0 n=0 out r bad load where t; shift
   out="$(mktemp)"
   for f in "$@"; do
     n=$((n + 1))
@@ -58,10 +72,13 @@ run_runners() {
     t="$(runner_timeout "$f")"
     timeout "$t" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
     cat "$out"
-    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))"; rc=1
+    bad="$(godot_errors "$out" | head -1 | cut -c1-200)"
+    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))${bad:+: $bad}"; rc=1
     else
-      bad="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
-      [ -z "$bad" ] || { echo "FAIL runner ${f#"$PROJECT"/} does not load: $bad"; rc=1; }
+      where=""; [[ ${bad%% *} =~ :[0-9]+$ ]] && where=" at ${bad%% *}"
+      load="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
+      if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: $load$where"; rc=1
+      elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1; fi
     fi
   done
   rm -f "$out"
@@ -82,6 +99,8 @@ a_start_daemon() {
   [ -n "$(a_daemon_procs)" ] && { echo "(daemon not answering, restarting)"; a_kill_daemon; }
   rm -f "$RUN/alive.txt" "$RUN/state.txt" "$RUN/spawn.pid"
   export WARMD_DIR; WARMD_DIR="$(native_path "$RUN")"
+  # The daemon reads its own errors back from its output: spawn writes stdout to the log, on Windows stderr to log.err
+  export WARMD_LOG; WARMD_LOG="$(native_path "$RUN/warmd-daemon.log")|$(native_path "$RUN/warmd-daemon.log.err")"
   # First start on a fresh checkout has to build the import cache
   . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
   [ -d "$PROJECT/.godot" ] || "$exe" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
@@ -165,7 +184,7 @@ job_oneshot() {
   exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
   rm -f "$RUN/result.txt"
   { echo "id=$id"; echo "kind=$kind"; printf '%s\n' "$@"; echo "quit_after=1"; } > "$RUN/job.txt"
-  WARMD_DIR="$(native_path "$RUN")" timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")" > "$RUN/last.log" 2>&1
+  WARMD_DIR="$(native_path "$RUN")" WARMD_LOG="$(native_path "$RUN/last.log")" timeout "$TIMEOUT" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")" > "$RUN/last.log" 2>&1
   local rc=$?
   if [ ! -f "$RUN/result.txt" ]; then
     [ $rc = 124 ] && echo "FAIL timeout after ${TIMEOUT}s in $(cat "$RUN/current.txt" 2>/dev/null)" || echo "FAIL Godot ended without a result (exit $rc), see $(native_path "$RUN/last.log")"
@@ -176,7 +195,12 @@ job_oneshot() {
 }
 run_job() { if [ "$CFG_warm" = 1 ]; then job "$@"; else job_oneshot "$@"; fi; }
 
+# A green compile stays green until the code (project.godot included) or the engine changes: the build is cached like a test
 a_build() {
+  local exe; exe="$(godot_exe)" || exe=none
+  cached "build|$exe|${WARMD_VERSION:-}" godot_build
+}
+godot_build() {
   refresh_classes
   if ls "$PROJECT"/*.csproj >/dev/null 2>&1 && command -v dotnet >/dev/null 2>&1; then
     run_bounded "dotnet build" bash -c "cd '$PROJECT' && dotnet build --nologo -v q" || return 1

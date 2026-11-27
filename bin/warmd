@@ -12,7 +12,7 @@ if [[ $WARMD_HOME == /*/*/* && $WARMD_HOME != *//* && $WARMD_HOME != */./* && $W
 else
   WARMD_HOME="$(cd "$(dirname "$SELF")/.." && pwd)"
 fi
-WARMD_VERSION=0.4.52
+WARMD_VERSION=0.5.0
 # Hooks of the Claude Code plugin pass --plugin. A project whose settings already hold warmd init hooks runs those, the
 # plugin's copy steps aside so no hook runs twice. Builtins only, this runs for every tool call.
 case "${1:-} ${2:-}" in
@@ -64,6 +64,9 @@ Everyday
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
   warmd map [file]             repo map by import rank, or one outline with line numbers
+  warmd where <term>           at most five file:line places for a term (Laufen, projectile), then what changed
+  warmd where --changed [ref]  every moved, changed, gone or added symbol since your last read or a git state
+  warmd peek <scene> [frames]  node tree and chosen properties as text after N frames
   warmd audit                  what your agents really pay for, biggest first
   warmd stop [--force]         end the warm process for real, and other editors on this project
 
@@ -127,7 +130,9 @@ case "$CMD" in
   ping)    job ping;;
   package) a_package;;
   call)    a_call "$@";;
-  map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *) code_map "$@";; esac;;
+  map)     case "${1:-}" in ""|--budget*) . "$WARMD_HOME/lib/map.sh"; repo_map "$@";; *.tscn) . "$WARMD_HOME/lib/map.sh"; scene_map "$@";; *) code_map "$@";; esac;;
+  where)   . "$WARMD_HOME/lib/where.sh"; where_main "$@";;
+  peek)    . "$WARMD_HOME/lib/map.sh"; scene_peek "$@";;
   audit)   . "$WARMD_HOME/lib/context.sh"; common_audit; context_audit; mcp_audit;;
   feedback) common_feedback;;
   update)  common_update;;

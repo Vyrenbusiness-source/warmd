@@ -8,7 +8,7 @@ export XDG_CACHE_HOME="$TMP/cache"
 cd "$TMP" || exit 1
 git init -q -b main .; git config user.name t; git config user.email t@example.com
 printf 'config_version=5\n[application]\nconfig/name="t"\n' > project.godot
-printf '.warmd\n.godot\n' > .gitignore
+printf '.warmd\n.godot\ncache\n' > .gitignore   # XDG_CACHE_HOME lies inside: its files would change the code key
 printf 'class_name Score\nextends RefCounted\n\nstatic func add(a: int, b: int) -> int:\n\treturn a + b\n' > score.gd
 "$WARMD" init > /dev/null
 mkdir test
@@ -17,7 +17,19 @@ git add -A; git commit -qm init
 fails=0
 expect() { if echo "$3" | grep -qE "$2"; then echo "ok   $1"; else echo "FAIL $1: $3"; fails=$((fails+1)); fi; }
 expect "compile" 'scripts parse' "$("$WARMD" build)"
-expect "green test" '1 passed, 0 failed' "$("$WARMD" test)"
+# The first import writes .uid files (Godot 4.4), new files change the code key once: the build after them is the cached one
+"$WARMD" build > /dev/null
+expect "an unchanged compile is cached" 'OK cached, code unchanged' "$("$WARMD" build)"
+expect "green test" '1 passed, 0 failed, 1 asserts' "$("$WARMD" test)"
+# A runtime error ends only the test method, it returns like one that passed: the engine's output makes it red
+printf 'extends WarmdTest\n\nfunc test_boom() -> void:\n\tassert_true(true)\n\tvar n: Object = null\n\tn.free()\n\tassert_true(true)\n' > test/test_boom.gd
+expect "a runtime error in a test is red with file:line" 'RED test_boom: script error test/test_boom.gd:6 ' "$("$WARMD" test)"
+printf 'godot_allow_errors=test_boom\\.gd:6\n' > warmd.conf
+expect "an allowlisted script error is noise" '2 passed, 0 failed' "$("$WARMD" test)"
+rm warmd.conf test/test_boom.gd
+printf 'extends WarmdTest\n\nfunc test_empty() -> void:\n\tpass\n' > test/test_empty.gd
+expect "a test without an assert is red" 'RED test_empty: no assert ran' "$("$WARMD" test)"
+rm test/test_empty.gd
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
 expect "an edit counts in one-shot mode" 'RED test_add' "$("$WARMD" test)"
 git checkout -q score.gd
@@ -34,13 +46,28 @@ mkdir raw; touch raw/.gdignore; printf 'func broken(:\n' > raw/vendor.gd
 expect "a .gdignore folder is skipped" 'scripts parse' "$("$WARMD" build)"
 rm -rf raw
 printf 'func broken(:\n' > bad.gd
-expect "parse error is found" 'bad.gd does not parse' "$("$WARMD" build)"
+expect "parse error is found with file:line" 'bad.gd:1 .*Error' "$("$WARMD" build)"
 rm bad.gd
+# Strict typing: these warnings at level 2 in project.godot. GDScript.reload() has to fail on them, warmd's own scripts
+# have to load under them.
+cp project.godot project.godot.orig
+printf '[debug]\ngdscript/warnings/untyped_declaration=2\ngdscript/warnings/unsafe_property_access=2\ngdscript/warnings/unsafe_method_access=2\ngdscript/warnings/unsafe_cast=2\ngdscript/warnings/unsafe_call_argument=2\n' >> project.godot
+expect "strict typing: typed code compiles" 'scripts parse' "$("$WARMD" build)"
+expect "strict typing: warmd's daemon and test class load" '1 passed, 0 failed' "$("$WARMD" test)"
+printf 'extends RefCounted\n\nfunc loose(a):\n\tvar x = a\n\treturn x\n' > loose.gd
+expect "strict typing: an untyped declaration is red with file:line" 'loose.gd:[0-9]+ ' "$("$WARMD" build)"
+printf 'extends RefCounted\n\nfunc size_of(a: Variant) -> int:\n\treturn a.size()\n' > loose.gd
+expect "strict typing: an unsafe method access is red with file:line" 'loose.gd:[0-9]+ ' "$("$WARMD" build)"
+rm loose.gd
+mv project.godot.orig project.godot
 echo 'warm=1' > warmd.conf
 expect "warm mode" '1 passed, 0 failed' "$(WARMD_NOCACHE=1 "$WARMD" test)"
 sed -i.bak 's/a + b/a - b/' score.gd; rm score.gd.bak
 expect "an edit reaches the warm engine" 'RED test_add' "$("$WARMD" test)"
 git checkout -q score.gd
+printf 'extends WarmdTest\n\nfunc test_boom() -> void:\n\tassert_true(true)\n\tvar n: Object = null\n\tn.free()\n' > test/test_boom.gd
+expect "a runtime error in the warm engine is red with file:line" 'RED test_boom: script error test/test_boom.gd:6 ' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+rm test/test_boom.gd
 # Two callers on one daemon: both get their own result, none overwrites the other's job
 WARMD_NOCACHE=1 "$WARMD" test test_add > one.out 2>&1 &
 p1=$!
@@ -84,6 +111,13 @@ printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tvar x := \n\tquit(0)
 expect "a runner that does not parse is red" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
 expect "and its red is not cached as green" 'FAIL runner tests/run_broken.gd' "$("$WARMD" test)"
 rm tests/run_broken.gd
+# A runtime error ends only the function it happens in: the runner still quits with 0, its output makes it red
+printf 'extends SceneTree\n\nfunc _initialize() -> void:\n\tboom()\n\tquit(0)\n\nfunc boom() -> void:\n\tvar n: Object = null\n\tn.free()\n' > tests/run_err.gd
+expect "a runner with a script error and exit 0 is red with file:line" 'FAIL runner tests/run_err.gd script error tests/run_err.gd:9 ' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+cp warmd.conf warmd.conf.orig 2>/dev/null; printf 'godot_allow_errors=run_err\\.gd\n' >> warmd.conf
+expect "an allowlisted runner error passes" '2 runners passed|OK .*test' "$(WARMD_NOCACHE=1 "$WARMD" test)"
+if [ -f warmd.conf.orig ]; then mv warmd.conf.orig warmd.conf; else rm warmd.conf; fi
+rm tests/run_err.gd
 # A runner whose extends line carries class_name is found too; no test of any kind is a WARN, never a silent green
 printf 'class_name RunnerB extends SceneTree\n\nfunc _initialize() -> void:\n\tquit(1)\n' > tests/run_cn.gd
 expect "a runner with class_name before extends is found" 'FAIL runner tests/run_cn.gd' "$(WARMD_NOCACHE=1 "$WARMD" test)"

@@ -9,6 +9,13 @@ var last_job := Time.get_ticks_msec()
 var next_beat := 0
 var busy := false
 var seen := {}
+# The files the engine's own output lands in (stdout, stderr), "|" between them: script errors are read back from there
+var logs := OS.get_environment("WARMD_LOG").split("|", false)
+# godot_allow_errors from warmd.conf: script errors it matches (as "file:line message") are noise, every other one is red
+var allow := RegEx.new()
+var allow_on := OS.get_environment("WARMD_ALLOW_ERRORS") != "" and allow.compile(OS.get_environment("WARMD_ALLOW_ERRORS")) == OK
+var at_rx := RegEx.create_from_string("^\\s*at: .*\\((.+:\\d+)\\)\\s*$")
+var ansi_rx := RegEx.create_from_string("\u001b\\[[0-9;]*[A-Za-z]")
 
 
 func _init() -> void:
@@ -48,7 +55,7 @@ func _take() -> void:
 	var out: Array = await _run(job)
 	var seconds := (Time.get_ticks_msec() - start) / 1000
 	var lines: PackedStringArray = ["%s %s %ds %s" % [id, "OK" if out[0] else "FAIL", seconds, job.get("kind", "")]]
-	for line in out[1]:
+	for line: String in out[1]:
 		if lines.size() > MAX_LINES:
 			break
 		lines.append(line)
@@ -70,21 +77,24 @@ func _run(job: Dictionary) -> Array:
 		"compile":
 			return _compile()
 		"test":
-			return await _test(job.get("filter", ""))
+			return await _test(str(job.get("filter", "")))
 		"call":
-			return await _call_script(job.get("script", ""))
+			return await _call_script(str(job.get("script", "")))
 	return [false, ["unknown job"]]
 
 
+## A red script names the engine's own line, "file:line message", so nobody has to open a log for it.
 func _compile() -> Array:
 	var bad: PackedStringArray = []
 	var files := _scripts("res://")
-	for path in files:
+	for path: String in files:
 		var script := GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(path)
 		script.resource_path = path
+		var mark := _log_marks()
 		if script.reload() != OK:
-			bad.append("%s does not parse" % path.trim_prefix("res://"))
+			var errs := _log_errors(mark)
+			bad.append(errs[0] if not errs.is_empty() else "%s does not parse" % path.trim_prefix("res://"))
 	if bad.is_empty():
 		return [true, ["%d scripts parse" % files.size()]]
 	return [false, bad]
@@ -92,7 +102,7 @@ func _compile() -> Array:
 
 ## class_name scripts resolve to the cached instance, so a changed one has to reload in place.
 func _refresh() -> void:
-	for path in _scripts("res://"):
+	for path: String in _scripts("res://"):
 		var stamp := FileAccess.get_md5(path)   # file times have one-second steps, two quick edits look like none
 		if seen.get(path, stamp) != stamp:
 			var script: GDScript = load(path)
@@ -107,15 +117,16 @@ func _test(filter: String) -> Array:
 	if filter != "" and rx.compile(filter) != OK:
 		return [false, ["bad filter: %s" % filter]]
 	var passed := 0
+	var asserts := 0
 	var red: PackedStringArray = []
-	for path in _scripts("res://"):
+	for path: String in _scripts("res://"):
 		if not path.get_file().begins_with("test_"):
 			continue
 		var script: GDScript = ResourceLoader.load(path, "GDScript", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
 		if script == null or not script.can_instantiate():
 			red.append("RED %s does not load" % path.get_file())
 			continue
-		for m in script.get_script_method_list():
+		for m: Dictionary in script.get_script_method_list():
 			var name: String = m["name"]
 			if not name.begins_with("test_"):
 				continue
@@ -123,27 +134,38 @@ func _test(filter: String) -> Array:
 				continue
 			var t: Object = script.new()
 			_write("current.txt", name)
-			if t is Node:
-				root.add_child(t)
+			var node := t as Node
+			if node != null:
+				root.add_child(node)
 			var failed := ""
+			var mark := _log_marks()
 			var result: Variant = await t.call(name)
-			if t.get("failures") != null and not t.get("failures").is_empty():
-				failed = str(t.get("failures")[0])
+			# A method that stops on a script error returns nothing, like one that ended: only the engine's output tells them apart
+			var errs := _log_errors(mark)
+			var fails: Array = t.get("failures") if t.get("failures") is Array else []
+			var count: int = t.get("asserts") if t.get("asserts") is int else -1
+			if not errs.is_empty():
+				failed = "script error " + errs[0]
+			elif not fails.is_empty():
+				failed = str(fails[0])
 			elif result is String:
 				failed = result
 			elif result is bool and not result:
 				failed = "returned false"
+			elif count == 0:
+				failed = "no assert ran"
 			if failed == "":
 				passed += 1
+				asserts += maxi(count, 0)
 			else:
 				red.append("RED %s: %s" % [name, failed])
-			if t is Node:
-				t.queue_free()
+			if node != null:
+				node.queue_free()
 			elif not (t is RefCounted):
 				t.free()
 	if passed == 0 and red.is_empty():
 		return [false, ["0 tests ran (filter matches nothing?)"]]
-	var lines: PackedStringArray = ["%d passed, %d failed" % [passed, red.size()]]
+	var lines: PackedStringArray = ["%d passed, %d failed, %d asserts" % [passed, red.size(), asserts]]
 	lines.append_array(red)
 	return [red.is_empty(), lines]
 
@@ -152,7 +174,8 @@ func _call_script(path: String) -> Array:
 	var script: GDScript = ResourceLoader.load(path, "GDScript", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
 	if script == null:
 		return [false, ["cannot load %s" % path]]
-	var result: Variant = await script.new().call("run")
+	var obj: Object = script.new()
+	var result: Variant = await obj.call("run")
 	return [true, ["%s" % result]]
 
 
@@ -179,11 +202,46 @@ func _scripts(from: String) -> PackedStringArray:
 
 func _read_job() -> Dictionary:
 	var job := {}
-	for line in FileAccess.get_file_as_string(dir.path_join("job.txt")).split("\n"):
+	for line: String in FileAccess.get_file_as_string(dir.path_join("job.txt")).split("\n"):
 		var at := line.find("=")
 		if at > 0:
 			job[line.substr(0, at)] = line.substr(at + 1).strip_edges()
 	return job
+
+
+## Where each engine log ends now: the start of what the next step prints.
+func _log_marks() -> PackedInt64Array:
+	var marks: PackedInt64Array = []
+	for path: String in logs:
+		var f := FileAccess.open(path, FileAccess.READ)
+		marks.append(f.get_length() if f != null else -1)
+	return marks
+
+
+## The script errors the engine printed since the marks, as "file:line message".
+## An addon's error is red like any other, unless the allowlist names it.
+func _log_errors(marks: PackedInt64Array) -> PackedStringArray:
+	var found: PackedStringArray = []
+	for i: int in logs.size():
+		if marks[i] < 0:
+			continue
+		var f := FileAccess.open(logs[i], FileAccess.READ)
+		if f == null or f.get_length() <= marks[i]:
+			continue
+		f.seek(marks[i])
+		var text := ansi_rx.sub(f.get_buffer(f.get_length() - marks[i]).get_string_from_utf8().replace("\r", ""), "", true)
+		var lines := text.split("\n")
+		for n: int in lines.size():
+			if not lines[n].begins_with("SCRIPT ERROR:"):
+				continue
+			var msg := lines[n].trim_prefix("SCRIPT ERROR:").strip_edges()
+			var hit: RegExMatch = at_rx.search(lines[n + 1]) if n + 1 < lines.size() else null
+			var entry := msg if hit == null else "%s %s" % [hit.get_string(1).trim_prefix("res://"), msg]
+			if allow_on and allow.search(entry) != null:
+				continue
+			if not found.has(entry):
+				found.append(entry)
+	return found
 
 
 func _write(file: String, text: String) -> void:

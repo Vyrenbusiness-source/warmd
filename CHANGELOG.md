@@ -4,12 +4,25 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-27
+
 ### Added
 
+- `warmd where <term>`: at most 5 lines `file:line what` from a symbol index (`.gd`, `.tscn`, input actions, autoloads, groups, C#, TS, Python), path words, `# warmd: feature=a,b` tags and notes with `file:line`, German and English synonyms included; then what changed since the agent last read (moved, changed, gone). The index is kept per file hash in the git dir; a note whose file changed is found again through its symbol or marked `STALE`. `warmd where --changed [ref]` lists all changes since the last read or a git state
+- `warmd map <scene.tscn>`: scene outline with line numbers, node depth, type, script, instanced scenes, groups, `%unique` names and signals (`line signal from -> to method`), at most `WARMD_MAP_NODES` (80) nodes. The repo map ranks Godot scenes too
+- `warmd peek <scene|res://|Name> [frames]` (default 10): plays a Godot scene headless at a fixed 60 fps and lists per node its type, position, hidden state, animation, script and exported vars; saves nothing. `WARMD_PEEK_NODES=80`, `WARMD_PEEK_TIMEOUT=120`
+- Red cache: a red build or test is kept 2 hours (green 7 days) per code state and engine fingerprint. A red hit prints `RED cached, code unchanged: <line>. Change code first. Log: <path>`, keeps the exit code and answers at once without waiting for a slot or RAM. Timeouts, kills (exit 124 and up, also one killed test in a sh suite, now printed as `<test> killed (exit N)`), a missing engine, RAM waits and crashes are never kept. `WARMD_NOCACHE=1` bypasses both caches
+- Godot: a green compile is cached like a test run. The key holds the code including `project.godot`, the engine fingerprint (engine version and binary, warmd version, `export_presets.cfg`, `WARMD_GODOT`, `WARMD_UNITY`, `WARMD_GFX`, `WARMD_WINDOW`, `WARMD_FULL`)
+- `godot_allow_errors=<regex>` in `warmd.conf`, matched against `file:line message`: the only way to let a Godot script error pass, addons included
+- `perf_scene` (Godot frame time of a scene, 5% limit at merge) is now documented in docs/COMMANDS.md
+<!-- godot-runners: runners in one process and the scene/resource check go here -->
 - `worktree_links` in `warmd.conf`: globs of git-ignored files (e.g. `tools/luau/*.exe`) that `warmd split` copies into every new or reused worktree (folders are linked). Default empty
 
 ### Fixed
 
+- Godot build: a red compile names each error as `file:line message`. Strict GDScript warnings at level 2 (`debug/gdscript/warnings/untyped_declaration`, `unsafe_*`) are red, proven in CI with Godot 4.4.1
+- Godot test: a test that stops on a script error or ran no assert is red, and so is a runner that prints `SCRIPT ERROR` and exits 0. Old copies of `addons/warmd/warmd_test.gd` count no asserts until `warmd init` runs again
+- A killed or timed out single test in a sh suite (exit 124 and up) made the whole run red-cached; it is now named and never kept
 - `warmd check` in a project without `test=` and without a Rust, Go, Python, .NET source change (e.g. Luau) said "no code changed against main" after the task was committed. It compares with the merge-base (committed and uncommitted work) and now says how many files changed and that no test ran, until `test=` is set
 - `warmd split` sent every task to `warmd-worker`, whose tools are Bash, Read, Edit, Write, so a task that needs MCP tools (Roblox Studio, any `mcp__*`) failed silently. A goal that matches `mcp_words` (default `roblox studio|mcp`) now gets the new agent `warmd-worker-mcp`, which has no tools restriction. `warmd init` installs it; `escalate`, `handoff` and `route` keep it; `init --slim` does not add a tools line to it
 
@@ -414,7 +427,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52
 [0.4.51]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...v0.4.51
 [0.4.50]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.49...v0.4.50
