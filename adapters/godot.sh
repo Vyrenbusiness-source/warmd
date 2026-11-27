@@ -352,7 +352,7 @@ a_test() {
 #   rendered_smoke=1              the main scene runs with graphics on every merge (graphics slot): a script error is red
 # One engine start for all of it, rendered when a draw call budget or rendered_smoke asks for it.
 godot_budgets() {
-  local k spec f s rel w h long lim mode line kind a b c d e g list_t="" list_s="" gfx=0 rc=0 main res
+  local k spec f s rel w h long lim mode line kind a b c d e list_t="" list_s="" gfx=0 rc=0 main res
   local -A tex=() scene_of=() want=()
   [ -n "$(type -t aff_changed)" ] || . "$WARMD_HOME/lib/affected.sh"
   if [ -n "${CFG_budget_texture_px:-}${CFG_budget_texture_raw_px:-}" ]; then
@@ -382,7 +382,7 @@ godot_budgets() {
   rm -f "$RUN/budget.txt"
   res="$(JOB_GFX=$gfx job_oneshot budget ${list_t:+"textures=$list_t"} ${list_s:+"scenes=$list_s"} "frames=${CFG_budget_frames:-60}")" || { printf '%s\n' "$res"; return 1; }
   printf '%s\n' "$res" | head -1
-  while IFS=$'\t' read -r kind a b c d e g; do
+  while IFS=$'\t' read -r kind a b c d e; do
     case "$kind" in
       texture)
         rel="${a#res://}"; w="$b"; h="$c"; long=$(( w > h ? w : h ))
@@ -401,7 +401,7 @@ godot_budgets() {
         for line in ${want[$s]//,/ }; do
           k="${line%%=*}"; spec="${line#*=}"
           case "$k" in
-            draw_calls) [ "${g#rendered=}" = 1 ] || { echo "FAIL budget_$s: draw_calls need a renderer, this engine ran headless"; rc=1; continue; }; f="${d#draw_calls=}";;
+            draw_calls) [ "${e#rendered=}" = 1 ] || { echo "FAIL budget_$s: draw_calls need a renderer, this engine ran headless"; rc=1; continue; }; f="${d#draw_calls=}";;
             memory_mb) f="${c#memory_mb=}";;
             nodes) f="${b#nodes=}";;
             *) echo "FAIL budget_$s: unknown key $k (draw_calls, memory_mb, nodes)"; rc=1; continue;;
