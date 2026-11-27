@@ -57,6 +57,8 @@ ledger_report() {
       if(gap!="") printf "tokens known for %s tasks, tok/task averages only those (finish --tokens N records them)\n",gap
       printf "escalation wasted: %d tokens in %d attempts\n",wt,wn
     }' "$f"
+  type brake_batch_line >/dev/null 2>&1 && brake_batch_line
+  return 0
 }
 
 # Routing input: "<tasks> <escalated>" for an area at a tier

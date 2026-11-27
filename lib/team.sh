@@ -338,7 +338,10 @@ team_running() { # batchfile
 team_note() {
   need_git
   local text="${1:-}" f who keep; f="$(shared_file)"
-  [ -f "$f" ] || { echo "FAIL no shared brief, warmd split creates it"; return 2; }
+  # A BRAKE note goes to the machine-wide brake log (lib/brake.sh) too: the brief keeps 40 lines and ends with the batch
+  local braked=""
+  case "$text" in BRAKE:*|brake:*) [ -f "$f" ] && grep -qF -- "$text" "$f" || { type brake_from_note >/dev/null 2>&1 && brake_from_note "$text" && braked=1; };; esac
+  [ -f "$f" ] || { [ -n "$braked" ] && { echo "OK brake recorded (no batch brief to note it in)"; return 0; }; echo "FAIL no shared brief, warmd split creates it"; return 2; }
   [ -n "$text" ] || { echo "warmd note \"one line\""; return 2; }
   [ ${#text} -le 160 ] || { echo "FAIL over 160 characters, keep it to one fact"; return 2; }
   grep -qF -- "$text" "$f" && { echo "OK already noted"; return 0; }
@@ -888,6 +891,7 @@ team_finish() {
   local common; common="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -f "$common/warmd-batch" ] && ! wt_finished "$common" "$GIT_ROOT"; then printf '%s\t%s\t%s\n' "$GIT_ROOT" ok "$br" >> "$common/warmd-batch-done"; fi
   local over=""; task_over "${br#warmd/}" "$(ledger_taskdir)" && over=", OVER time budget: $REPLY"
+  type brake_batch_line >/dev/null 2>&1 && brake_batch_line "${br#warmd/}"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
 }
 
