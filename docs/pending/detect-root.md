@@ -1,2 +1,0 @@
-### Project detection
-warmd walks up from the current folder to the git root, then one level down, so an engine project in a subfolder of the repo is found too. `WARMD_PROJECT=<path>` always wins. A git root with its own `warmd.conf` (or warmd state in `.warmd/run`) stays the project: a `package.json` or `index.html` below it does not take over, only a Unity or Godot project in a subfolder does. Tooling folders (`vscode/`, `.vscode/`, `.github/`, `docs/`, `tools/`, `node_modules/`) never become the project. `warmd status` names the project in its first line.
