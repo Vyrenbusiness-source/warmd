@@ -4,6 +4,41 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
+### Added
+- `warmd lint [files...]`: Godot lints on changed `.gd`, `.tscn`, `.tres`. ERROR only when the headless engine (`godot/lint.gd`) or the disk proves it: unknown input action, `/root/` autoload, `tr` key, missing `res://` path, `res://` case differs from disk, collision layer outside 1-32. Everything else is WARN, capped by `WARMD_LINT_WARN` (10); `WARMD_LINT_NODES` (300), `WARMD_LINT_SUBRES_KB` (64). The engine starts once, only for open candidates. Exit 1 on errors. First step of `check` in Godot projects
+- `warmd nightly [--schedule|--report] [--no-mutate]`: build and tests without cache in separate processes. `MISMATCH` (cache key wrong, confirmed by a second fresh run, exit 1) or `FLAKY`. Godot runners each in their own engine with `--verbose`; loads the static graph did not predict are `GAP` and become edges in `warmd-edges.tsv`. Then `warmd mutate` on the lines since the last night; 5-line report in `.warmd/nightly.txt`. `--schedule` prints the schtasks/cron one-liner and installs nothing
+- `warmd mutate [--base REF] [--limit S] [--cmd C]`: one mutant per changed line (GDScript, sh, Python, JS/TS, never test files), each must turn a test red, else `SURVIVED file:line` and exit 1. Restored by trap even on kill, nothing committed. `mutate_cmd=`, `mutate_limit=` (900), `mutate=merge`, `warmd: nomutate`. Score in `warmd-quality.tsv`
+- `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`: one model per role (`role_<role>=provider:model`, roles producer worker qa reviewer merge scout), WinForms window on Windows, text prompt elsewhere; `--list` shows success per model from the ledger. Reviewer and merge never below `floor`, worker and qa never cheap. The first interactive `init` asks once. New conf keys `time_budget_cheap/mid/top` (30, 60, 120 min) and `cost_limit_day` (enforced by `split`)
+- `warmd sim [--seed N] [file.sim|dir|name...]`: Godot gameplay scenarios headless under a fixed tick (`--fixed-fps`, as fast as the engine can, no `--time-scale`), all in one engine start, one line each: `FAIL jump: peak 6 > 5 at frame 16 of 200 (seed 1)`. `tests/sim/<name>.sim` names `scene`, `seed`, `frames`, `isolate`, `metric <name> <max|min|last|avg|count|pct> <op> <limit> : <expression>` (sampled after every tick) and input lines (`press`/`release` an action, `mouse`, `down`/`up`). A scenario stops once its verdict is decided; a script error is red with file:line; a hang or crash is red, never cached, the rest goes on in a new engine (`WARMD_SIM_TIMEOUT`). Verdicts cached per scenario, seed and engine
+- `warmd sim --record <scene> [--seed N] [--frames N] [--name x] [--headless]`: plays the scene in a window and writes every input change per physics tick to `tests/sim/<x>.sim`. Add a metric that is red for the bug and the replay is a red scenario a worker can fix
+- `warmd state [--json]`: one line whether warmd works here (run, merge, CI wait, batch with its agents, last result). VS Code extension in `vscode/`: a status bar icon for idle, run, batch, CI and the last result; a click runs `warmd status`
+- `warmd brake "<what>" [minutes] [fix idea]` and `warmd brakes [--days N]`: a machine-wide log of what slowed agents down, ranked by minutes lost. `BRAKE:` notes land there; `report` and `finish` show the brake minutes of the batch
+- `warmd ship --release` runs `warmd package` first when `warmd.conf` has `export_smoke=1`; a red export smoke stops the release before the version moves. `warmd nightly` runs it too and its first line says `export OK` or `export RED`
+- `warmd package` for Godot: export smoke. The first preset of `export_presets.cfg` is exported with `--export-release` and started headless for `export_frames` frames (120); a crash, a non-zero exit or a load error is red, and the same pack runs on the editor binary (`--main-pack`) so a script error is red too. Without export templates only `--export-pack` runs. `export_timeout=` (600 s), `export_run_timeout=` (120 s)
+- `warmd shot [scene] --golden | --golden-update [--from image.png]`: Godot golden shot against this machine's reference in `.warmd/golden/<machine>/<scene>.png`, answered as `SAME` or `DIFF 3.2% in region x,y,w,h`; `golden_tolerance=` (0.5%). Only `--golden-update` writes a reference
+- `warmd doctor` for Godot: `.uid` or `.import` files not versioned, `.godot/` not ignored, Godot version not pinned (`godot_version=` or `config/features`), engine not the pinned version
+- Godot leaks: a test or runner that leaves orphan nodes is red with the count (debug builds); a runner in its own engine is red on `ObjectDB instance(s) leaked at exit`. `godot_allow_errors` applies
+- Godot budgets at merge (or `WARMD_BUDGET=1`), one engine start: `budget_texture_px=`, `budget_texture_raw_px=`, `budget_<scene>=draw_calls=N,memory_mb=N,nodes=N` over `budget_frames` (60), `rendered_smoke=1` runs the main scene with graphics on every merge
+
+### Changed
+- Studio rules: two tasks on the same scene never run in parallel (the second gets `WAIT`; scenes from `res://` refs in `.tscn`, one level); every task file names a reviewer model other than the author's; `watch` escalates a task over its time budget (`OVER` plus `AGENT` line), `finish` reports `OVER`; routing only learns upward; a rolled-back merge writes a rule line into `.warmd/roles/<role>.md`; `split` prints a `FALLBACK` general-purpose line with inline rules when the `warmd-worker` agent file is missing; every agent records slowdowns as `BRAKE`
+- docs: lint, nightly, mutate, models and the studio rules in docs/COMMANDS.md and the README
+
+### Fixed
+What slowed the agents of the v0.6 batch down, from the brake log:
+- A task's docs entry goes to `docs/pending/<task>.md`, accepted by `tests/docs.sh`; `warmd ship` moves it into docs/COMMANDS.md. No task is red only because it may not edit COMMANDS.md
+- `warmd finish` merges a clean `origin/<base>` and names a conflict at once; `warmd ci` opens a draft PR and fails fast on `CONFLICTING`, which runs no CI
+- The hook denies `python` calls that hang on Windows (Store stub, empty stdin, `/tmp` in code); `warmd doctor` flags the stub
+- CI caches the Godot download of the godot job
+- Suites come from the files and the CI group `rest` runs the unnamed ones; `warmd ship` joins two branches' `ci.yml` suite steps. Two branches that each add a suite no longer conflict on one line
+- `warmd split` never switches a worktree folder that holds another unfinished task's branch
+- `warmd doctor` finds a Godot outside PATH and remembers it for `WARMD_GODOT`
+- `cost_limit_day` is enforced: `warmd split` refuses new tasks once today's ledger estimate reached it (`WARMD_COST_LIMIT=off` lets one through)
+- `mutate=merge` gates `warmd merge`, the affected-test selection reads the engine-proven edges of `warmd-edges.tsv`, and a restarted agent gets the model of `role_worker`/`role_scout`
+- tests/brakes.sh measures `nap` in tenths of a second: whole-second ticks read two 1 s naps as 3 s on CI
+
 ## [0.5.1] - 2026-11-27
 
 ### Changed
@@ -436,7 +471,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52

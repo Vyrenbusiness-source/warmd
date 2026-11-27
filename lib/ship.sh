@@ -5,7 +5,8 @@
 reg ship "warmd ship [--base B] [--release vX.Y.Z] <branch>...  merge task branches, one PR, wait for CI, merge on green" ship_main
 reg ci   "warmd ci [branch]             wait for the CI of the current branch, one line per job" ci_main
 
-# A conflict hunk is safe when every line on both sides is a usage line or a dispatch line.
+# A conflict hunk is safe when every line on both sides is a usage line, a dispatch line or a ci.yml step
+# "- run: bash tests/<suite>.sh" (two branches that each add a suite to one job). Suites need no list line (tests/run.sh).
 # Resolution keeps both sides, ours first, without duplicates.
 ship_union() { # file -> 0 resolved, 1 not safe
   awk '
@@ -19,7 +20,7 @@ ship_union() { # file -> 0 resolved, 1 not safe
     }
     inc { if (side==1) a[++n1]=$0; else if (side==2) b[++n2]=$0; next }
     { out[++o]=$0 }
-    function safe(l) { return l ~ /^  warmd / || l ~ /^ +[a-z][a-z-]*\) / || l ~ /^ +--/ || l ~ /^ *$/ }
+    function safe(l) { return l ~ /^  warmd / || l ~ /^ +[a-z][a-z-]*\) / || l ~ /^ +--/ || l ~ /^ *$/ || l ~ /^      - run: bash tests\/[a-z_]+\.sh$/ }
     END { if (bad) exit 1; for (i=1;i<=o;i++) print out[i] }
   ' "$1" > "$1.warmd-union" || { rm -f "$1.warmd-union"; return 1; }
   mv "$1.warmd-union" "$1"
@@ -78,7 +79,7 @@ ci_wait() { # branch
 ci_wait_run() { # branch
   local br="$1" id tries=0 t0 now cap med="" runs=0 snap st fin red created job step start el first=1 slow=0 mark left
   id="$(ship_run_id "$br")"
-  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-15}" ]; do nap "${WARMD_CI_POLL:-10}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
+  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-15}" ]; do ci_conflict "$br" && return 1; nap "${WARMD_CI_POLL:-10}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
   [ -n "$id" ] || { echo "FAIL no CI run for $br"; return 1; }
   read -r med runs <<< "$(ci_median)"
   # Cap: WARMD_CI_MAX minutes when set, else twice the measured median (at least 5 min), else 20 min without history.
@@ -199,6 +200,7 @@ install_behind() { # [install dir]
 
 ci_main() {
   local br="${1:-$(git branch --show-current)}"
+  case "$br" in warmd/*) ci_draft_pr "$br";; esac
   ci_wait "$br"
 }
 
@@ -241,7 +243,7 @@ ship_run() {
     # No conflicted file: git refused for another reason, its own first line says which
     [ -n "$files" ] || { git merge --abort 2>/dev/null; echo "FAIL $b not merged: $(echo "$merr" | grep -v '^ ' | head -1)"; return 1; }
     for f in $files; do
-      [ "$f" = bin/warmd ] && ship_union "$f" && git add "$f" || { safe=0; break; }
+      case "$f" in bin/warmd|.github/workflows/ci.yml) ship_union "$f" && git add "$f" || { safe=0; break; };; *) safe=0; break;; esac
     done
     if [ $safe = 1 ] && [ -n "$files" ] && git -c core.editor=true commit -q --no-edit >/dev/null 2>&1; then
       echo "ok   merged $b, usage/dispatch conflict resolved"
@@ -250,6 +252,8 @@ ship_run() {
       echo "FAIL $b conflicts outside the usage/dispatch block: $(echo "$files" | tr '\n' ' ')"; return 1
     fi
   done
+  ship_docs_pending || return 1
+  [ -z "$release" ] || ship_smoke || return 1
   [ -z "$release" ] || ship_bump "$release" || return 1
   git push -q --force-with-lease -u origin "$into" 2>/dev/null || git push -q -f -u origin "$into" || { echo "FAIL push $into"; return 1; }
   local pr
@@ -280,4 +284,46 @@ ship_run() {
     ship_install "$base"
   fi
   echo "SHIPPED PR #$pr"
+}
+
+# A release of a game that only runs in the editor helps nobody: with export_smoke=1 in warmd.conf the release first runs
+# warmd package (the adapter's a_package, for Godot the export smoke) on the merged code, and a red one stops it before
+# the version moves. In a subshell, so the project, adapter and config it loads stay out of ship.
+ship_smoke() {
+  ( detect_project; [ "${CFG_export_smoke:-0}" = 1 ] || exit 0
+    . "$WARMD_HOME/adapters/$ADAPTER.sh"; a_package ) && return 0
+  echo "FAIL export smoke red (export_smoke=1 in warmd.conf), no release"; return 1
+}
+
+# A task cannot own docs/COMMANDS.md (one file, every task adds to it): it writes its entry to docs/pending/<task>.md,
+# which tests/docs.sh accepts. ship appends every pending entry to COMMANDS.md and removes the file, in one commit.
+ship_docs_pending() {
+  local top f n=0; top="$(git rev-parse --show-toplevel)" || return 0
+  for f in "$top"/docs/pending/*.md; do
+    [ -f "$f" ] || continue
+    { echo; cat "$f"; } >> "$top/docs/COMMANDS.md" || return 1
+    git rm -qf "$f" 2>/dev/null || rm -f "$f"
+    n=$((n + 1))
+  done
+  [ $n = 0 ] && return 0
+  git add "$top/docs/COMMANDS.md" && git commit -qm "docs: $n pending command entries into docs/COMMANDS.md" || { echo "FAIL commit of the pending docs entries"; return 1; }
+  echo "ok   docs: $n pending entries merged into docs/COMMANDS.md"
+}
+
+# GitHub starts no CI for a PR that conflicts with its base: agents waited minutes for checks that never came.
+ci_conflict() { # branch -> 0 and a CONFLICT line when the branch's open PR cannot merge
+  local m; m="$(gh pr view "$1" --json mergeable,baseRefName --jq '.mergeable+" "+.baseRefName' 2>/dev/null)"
+  case "$m" in CONFLICTING*) echo "CONFLICT with ${m#* }: CI will not run on the PR of $1. Merge origin/${m#* }, resolve, push, then warmd ci"; return 0;; esac
+  return 1
+}
+
+# CI runs on pull requests: a task branch without one waits for a run that never starts. warmd ci opens a draft PR.
+ci_draft_pr() { # branch
+  local base
+  [ -z "$(gh pr list --head "$1" --state open --json number --jq '.[0].number' 2>/dev/null)" ] || return 0
+  git push -q -u origin "$1" 2>/dev/null || return 0
+  base="$(base_branch 2>/dev/null)"; [ -n "$base" ] && [ "$base" != "$1" ] || base=main
+  gh pr create --draft --base "$base" --head "$1" --title "${1#warmd/}" --body "Draft PR opened by warmd ci: CI runs on pull requests." >/dev/null 2>&1 \
+    && echo "(opened a draft PR for $1 against $base: CI runs on pull requests only)"
+  return 0
 }

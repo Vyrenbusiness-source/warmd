@@ -1,0 +1,129 @@
+# Brake log: what slowed an agent down, kept machine-wide so the causes can be ranked and fixed in warmd.
+# One row per brake: epoch, project, task, cause, minutes, fix idea. Lives in the warmd cache dir, never committed.
+# warmd note "BRAKE: <what> | ~<min> | <fix>" lands here too, the batch brief keeps only its newest 40 lines.
+reg brake  "warmd brake \"<what>\" [minutes] [fix idea]  record what slowed you down, machine-wide" brake_main
+reg brakes "warmd brakes [--days N]       causes ranked by minutes lost, top 10" brakes_main
+
+brake_file() { echo "${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/brakes.tsv"; }
+brake_clean() { local s="${1//$'\t'/ }"; s="${s//$'\r'/}"; s="${s//$'\n'/ }"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+
+brake_where() { # -> REPLY "project<TAB>task"
+  local common top br p t
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -n "$common" ]; then
+    top="${common%/}"; [ "${top##*/}" = .git ] && top="${top%/.git}"; p="${top##*/}"
+    br="$(git branch --show-current 2>/dev/null)"; t="${br#warmd/}"
+  else p="${PWD##*/}"; fi
+  REPLY="${p:--}"$'\t'"${t:--}"
+}
+
+brake_add() { # what minutes fix
+  local what min fix f
+  what="$(brake_clean "${1:-}")"; min="$(brake_clean "${2:-}")"; fix="$(brake_clean "${3:-}")"
+  [ -n "$what" ] || { echo "warmd brake \"<what>\" [minutes] [fix idea]"; return 2; }
+  min="${min#\~}"; min="${min%%[!0-9]*}"; [ -n "$min" ] || min=0   # "~4", "4 min", "~10/round" all count their number
+  brake_where
+  f="$(brake_file)"; mkdir -p "${f%/*}"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$REPLY" "$what" "$min" "${fix:--}" >> "$f"
+}
+
+brake_main() {
+  brake_add "$@" || return $?
+  echo "OK brake recorded, warmd brakes ranks them"
+}
+
+# A note "BRAKE: what | ~min | fix" -> brake_add. Returns 1 when the text is no brake.
+brake_from_note() { # text
+  local t="$1" what min fix
+  case "$t" in BRAKE:*|brake:*) ;; *) return 1;; esac
+  t="${t#*:}"
+  what="${t%%|*}"; t="${t#"$what"}"; t="${t#|}"
+  min="${t%%|*}"; t="${t#"$min"}"; t="${t#|}"
+  fix="$t"
+  brake_add "$what" "$min" "$fix" >/dev/null
+}
+
+# Causes grouped by their words (case, digits and punctuation do not split a group), ranked by total minutes, top 10.
+brakes_main() {
+  local days="" f since=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --days) days="${2:-}"; shift;;
+      --days=*) days="${1#--days=}";;
+      *) echo "warmd brakes [--days N]"; return 2;;
+    esac
+    shift
+  done
+  case "$days" in *[!0-9]*) echo "FAIL --days takes a number"; return 2;; esac
+  [ -n "$days" ] && since=$(( $(date +%s) - days * 86400 ))
+  f="$(brake_file)"
+  [ -s "$f" ] || { echo "no brakes recorded yet, warmd brake \"<what>\" [minutes] [fix] adds one"; return 0; }
+  awk -F'\t' -v since="$since" '
+    $1 >= since {
+      k=tolower($4); gsub(/[^a-z ]/, " ", k); gsub(/ +/, " ", k); sub(/^ /, "", k); sub(/ $/, "", k)
+      if (k == "") k = "-"
+      m[k] += $5; n[k]++; tot += $5; rows++
+      if (!(k in c)) c[k] = $4
+      if ($6 != "-") fx[k] = $6
+      if (index(" " who[k] " ", " " $3 " ") == 0) who[k] = (who[k] == "" ? $3 : who[k] " " $3)
+    }
+    END {
+      if (!rows) { print "no brakes in that window"; exit }
+      printf "%d min lost in %d brakes\n", tot, rows
+      for (i = 1; i <= 10; i++) {
+        best = ""; for (k in m) if (best == "" || m[k] > m[best]) best = k
+        if (best == "") break
+        printf "%4d min %2dx  %s (%s)%s\n", m[best], n[best], c[best], who[best], (best in fx ? "  fix: " fx[best] : "")
+        delete m[best]
+      }
+    }' "$f"
+}
+
+# One line for report and finish: brake minutes of the running batch (rows since its marker), else of the last day.
+# With a task name, that task's own minutes come first.
+brake_batch_line() { # [task]
+  local f common since label="last 24h"; f="$(brake_file)"; [ -s "$f" ] || return 0
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  since="$(stat -c %Y "$common/warmd-batch" 2>/dev/null || stat -f %m "$common/warmd-batch" 2>/dev/null)"
+  if [ -n "$since" ]; then label="this batch"; else since=$(( $(date +%s) - 86400 )); fi
+  brake_where
+  awk -F'\t' -v since="$since" -v p="${REPLY%%$'\t'*}" -v task="${1:-}" -v label="$label" '
+    $1 >= since && $2 == p { m += $5; n++; if ($3 == task) { tm += $5; tn++ } }
+    END { if (!n) exit
+      printf "brakes: %s%d min in %d entries %s (warmd brakes ranks them)\n", (task != "" ? sprintf("%s %d min, ", task, tm) : ""), m, n, label }' "$f"
+}
+
+# warmd doctor: a python that is the Windows Store stub hangs about 120 s per call (the hook denies it, this says so up front)
+brake_doctor() {
+  local n p
+  for n in python python3; do
+    p="$(command -v "$n" 2>/dev/null)"
+    case "$p" in *[Ww]indows[Aa]pps*) echo "WARN $n is the Windows Store stub ($p): it hangs about 120 s. Use py or a real python; write scripts to the scratchpad dir, Windows python sees no Git Bash /tmp";; esac
+  done
+  brake_godot_doctor
+  return 0
+}
+
+# warmd doctor: a Godot that is on the PC but not on PATH and not in WARMD_GODOT made agents wait for CI for every
+# GDScript error. Common places are searched once, the find is remembered in the cache (godot.path) and printed.
+brake_godot_find() { # -> REPLY path, empty when none
+  local c f="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/godot.path"
+  REPLY=""
+  [ -f "$f" ] && read -r c < "$f" && [ -x "$c" ] && { REPLY="$c"; return 0; }
+  local h="$HOME" pf="/c/Program Files" px="/c/Program Files (x86)"
+  for c in "$h"/Desktop/Godot*console*.exe "$h"/Desktop/*/Godot*console*.exe "$h"/Downloads/Godot*console*.exe "$h"/Downloads/*/Godot*console*.exe \
+           "$pf"/Godot*/Godot*console*.exe "$px"/Steam/steamapps/common/Godot*/godot*.exe "$h"/scoop/apps/godot*/current/godot*.exe \
+           "$h"/.local/bin/godot* "$h"/Applications/Godot*.app/Contents/MacOS/Godot /Applications/Godot*.app/Contents/MacOS/Godot; do
+    [ -f "$c" ] && [ -x "$c" ] || continue
+    REPLY="$c"; mkdir -p "${f%/*}" && printf '%s\n' "$c" > "$f"; return 0
+  done
+  return 1
+}
+brake_godot_doctor() {
+  [ -f "${PROJECT:-.}/project.godot" ] || return 0
+  [ -n "${WARMD_GODOT:-}" ] && [ -x "$WARMD_GODOT" ] && return 0
+  command -v godot >/dev/null 2>&1 || command -v godot4 >/dev/null 2>&1 || command -v Godot >/dev/null 2>&1 && return 0
+  brake_godot_find || { echo "WARN no Godot found: GDScript errors only show in CI. Set WARMD_GODOT to the console exe"; return 0; }
+  local v="${REPLY##*/}"; v="${v#Godot_v}"; v="${v%%-*}"; v="${v%%_*}"
+  echo "WARN found Godot ${v:-?} at $REPLY, not on PATH: set WARMD_GODOT=\"$(native_path "$REPLY" 2>/dev/null || echo "$REPLY")\" (remembered in the warmd cache, godot.path)"
+}
