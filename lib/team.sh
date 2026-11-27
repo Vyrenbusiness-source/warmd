@@ -398,7 +398,7 @@ review_model() { # author model -> REPLY, empty when no other model qualifies
   REPLY=""; return 1
 }
 review_line() { # author model
-  if review_model "$1"; then echo "Review: the done check, or a $REPLY agent. Never $1 (the author) on its own work."
+  if review_model "$1"; then echo "Review: the done check, or a reviewer agent on $REPLY. Never $1 (the author) on its own work."
   else echo "Review: the done check only (criteria script), no model other than $1 (the author) is allowed by floor."; fi
 }
 # The agent file of a role is only registered in projects with warmd init. A session started elsewhere cannot spawn it:
