@@ -331,6 +331,7 @@ a_test() {
 }
 
 a_check() {
+  godot_lint || return 1
   . "$WARMD_HOME/lib/affected.sh"
   affected_select gd
   case "$AFF_MODE" in
