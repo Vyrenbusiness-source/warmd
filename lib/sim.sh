@@ -106,8 +106,9 @@ sim_run() {
     k="$( { sha1sum < "$f" 2>/dev/null || shasum < "$f"; } | cut -c1-40)"
     if [ -n "$base" ]; then
       key="$(sha_of "$base|$k|seed $SIM_SEED")"
-      if [ -f "$CACHE_ROOT/sim/green/$key" ]; then echo "$(cat "$CACHE_ROOT/sim/green/$key") (cached)"; hit=$((hit + 1)); continue; fi
-      if [ -f "$CACHE_ROOT/sim/red/$key" ]; then echo "$(cat "$CACHE_ROOT/sim/red/$key") (cached, code unchanged)"; hit=$((hit + 1)); red=$((red + 1)); continue; fi
+      # The cache holds the verdict without the name: two scenario files with the same content share it
+      if [ -f "$CACHE_ROOT/sim/green/$key" ]; then verdict="$(cat "$CACHE_ROOT/sim/green/$key")"; echo "${verdict%% *} $n: ${verdict#* } (cached)"; hit=$((hit + 1)); continue; fi
+      if [ -f "$CACHE_ROOT/sim/red/$key" ]; then verdict="$(cat "$CACHE_ROOT/sim/red/$key")"; echo "${verdict%% *} $n: ${verdict#* } (cached, code unchanged)"; hit=$((hit + 1)); red=$((red + 1)); continue; fi
     fi
     names+=("$n"); paths+=("$f"); fshas+=("$k")
     if tr -d '\r' < "$f" | grep -qE '^[[:space:]]*isolate([[:space:]]|$)'; then iso+=("${#names[@]}"); else todo+=("${#names[@]}"); fi
@@ -144,7 +145,7 @@ sim_run() {
           ran=$((ran + 1))
           f="${verdict%% *} ${names[i-1]}: ${verdict#* }"
           echo "$f"
-          case "$verdict" in OK*) store+=("green ${fshas[i-1]} $f");; *) red=$((red + 1)); store+=("red ${fshas[i-1]} $f");; esac
+          case "$verdict" in OK*) store+=("green ${fshas[i-1]} $verdict");; *) red=$((red + 1)); store+=("red ${fshas[i-1]} $verdict");; esac
         done < <(cat "$dir/res" 2>/dev/null)
         [ "$done_n" -ge ${#left[@]} ] && break
         if [ "$begun" -gt 0 ] && [ "$begun" = "$done_n" ]; then

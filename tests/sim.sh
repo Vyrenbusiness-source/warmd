@@ -145,11 +145,13 @@ printf 'scene res://main.tscn\nframes 5\n' > tests/sim/other.sim
 out="$("$WARMD" sim alone other 2>&1)"
 expect "an isolated scenario gets an engine of its own" 'OK sim: 2 of 2 green, 2 engine starts' "$out"
 expect "a scenario without metrics runs all its frames" '^OK other: no metric, 5 frames ran' "$out"
-rm tests/sim/alone.sim tests/sim/other.sim
+cp tests/sim/calm.sim tests/sim/twin.sim
+expect "a cached verdict carries the name of the file that asked" "^OK twin: peak 0 <= 1, .*\(cached\)$" "$("$WARMD" sim twin 2>&1)"
+rm tests/sim/alone.sim tests/sim/other.sim tests/sim/twin.sim
 
 # ---- a hang or crash is red, never cached, and the rest goes on in a new engine ----
 printf 'scene res://hang.tscn\nframes 5\n' > tests/sim/a_hang.sim
-printf 'scene res://main.tscn\nframes 5\n' > tests/sim/after.sim
+printf 'scene res://main.tscn\nframes 6\n' > tests/sim/after.sim
 out="$(WARMD_SIM_TIMEOUT=20 "$WARMD" sim a_hang after 2>&1)"
 expect "a hanging scenario is red with its cause" '^FAIL a_hang: the engine ended in this scenario \(timeout after 20s\)' "$out"
 expect "the scenario after a hang runs in a new engine" 'OK after: .*FAIL sim: 1 of 2 green, 2 engine starts' "$(echo "$out" | tr '\n' ' ')"
