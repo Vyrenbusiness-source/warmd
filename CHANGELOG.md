@@ -4,6 +4,14 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
+### Changed
+- docs: Godot runners in one engine start and the changed scene/resource check
+- godot: a one-shot engine that ends without a result shows its first error; guest reads stay typed under strict warnings
+- godot: the build loads and instantiates changed .tscn and .tres, engine errors red with the file
+- godot: all runners in one engine start, random order from a printed seed, # warmd: isolate
+
 ## [0.5.0] - 2026-11-27
 
 ### Added
@@ -428,7 +436,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52
 [0.4.51]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.50...v0.4.51
