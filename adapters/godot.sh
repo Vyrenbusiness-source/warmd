@@ -63,26 +63,101 @@ runner_timeout() {
   local t; t="$(head -n 10 "$1" | tr -d '\r' | sed -n 's/^#[[:space:]]*warmd:[[:space:]]*timeout=\([0-9][0-9]*\).*/\1/p' | head -1)"
   echo "${t:-$TIMEOUT}"
 }
-run_runners() {
-  local exe="$1" f rc=0 n=0 out r bad load where t; shift
-  out="$(mktemp)"
-  for f in "$@"; do
-    n=$((n + 1))
-    echo "== ${f#"$PROJECT"/}"
-    t="$(runner_timeout "$f")"
-    timeout "$t" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
-    cat "$out"
-    bad="$(godot_errors "$out" | head -1 | cut -c1-200)"
-    if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))${bad:+: $bad}"; rc=1
-    else
-      where=""; [[ ${bad%% *} =~ :[0-9]+$ ]] && where=" at ${bad%% *}"
-      load="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
-      if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: $load$where"; rc=1
-      elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1; fi
-    fi
+# A runner with a line "# warmd: isolate" in its first 10 lines changes autoloads or static state: it gets an engine of its own
+runner_isolated() { head -n 10 "$1" | tr -d '\r' | grep -qE '^#[[:space:]]*warmd:[[:space:]]*isolate'; }
+# runner_shuffle <seed> <file...>: the files in an order the seed fixes, the same on every machine (own LCG, no awk rand)
+runner_shuffle() {
+  local s="$1" i j t; shift
+  local -a a=("$@")
+  for (( i = ${#a[@]} - 1; i > 0; i-- )); do
+    s=$(( (s * 1103515245 + 12345) % 2147483648 )); j=$(( s % (i + 1) ))
+    t="${a[i]}"; a[i]="${a[j]}"; a[j]="$t"
   done
+  [ ${#a[@]} -gt 0 ] && printf '%s\n' "${a[@]}"
+  return 0
+}
+# run_alone <exe> <runner>: the runner as the engine's main loop, one engine start for it
+run_alone() {
+  local exe="$1" f="$2" out r bad load where t rc=0
+  out="$(mktemp)"
+  echo "== ${f#"$PROJECT"/} (own engine)"
+  t="$(runner_timeout "$f")"
+  timeout "$t" "$exe" --headless --path "$(native_path "$PROJECT")" --script "res://${f#"$PROJECT"/}" > "$out" 2>&1; r=$?
+  cat "$out"
+  bad="$(godot_errors "$out" | head -1 | cut -c1-200)"
+  if [ $r != 0 ]; then echo "FAIL runner ${f#"$PROJECT"/} ($(runner_why "$r" "$out" "$t"))${bad:+: $bad}"; rc=1
+  else
+    where=""; [[ ${bad%% *} =~ :[0-9]+$ ]] && where=" at ${bad%% *}"
+    load="$(tr -d '\r' < "$out" | grep -E "$GODOT_LOAD_ERR" | head -1 | cut -c1-160)"
+    if [ -n "$load" ]; then echo "FAIL runner ${f#"$PROJECT"/} does not load: $load$where"; rc=1
+    elif [ -n "$bad" ]; then echo "FAIL runner ${f#"$PROJECT"/} script error ${bad} (exit 0)"; rc=1; fi
+  fi
   rm -f "$out"
-  [ $rc = 0 ] && echo "$n runners passed"
+  return $rc
+}
+# run_shared <exe> <runner...>: the runners one after another in one engine (godot/daemon.gd, job kind runners), each with
+# its own verdict. A runner that ends the engine (a crash, a hang the engine cannot time out, a quit through the real tree)
+# is named: red for a crash or hang, its own engine for a clean quit. The runners after it get a new engine.
+# Runners that do not compile as a guest go to SHARED_ALONE, passes are counted in SHARED_OK.
+run_shared() {
+  local exe="$1" f rel st detail t total list r cur ended rc=0 res="$RUN/runners.txt" log="$RUN/runners.log"; shift
+  local -a rest=("$@") next=()
+  local -A verdict=()
+  while [ ${#rest[@]} -gt 0 ]; do
+    rm -f "$res" "$RUN/current.txt" "$RUN/result.txt"
+    total=30; list=""
+    for f in "${rest[@]}"; do t="$(runner_timeout "$f")"; total=$((total + t)); list="${list:+$list,}res://${f#"$PROJECT"/}|$t"; done
+    { echo "id=r$(now_ms)"; echo "kind=runners"; echo "list=$list"; echo "quit_after=1"; } > "$RUN/job.txt"
+    WARMD_DIR="$(native_path "$RUN")" WARMD_LOG="$(native_path "$log")" timeout "$total" "$exe" --headless --path "$(native_path "$PROJECT")" --script "$(native_path "$WARMD_HOME/godot/daemon.gd")" > "$log" 2>&1; r=$?
+    tr -d '\r' < "$log"
+    verdict=()
+    while IFS=$'\t' read -r rel st detail; do [ -n "$rel" ] && verdict["$rel"]="$st"$'\t'"$detail"; done < <(tr -d '\r' < "$res" 2>/dev/null)
+    cur="$(tr -d '\r' < "$RUN/current.txt" 2>/dev/null)"; cur="${cur#res://}"
+    next=(); ended=""
+    for f in "${rest[@]}"; do
+      rel="${f#"$PROJECT"/}"
+      if [ -n "${verdict[$rel]+x}" ]; then
+        st="${verdict[$rel]%%$'\t'*}"; detail="${verdict[$rel]#*$'\t'}"
+        case "$st" in
+          OK) SHARED_OK=$((SHARED_OK + 1));;
+          ALONE) echo "(runner $rel gets its own engine: $detail)"; SHARED_ALONE+=("$f");;
+          *) echo "FAIL runner $rel $detail"; rc=1;;
+        esac
+      elif [ "$ended" = all ]; then SHARED_ALONE+=("$f")
+      elif [ -n "$ended" ]; then next+=("$f")
+      elif [ "$cur" != "$rel" ]; then
+        # The engine ended before this runner started: no runner is to blame, every one left gets an engine of its own
+        ended=all; echo "(shared engine ended before $rel started, exit $r: the rest run alone)"; SHARED_ALONE+=("$f")
+      else
+        ended=1
+        case "$r" in
+          124|137) echo "FAIL runner $rel (timeout: the shared engine hung in it and was ended after ${total}s)"; rc=1;;
+          0) echo "(runner $rel ended the shared engine: it gets its own)"; SHARED_ALONE+=("$f");;
+          *) echo "FAIL runner $rel ($(runner_why "$r" "$log" "$total"), the shared engine ended in it)"; rc=1;;
+        esac
+      fi
+    done
+    rest=("${next[@]}")
+  done
+  return $rc
+}
+# All runners in one engine start (speed on a low-RAM PC), in an order from a printed seed: WARMD_SEED=<n> replays it.
+# A runner marked "# warmd: isolate", and one that does not compile as a guest, gets an engine of its own.
+run_runners() {
+  local exe="$1" f rc=0 seed; shift
+  local -a shared=() alone=()
+  seed="${WARMD_SEED:-$(( (RANDOM << 15) | RANDOM ))}"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if runner_isolated "$f"; then alone+=("$f"); else shared+=("$f"); fi
+  done < <(runner_shuffle "$seed" "$@")
+  echo "(runner order from seed $seed, WARMD_SEED=$seed replays it)"
+  SHARED_OK=0; SHARED_ALONE=()
+  # One runner alone gains nothing from a shared engine: it runs as the main loop, exactly as Godot runs it
+  if [ ${#shared[@]} -gt 1 ]; then run_shared "$exe" "${shared[@]}" || rc=1; alone=("${SHARED_ALONE[@]}" "${alone[@]}")
+  else alone=("${shared[@]}" "${alone[@]}"); fi
+  for f in "${alone[@]}"; do run_alone "$exe" "$f" || rc=1; done
+  [ $rc = 0 ] && echo "$# runners passed ($SHARED_OK in one engine, ${#alone[@]} alone)"
   return $rc
 }
 project_rx() { native_path "$PROJECT" | sed 's/[]().+*?^$|\\[]/\\&/g'; }
@@ -188,6 +263,8 @@ job_oneshot() {
   local rc=$?
   if [ ! -f "$RUN/result.txt" ]; then
     [ $rc = 124 ] && echo "FAIL timeout after ${TIMEOUT}s in $(cat "$RUN/current.txt" 2>/dev/null)" || echo "FAIL Godot ended without a result (exit $rc), see $(native_path "$RUN/last.log")"
+    # The engine's own reason (warmd's script does not load, a parse error in it), so nobody has to open the log
+    { godot_errors "$RUN/last.log"; tr -d '\r' < "$RUN/last.log" | grep -E "$GODOT_LOAD_ERR"; } | awk '!seen[$0]++' | head -3 | cut -c1-200
     return 1
   fi
   head -15 "$RUN/result.txt" | tr -d '\r' | sed '1s/^[^ ]* //'
@@ -205,7 +282,16 @@ godot_build() {
   if ls "$PROJECT"/*.csproj >/dev/null 2>&1 && command -v dotnet >/dev/null 2>&1; then
     run_bounded "dotnet build" bash -c "cd '$PROJECT' && dotnet build --nologo -v q" || return 1
   fi
-  class_retry run_job compile
+  local scenes; scenes="$(changed_scenes)"
+  class_retry run_job compile ${scenes:+"scenes=$scenes"}
+}
+# changed_scenes: the .tscn and .tres changed against HEAD and the base branch (warmd check's selection), as res:// paths
+# with a comma between. The build's cache key covers them: a green load stays green until one of them changes.
+changed_scenes() {
+  [ -n "$(type -t aff_changed)" ] || . "$WARMD_HOME/lib/affected.sh"
+  aff_changed | grep -E '\.(tscn|tres)$' | grep -vE '(^|/)\.(godot|warmd)/' | while IFS= read -r f; do
+    [ -f "$PROJECT/$f" ] && printf 'res://%s,' "$f"
+  done | sed 's/,$//'
 }
 
 a_test() {
@@ -231,7 +317,8 @@ a_test() {
       # A filter picks runners by name; one that names none (warmd check passes changed file names) runs the whole set, runners are suites
       for r in "${runners[@]}"; do [ -n "$filter" ] && [[ "${r##*/}" =~ $filter ]] && pick+=("$r"); done
       [ ${#pick[@]} -gt 0 ] || pick=("${runners[@]}")
-      slot_take; cached "runners|${pick[*]##*/}" run_bounded test class_retry run_runners "$exe" "${pick[@]}"
+      # A replay (WARMD_SEED) really runs: its order is the point. A random order is green for the same code either way.
+      slot_take; cached "runners|${pick[*]##*/}${WARMD_SEED:+|seed $WARMD_SEED}" run_bounded test class_retry run_runners "$exe" "${pick[@]}"
       return
     fi
   fi
