@@ -4,6 +4,8 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
 ### Added
 - `warmd lint [files...]`: Godot lints on changed `.gd`, `.tscn`, `.tres`. ERROR only when the headless engine (`godot/lint.gd`) or the disk proves it: unknown input action, `/root/` autoload, `tr` key, missing `res://` path, `res://` case differs from disk, collision layer outside 1-32. Everything else is WARN, capped by `WARMD_LINT_WARN` (10); `WARMD_LINT_NODES` (300), `WARMD_LINT_SUBRES_KB` (64). The engine starts once, only for open candidates. Exit 1 on errors. First step of `check` in Godot projects
 - `warmd nightly [--schedule|--report] [--no-mutate]`: build and tests without cache in separate processes. `MISMATCH` (cache key wrong, confirmed by a second fresh run, exit 1) or `FLAKY`. Godot runners each in their own engine with `--verbose`; loads the static graph did not predict are `GAP` and become edges in `warmd-edges.tsv`. Then `warmd mutate` on the lines since the last night; 5-line report in `.warmd/nightly.txt`. `--schedule` prints the schtasks/cron one-liner and installs nothing
@@ -469,7 +471,8 @@ Documentation and packaging release. No code changes in `bin`, `lib` or `adapter
 
 First public version, not tagged: headless daemon and CLI for Unity, Godot, web and any test suite, short test output, green cache, affected tests, worktrees per agent, merge gate, `warmd bench` and the public proof job.
 
-[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.52...v0.5.0
 [0.4.52]: https://github.com/Vyrenbusiness-source/warmd/compare/v0.4.51...v0.4.52
