@@ -250,6 +250,7 @@ ship_run() {
       echo "FAIL $b conflicts outside the usage/dispatch block: $(echo "$files" | tr '\n' ' ')"; return 1
     fi
   done
+  ship_docs_pending || return 1
   [ -z "$release" ] || ship_bump "$release" || return 1
   git push -q --force-with-lease -u origin "$into" 2>/dev/null || git push -q -f -u origin "$into" || { echo "FAIL push $into"; return 1; }
   local pr
@@ -280,4 +281,19 @@ ship_run() {
     ship_install "$base"
   fi
   echo "SHIPPED PR #$pr"
+}
+
+# A task cannot own docs/COMMANDS.md (one file, every task adds to it): it writes its entry to docs/pending/<task>.md,
+# which tests/docs.sh accepts. ship appends every pending entry to COMMANDS.md and removes the file, in one commit.
+ship_docs_pending() {
+  local top f n=0; top="$(git rev-parse --show-toplevel)" || return 0
+  for f in "$top"/docs/pending/*.md; do
+    [ -f "$f" ] || continue
+    { echo; cat "$f"; } >> "$top/docs/COMMANDS.md" || return 1
+    git rm -qf "$f" 2>/dev/null || rm -f "$f"
+    n=$((n + 1))
+  done
+  [ $n = 0 ] && return 0
+  git add "$top/docs/COMMANDS.md" && git commit -qm "docs: $n pending command entries into docs/COMMANDS.md" || { echo "FAIL commit of the pending docs entries"; return 1; }
+  echo "ok   docs: $n pending entries merged into docs/COMMANDS.md"
 }
