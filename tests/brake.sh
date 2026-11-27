@@ -98,6 +98,16 @@ expect "ship merges a pending docs entry" '^ok   docs: 1 pending entries merged'
 expect "the entry is in COMMANDS.md" '^### warmd b$' "$(grep '^### warmd b' docs/COMMANDS.md)"
 [ ! -e docs/pending/t.md ] && [ -z "$(git status --porcelain)" ] && ok "the pending file is gone, committed" || no "pending file left or tree dirty: $(git status --porcelain)"
 
+
+# affected_select reads the extra edges warmd nightly proved with the engine (warmd-edges.tsv in the common git dir)
+d="$TMP/aff"; mkdir -p "$d"; cp -R "$HERE/tests/fixtures/affected/js/." "$d/"
+( cd "$d" && git init -q -b main . && git config core.autocrlf false && git config user.name t && git config user.email t@example.com && git add -A && git commit -qm init )
+echo '// edit' >> "$d/src/other.ts"
+sel() { ( cd "$d" && WARMD_HOME="$HERE" && . "$HERE/lib/platform.sh" && . "$HERE/lib/core.sh" && detect_project && . "$HERE/lib/affected.sh" && WARMD_SELECT=1 affected_select js && echo "$AFF_MODE|$AFF_FILES" ) 2>/dev/null; }
+expect "without extra edges other.ts selects its own test only" '^SOME\|test/other\.test\.ts$' "$(sel)"
+printf 'E\ttest/top.test.ts\tsrc/other.ts\n' > "$d/.git/warmd-edges.tsv"
+expect "an engine-proven edge selects the test that loads the file" '^SOME\|.*test/top\.test\.ts' "$(sel)"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails

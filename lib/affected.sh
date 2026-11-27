@@ -447,6 +447,9 @@ $prog" < /dev/null > "$edges";;
   esac
   rc=$?
   if [ $rc -ne 0 ]; then rm -rf "$tmp"; AFF_MODE=ALL; AFF_REASON="graph could not be built"; return 0; fi
+  # Extra edges warmd nightly proved with the engine (a file a runner really loads that the static graph misses)
+  local xe; xe="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-edges.tsv"
+  [ -s "$xe" ] && grep $'^E\t' "$xe" >> "$edges"
   line="$(awk -v EDGES="$edges" -v CHG="$tmp/changed" -v UNT="$tmp/untracked" "$AFF_AWK_CLOSE" < /dev/null)"
   AFF_MODE="$(printf '%s\n' "$line" | head -1 | cut -f1)"
   case "$AFF_MODE" in
