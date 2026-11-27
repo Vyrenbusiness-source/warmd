@@ -430,6 +430,7 @@ write_task() { # name tier goal done files wt
     echo "Files you own: ${files:-none, read only}"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
+    echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
     echo "Time budget: $(tier_minutes "$tier") min. warmd watch escalates the task past it: commit before."
     review_line "$model"
@@ -881,6 +882,7 @@ team_finish() {
   # DONE with an outcome other than failed or escalated: the task waits for the merge. No stop may escalate or restart it.
   case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; mkdir -p "$fb" && : > "$fb/${br#warmd/}";; esac
   finish_stop_runs
+  git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1 && finish_base_sync "$base"
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$(base_branch)..HEAD" 2>/dev/null || echo '?')"
   dirty="$(wt_work "$GIT_ROOT" | wc -l | tr -d ' ')"   # new files count too: work never added is lost at the merge
@@ -893,6 +895,23 @@ team_finish() {
   local over=""; task_over "${br#warmd/}" "$(ledger_taskdir)" && over=", OVER time budget: $REPLY"
   type brake_batch_line >/dev/null 2>&1 && brake_batch_line "${br#warmd/}"
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
+}
+
+
+# Before the push: a PR that conflicts with its base gets no CI run at all, and agents waited minutes for checks that
+# never start. A clean merge of origin/<base> is made here (clean tree only), a conflict is named at once.
+finish_base_sync() { # base
+  local ob="origin/$1" rc
+  git -C "$GIT_ROOT" fetch -q origin "$1" 2>/dev/null || return 0
+  git -C "$GIT_ROOT" rev-parse -q --verify "$ob" >/dev/null || return 0
+  git -C "$GIT_ROOT" merge-base --is-ancestor "$ob" HEAD 2>/dev/null && return 0
+  git -C "$GIT_ROOT" merge-tree --write-tree HEAD "$ob" >/dev/null 2>&1; rc=$?
+  if [ $rc = 1 ]; then
+    echo "CONFLICT with $1: CI will not run on the PR. Merge $ob, resolve, commit, then warmd finish again"
+  elif [ $rc = 0 ] && [ -z "$(git -C "$GIT_ROOT" status --porcelain --untracked-files=no)" ]; then
+    git -C "$GIT_ROOT" merge -q --no-edit "$ob" >/dev/null 2>&1 && echo "(merged $ob first, it merged clean: the PR stays mergeable)"
+  fi
+  return 0
 }
 
 # The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot

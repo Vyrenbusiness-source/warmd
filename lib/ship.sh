@@ -78,7 +78,7 @@ ci_wait() { # branch
 ci_wait_run() { # branch
   local br="$1" id tries=0 t0 now cap med="" runs=0 snap st fin red created job step start el first=1 slow=0 mark left
   id="$(ship_run_id "$br")"
-  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-15}" ]; do nap "${WARMD_CI_POLL:-10}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
+  while [ -z "$id" ] && [ $tries -lt "${WARMD_CI_TRIES:-15}" ]; do ci_conflict "$br" && return 1; nap "${WARMD_CI_POLL:-10}"; tries=$((tries+1)); id="$(ship_run_id "$br")"; done
   [ -n "$id" ] || { echo "FAIL no CI run for $br"; return 1; }
   read -r med runs <<< "$(ci_median)"
   # Cap: WARMD_CI_MAX minutes when set, else twice the measured median (at least 5 min), else 20 min without history.
@@ -199,6 +199,7 @@ install_behind() { # [install dir]
 
 ci_main() {
   local br="${1:-$(git branch --show-current)}"
+  case "$br" in warmd/*) ci_draft_pr "$br";; esac
   ci_wait "$br"
 }
 
@@ -296,4 +297,22 @@ ship_docs_pending() {
   [ $n = 0 ] && return 0
   git add "$top/docs/COMMANDS.md" && git commit -qm "docs: $n pending command entries into docs/COMMANDS.md" || { echo "FAIL commit of the pending docs entries"; return 1; }
   echo "ok   docs: $n pending entries merged into docs/COMMANDS.md"
+}
+
+# GitHub starts no CI for a PR that conflicts with its base: agents waited minutes for checks that never came.
+ci_conflict() { # branch -> 0 and a CONFLICT line when the branch's open PR cannot merge
+  local m; m="$(gh pr view "$1" --json mergeable,baseRefName --jq '.mergeable+" "+.baseRefName' 2>/dev/null)"
+  case "$m" in CONFLICTING*) echo "CONFLICT with ${m#* }: CI will not run on the PR of $1. Merge origin/${m#* }, resolve, push, then warmd ci"; return 0;; esac
+  return 1
+}
+
+# CI runs on pull requests: a task branch without one waits for a run that never starts. warmd ci opens a draft PR.
+ci_draft_pr() { # branch
+  local base
+  [ -z "$(gh pr list --head "$1" --state open --json number --jq '.[0].number' 2>/dev/null)" ] || return 0
+  git push -q -u origin "$1" 2>/dev/null || return 0
+  base="$(base_branch 2>/dev/null)"; [ -n "$base" ] && [ "$base" != "$1" ] || base=main
+  gh pr create --draft --base "$base" --head "$1" --title "${1#warmd/}" --body "Draft PR opened by warmd ci: CI runs on pull requests." >/dev/null 2>&1 \
+    && echo "(opened a draft PR for $1 against $base: CI runs on pull requests only)"
+  return 0
 }

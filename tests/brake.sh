@@ -67,6 +67,37 @@ expect "hook leaves python with a script alone" '^$' "$(hk 'python x.py')"
 expect "hook leaves python fed by a pipe alone" '^$' "$(hk 'cat a.py | python -')"
 expect "doctor flags the Windows Store python stub" "WARN python3 is the Windows Store stub" "$(PATH="$TMP/WindowsApps:$PATH" "$HERE/bin/warmd" doctor)"
 
+
+# finish merges a clean origin/<base> before its push and names a conflict at once: a conflicting PR runs no CI
+cfg() { git config user.name t; git config user.email t@example.com; git config core.autocrlf false; }
+git init -q --bare -b main "$TMP/r.git"; git clone -q "$TMP/r.git" "$TMP/c" 2>/dev/null; cd "$TMP/c" || exit 1; cfg
+echo a > f.txt; git add f.txt; git commit -qm a; git push -q origin main
+git checkout -qb warmd/t; echo t > t.txt; git add t.txt; git commit -qm t
+git checkout -q main; echo b > g.txt; git add g.txt; git commit -qm b; git push -q origin main; git checkout -q warmd/t
+out="$(w finish)"
+expect "finish merges a clean origin/main first" '^\(merged origin/main first' "$out"
+git merge-base --is-ancestor origin/main HEAD && ok "the pushed branch holds origin/main" || no "the pushed branch lacks origin/main"
+git checkout -q main; echo X > f.txt; git commit -qam x; git push -q origin main; git checkout -q warmd/t
+echo Y > f.txt; git commit -qam y
+expect "finish names a conflict with main at once" '^CONFLICT with main: CI will not run' "$(w finish)"
+
+# warmd ci: a conflicting PR fails at once instead of waiting for a run that never starts
+mkdir -p "$TMP/gh"; cat > "$TMP/gh/gh" <<'GH'
+#!/bin/sh
+case "$1 $2" in "pr view") echo "CONFLICTING main";; "pr list") echo 5;; esac
+GH
+chmod +x "$TMP/gh/gh"
+out="$(PATH="$TMP/gh:$PATH" WARMD_CI_POLL=0 WARMD_CI_TRIES=2 w ci warmd/t)"
+expect "warmd ci names a conflicting PR" '^CONFLICT with main: CI will not run on the PR of warmd/t' "$out"
+
+# ship moves docs/pending/<task>.md entries into docs/COMMANDS.md and removes them
+mkdir -p docs/pending; printf '# Commands\n\n### warmd a\nA.\n' > docs/COMMANDS.md; printf '### warmd b\nB.\n' > docs/pending/t.md
+git add docs; git commit -qm docs
+out="$(bash -c "reg() { :; }; . '$HERE/lib/ship.sh'; ship_docs_pending" 2>&1)"
+expect "ship merges a pending docs entry" '^ok   docs: 1 pending entries merged' "$out"
+expect "the entry is in COMMANDS.md" '^### warmd b$' "$(grep '^### warmd b' docs/COMMANDS.md)"
+[ ! -e docs/pending/t.md ] && [ -z "$(git status --porcelain)" ] && ok "the pending file is gone, committed" || no "pending file left or tree dirty: $(git status --porcelain)"
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails
