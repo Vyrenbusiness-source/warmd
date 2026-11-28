@@ -115,6 +115,8 @@ orphan_check() {
 batch_guard() {
   [ "${WARMD_BASE:-0}" = 1 ] || [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0
   [ -n "$GIT_ROOT" ] || return 0
+  # A linked worktree (its .git is a file) is never the shared checkout, also one made by hand outside the batch
+  [ -f "$GIT_ROOT/.git" ] && return 0
   local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$f" ] || return 0
   # Stale after 240 minutes, unless warmd watch saw agents work in that time: it touches warmd-batch-alive, never the marker,

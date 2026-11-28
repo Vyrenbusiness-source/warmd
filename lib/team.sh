@@ -995,7 +995,7 @@ team_finish() {
   shared_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   ledger_finish "$@" || return $?
   # DONE with an outcome other than failed or escalated: the task waits for the merge. No stop may escalate or restart it.
-  case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; mkdir -p "$fb" && : > "$fb/${br#warmd/}";; esac
+  case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; local fn="${br#warmd/}"; mkdir -p "$fb" && : > "$fb/${fn//\//-}";; esac   # fix/x: one file fix-x, no folder that is not there
   finish_stop_runs
   git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1 && finish_base_sync "$base"
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
