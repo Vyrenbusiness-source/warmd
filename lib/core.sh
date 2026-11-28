@@ -589,6 +589,11 @@ common_init() {
   done
   [ $done = 1 ] || instr_sync "$root/AGENTS.md"
   echo "OK agent definitions in .claude/agents, instructions in CLAUDE.md or AGENTS.md"
+  # A session started in another folder never sees these agents (lib/team.sh session_dir_r)
+  if [ "$(type -t session_dir_r)" = function ]; then
+    session_dir_r; local a b; a="$(native_path "${REPLY:-?}")"; b="$(native_path "$root")"
+    [ "${a,,}" = "${b,,}" ] || echo "WARN this Claude Code session started in ${REPLY:+$(native_path "$REPLY")}${REPLY:-another folder}, its Agent tool does not see $(native_path "$root")/.claude/agents. Start Claude Code in $(native_path "$root"); until then warmd split prints FALLBACK lines for general-purpose agents"
+  fi
 }
 
 # The warmd block in CLAUDE.md or AGENTS.md stays current: between its markers it is replaced when warmd brings a newer one
