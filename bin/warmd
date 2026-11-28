@@ -64,6 +64,7 @@ Everyday
   warmd shot [scene] --golden  Godot: the shot against this machine's reference, SAME or DIFF p% in region
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
+  warmd run --heavy -- <cmd>   the same through the heavy queue (RAM, slot), WAIT line after 30 s
   warmd map [file]             repo map by import rank, or one outline with line numbers
   warmd where <term>           at most five file:line places for a term (Laufen, projectile), then what changed
   warmd where --changed [ref]  every moved, changed, gone or added symbol since your last read or a git state
@@ -121,6 +122,8 @@ detect_project
 # shellcheck source=/dev/null
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
 case "$CMD" in test|check|build|bench|shot|layout|call|package|perf) run_mark;; esac
+# A test or check that waits or works 30 s says on what, in one line (lib/core.sh phase)
+case "$CMD" in test|check) phase_start "RUN $CMD${1:+ $1}";; esac
 
 case "$CMD" in
   status)  common_status; install_behind; a_status;;
