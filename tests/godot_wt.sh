@@ -99,6 +99,32 @@ out="$(timeout 120 "$WARMD" split tasks5.txt 2>&1)"
 expect "a split stopped before its task file goes on" '^AGENT halt:' "$out"
 expect "its unfinished checkout is completed" 'class_name OldOne' "$(cat "$wts/halt/old.gd" 2>&1)"
 expect "the stopped split's worktree is used again" "^Task halt\. First run: cd \".*halt\"" "$(cat .warmd/tasks/halt.md 2>&1 | head -1)"
+"$WARMD" batch-done > /dev/null 2>&1
+
+# warmd test in a Godot project: test= is the project's own runner, the filter its one argument; a name that matches no
+# tests/run_*.gd says so instead of running the whole set; old checkouts in hidden folders are never searched
+G="$TMP/own"; mkdir -p "$G/tests" "$G/.claude/worktrees/old"; cd "$G" || exit 1
+git init -q -b main .; git config user.name t; git config user.email t@example.com
+printf '[application]\nconfig/name="o"\n' > project.godot; printf '.warmd\n.godot/\n.claude/\n' > .gitignore
+printf 'extends SceneTree\nfunc _init():\n\tquit(0)\n' > tests/run_all.gd
+printf 'extends WarmdTest\n' > .claude/worktrees/old/t.gd
+"$S/godot" --path "$PWD" --import; git checkout -q -- project.godot 2>/dev/null; git add -A; git commit -qm init
+out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 "$WARMD" test test_match_ziel 2>&1)"
+expect "a test name that matches no runner is said, nothing else runs" '^FAIL no runner matches test_match_ziel: run_all\.gd\. ' "$out"
+printf 'test=echo ran only=\n' > warmd.conf
+out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 WARMD_NOCACHE=1 "$WARMD" test 'test_a|b' 2>&1; tr -d '\r' < .warmd/run/last.log)"
+expect "test= runs in a Godot project with the filter as one argument" '^ran only= test_a.b$' "$out"
+printf 'test=sleep 4; echo slept\n' > warmd.conf
+out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 WARMD_NOCACHE=1 WARMD_PHASE_SAY=1 "$WARMD" test 2>&1)"
+expect "a test that works past WARMD_PHASE_SAY says what it does" '^RUN test: .*last\.log \([0-9]+s\)$' "$out"
+mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; sleep 60 & held=$!; echo "$held" > "$XDG_CACHE_HOME/warmd/slots/1/pid"; echo "halt test" > "$XDG_CACHE_HOME/warmd/slots/1/what"
+printf 'test=echo ok\nslots=1\n' > warmd.conf
+(WARMD_BASE=1 WARMD_NOCACHE=1 WARMD_PHASE_SAY=1 WARMD_QUEUE_POLL=1 WARMD_NO_RAM_WAIT=1 timeout 120 "$WARMD" test > "$TMP/q.out" 2>&1) & qr=$!
+for _ in $(seq 120); do grep -q "^WAIT slot" "$TMP/q.out" 2>/dev/null && break; sleep 0.5; done
+kill "$held"; wait "$qr"; out="$(cat "$TMP/q.out")"
+expect "a queued test names the slot holders" '^WAIT slot 1/1 busy: halt test \([0-9]+s\)$' "$out"
+expect "and runs once the slot is free" '^OK .*test' "$out"
+cd "$TMP" || exit 1
 
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null

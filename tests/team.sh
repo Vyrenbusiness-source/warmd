@@ -199,9 +199,24 @@ printf '.warmd\n' > .gitignore; git add -A; git commit -qm init
 printf 'a | move the player | y | scripts/player.gd\nb | redo the level | y | scenes/level.tscn\nc | menu | y | scenes/menu.tscn\n' > "$TMP/scn.txt"
 out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn.txt" 2>&1)"
 echo "$out" | grep -q '^WAIT b: scene scenes/level.tscn is held by a' && ok "two tasks on one scene never run in parallel: the script's scene holds it" || no "scene wait: $out"
+echo "$out" | grep -q '^WAIT b: .*(warmd merge warmd/a) or dropped (warmd drop a)$' && ok "the scene WAIT line names the way out" || no "scene wait way out: $out"
+# a parked holder: its agent finished and nothing moved for scene_rest_hours, the scene is free
+out0="$out"
+SC="$(git rev-parse --path-format=absolute --git-common-dir)"; AW="$(sed -n 1p "$SC/warmd-batch")"
+printf '%s\tok\twarmd/a\n' "$AW" >> "$SC/warmd-batch-done"
+printf 'b | redo the level | y | scenes/level.tscn\n' > "$TMP/scn2.txt"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn2.txt" 2>&1)"
+echo "$out" | grep -q '^WAIT b: scene' && ok "a finished holder that moved lately still holds its scene" || no "fresh parked holder freed the scene: $out"
+printf 'scene_rest_hours=0\n' > warmd.conf; out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn2.txt" 2>&1)"; : > warmd.conf
+echo "$out" | grep -q '^WAIT b: scene' && ok "scene_rest_hours=0: a parked holder holds until merge or drop" || no "rest 0: $out"
+GIT_COMMITTER_DATE="$(date -d '-5 hours' '+%F %T')" git -C "$AW" commit -q --amend --no-edit --date="$(date -d '-5 hours' '+%F %T')"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn2.txt" 2>&1)"
+echo "$out" | grep -q '^AGENT b:' && ok "a holder parked for 4 hours holds no scene" || no "parked holder still holds: $out"
+out="$out0"
 echo "$out" | grep -q '^AGENT c:' && ok "a task on another scene runs in parallel" || no "other scene: $out"
 grep -q '^Review: .*reviewer agent on opus. Never sonnet (the author)' .warmd/tasks/a.md && ok "the reviewer model is never the author model" || no "review line: $(grep Review .warmd/tasks/a.md)"
 grep -q '^Time budget: 60 min' .warmd/tasks/a.md && ok "the task file states its time budget" || no "time budget line: $(cat .warmd/tasks/a.md)"
+grep -q '^Heavy runs: .*warmd run --heavy -- <command>' .warmd/tasks/a.md && ok "the task file sends own engine runs through the heavy queue" || no "heavy line: $(cat .warmd/tasks/a.md)"
 echo "$out" | grep -q '^FALLBACK a (no warmd-worker agent in .*): subagent_type=general-purpose model=sonnet prompt="You are a warmd worker\. .*Read .*a\.md and do it\."' && ok "without the agent file split prints a general-purpose fallback with the rules inline" || no "fallback: $out"
 grep -q 'gameplay\|worker' .warmd/tasks/a.role && [ -f ".warmd/roles/$(cat .warmd/tasks/a.role).md" ] && ok "a worker task gets its role file" || no "role file: $(ls .warmd/roles 2>&1)"
 mkdir -p .claude/agents; cp "$HERE/agents/warmd-worker.md" .claude/agents/
@@ -231,6 +246,16 @@ for i in 3 4 5 6 7; do printf '%s\tz%s\tmid\tsrc\t-\t-\t1\tok\n' "$i" "$i" >> "$
 "$HERE/bin/warmd" route 'fix a bug' src/a.js | grep -q '^top' && ok "later successes never lower a raised area" || no "area went back down"
 "$HERE/bin/warmd" route 'fix the crash' lib/a.js > /dev/null
 "$HERE/bin/warmd" route 'fix a bug' lib/a.js | grep -q '^mid' && ok "a goal word raises the task, not its area" || no "goal word made the area sticky"
+# A read-only task that names a top word is top work too, umlauts in either spelling and case
+printf 'top_words=crash|Strenge Prüfung\n' > warmd.conf
+"$HERE/bin/warmd" route 'Strenge Prüfung des Spiels' | grep -q '^top' && ok "a top word routes a read-only task to top" || no "files none top word: $("$HERE/bin/warmd" route 'Strenge Prüfung des Spiels')"
+"$HERE/bin/warmd" route 'STRENGE PRUEFUNG der KI' none | grep -q '^top' && ok "an umlaut matches in ue spelling and upper case" || no "umlaut fold: $("$HERE/bin/warmd" route 'STRENGE PRUEFUNG der KI' none)"
+"$HERE/bin/warmd" route 'read the docs' | grep -q '^cheap' && ok "a plain read-only task stays cheap" || no "read-only not cheap"
+printf 'r1 | read the code | y | none | tier=top\nr2 | fix a | b | y | src/a.js | tier=cheap\n' > "$TMP/tier.txt"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/tier.txt" 2>&1)"
+[ "$(cat .warmd/tasks/r1.tier 2>/dev/null)" = top ] && grep -q '^Goal: read the code$' .warmd/tasks/r1.md && ok "tier=top in the task line fixes the tier" || no "tier field: $out; $(cat .warmd/tasks/r1.tier 2>&1)"
+[ "$(cat .warmd/tasks/r2.tier 2>/dev/null)" = mid ] && grep -q '^Goal: fix a | b$' .warmd/tasks/r2.md && ok "tier=cheap never sends an editing task to the read-only tier, a | in the goal stays" || no "tier cheap edit: $(cat .warmd/tasks/r2.tier 2>&1); $(grep Goal .warmd/tasks/r2.md 2>&1)"
+"$HERE/bin/warmd" batch-done > /dev/null 2>&1; : > warmd.conf
 
 # A rolled-back merge leaves one rule line in the role file of its task
 printf 'gate=false\n' > warmd.conf; git add warmd.conf; git commit -qm conf

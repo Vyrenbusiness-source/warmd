@@ -94,7 +94,7 @@ job_lock() {
   until mkdir "$dir" 2>/dev/null; do
     holder="$(cat "$dir/pid" 2>/dev/null)"
     if [ -n "$holder" ] && ! shell_alive "$holder"; then rm -rf "$dir"; continue; fi
-    [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; queue_mark; }
+    [ -n "$said" ] || { echo "(queued: another job runs on this project)"; said=1; queue_mark "job lock: another warmd job runs on this project"; }
     nap 1; orphan_check
   done
   [ -z "$said" ] || queue_done
@@ -106,6 +106,7 @@ job() {
   local kind="$1" attempt=1 id waited lost; shift
   [ "$kind" = quit ] || { [ "$kind" = ping ] && daemon_alive; } || slot_take
   [ "$kind" = quit ] || job_lock
+  [ -z "$PHASE_FILE" ] || phase "RUN $kind in the engine: $(native_path "$RUN/warmd-daemon.log")"
   while :; do
     start_locked a_start_daemon
     id="j$(now_ms)"

@@ -5,6 +5,36 @@ TIMEOUT="${WARMD_TIMEOUT:-900}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/warmd"
 LOCK=""; SLOT=""; JOBLOCK=""; MERGELOCK=""; RUNMARK=""
 PARENT_PID="$PPID"
+# What a long run waits for: phase <line> sets it (WAIT slot 2/2 busy: a, b / WAIT RAM ... / RUN test ...), a ticker
+# started by phase_start prints it once when it has lasted WARMD_PHASE_SAY seconds (default 30, 0 = never). A test that
+# sat silent for 400 s in a queue or an import now says why. Without phase_start, phase costs one test and nothing else.
+PHASE_FILE=""; PHASE_PID=""
+phase() {
+  [ -n "$PHASE_FILE" ] || return 0
+  local now; printf -v now '%(%s)T' -1
+  printf '%s %s\n' "$now" "$*" > "$PHASE_FILE" 2>/dev/null; return 0
+}
+phase_start() { # first phase line
+  [ -z "$PHASE_FILE" ] && [ "${WARMD_PHASE_SAY:-30}" -gt 0 ] 2>/dev/null || return 0
+  PHASE_FILE="${TMPDIR:-/tmp}/warmd-phase-$$"; phase "$*"
+  local me=$$ say="${WARMD_PHASE_SAY:-30}"
+  # One subshell per run, builtins inside (nap reads with a timeout): no program start while it waits.
+  ( t=""; p=""; now=""; said=""
+    while nap 2; do
+      shell_alive "$me" && [ -f "$PHASE_FILE" ] || exit 0
+      { read -r t p < "$PHASE_FILE"; } 2>/dev/null || continue
+      [ "$t $p" = "$said" ] && continue
+      printf -v now '%(%s)T' -1
+      [ $(( now - t )) -ge "$say" ] || continue
+      echo "$p ($(( now - t ))s)"; said="$t $p"
+    done ) &
+  PHASE_PID=$!
+}
+phase_stop() {
+  [ -n "$PHASE_PID" ] && kill "$PHASE_PID" 2>/dev/null
+  [ -n "$PHASE_FILE" ] && rm -f "$PHASE_FILE"
+  PHASE_PID=""; PHASE_FILE=""; return 0
+}
 on_exit() {
   local rc=$?
   # An exit deep inside a cached run (a refusal in the engine start) skipped the cat of its output: say it now, with reason and log
@@ -28,6 +58,7 @@ on_exit() {
   [ -n "$JOBLOCK" ] && rm -rf "$JOBLOCK"
   [ -n "$MERGELOCK" ] && rm -f "$MERGELOCK" "$MERGELOCK.win"
   [ -n "$RUNMARK" ] && rm -f "$RUNMARK"
+  phase_stop
   rm -f "${TMPDIR:-/tmp}/warmd-procs-$$" 2>/dev/null
   return 0
 }
@@ -37,21 +68,40 @@ on_exit() {
 run_mark() {
   mkdir -p "$RUN/active" 2>/dev/null || return 0
   local w=""; [ -r "/proc/$$/winpid" ] && read -r w < "/proc/$$/winpid"
-  echo "${w:--} $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
+  proc_start_r $$; w="${w:--}${REPLY:+:$REPLY}"
+  echo "$w $CMD" > "$RUN/active/$$" 2>/dev/null && RUNMARK="$RUN/active/$$"
   queue_done
 }
 # run_active <state dir>: prints "<pid> <command>" of a live run there, returns 1 when none. Marks of dead runs go.
 # A job started through Win32_Process.Create may not see this shell's msys pids: the Windows pid decides then.
 run_active() {
-  local f pid w c
+  local f pid w c s
   for f in "$1"/run/active/*; do
     [ -f "$f" ] || continue
     pid="${f##*/}"; w=""; c=""; read -r w c < "$f" 2>/dev/null
+    s=""; case "$w" in *:*) s="${w#*:}"; w="${w%%:*}";; esac
     [ "$pid" = "$$" ] && continue
-    if shell_alive "$pid" || { [ -n "$w" ] && [ "$w" != - ] && pid_alive "$w"; }; then echo "$pid ${c:-run}"; return 0; fi
+    if shell_alive "$pid"; then run_mark_owner "$pid" "$s" && { echo "$pid ${c:-run}"; return 0; }
+    # A run killed hard (a tool's time limit) never ran on_exit, and Windows hands its pid to the next process at once:
+    # a Windows pid alone counts only while the mark is younger than the run's time limit plus 10 minutes.
+    elif [ -n "$w" ] && [ "$w" != - ] && [ -z "$(find "$f" -mmin +$(( (TIMEOUT + 600) / 60 )) 2>/dev/null)" ] && pid_alive "$w"; then echo "$pid ${c:-run}"; return 0; fi
     rm -f "$f"
   done
   return 1
+}
+# proc_start_r <pid>: REPLY = the start time of the process from /proc/<pid>/stat (clock ticks after boot), a builtin read.
+# The mark keeps it next to the Windows pid ("<winpid>:<start> <command>"): a live pid with another start time is a
+# reused pid, the warmd that wrote the mark is gone. A mark without it (older warmd) or no /proc counts as the owner.
+proc_start_r() {
+  REPLY=""; local s=""
+  { read -r s < "/proc/$1/stat"; } 2>/dev/null || return 1
+  s="${s##*) }"; set -f; set -- $s; set +f
+  REPLY="${20:-}"; [ -n "$REPLY" ]
+}
+run_mark_owner() { # pid start-from-mark
+  [ -n "$2" ] || return 0
+  proc_start_r "$1" || return 0
+  [ "$REPLY" = "$2" ]
 }
 # If the agent or shell that called us is gone, nobody reads the result: end and free the queue. WARMD_DETACHED=1 is for deliberate background use.
 orphan_check() {
@@ -65,6 +115,8 @@ orphan_check() {
 batch_guard() {
   [ "${WARMD_BASE:-0}" = 1 ] || [ "${WARMD_IN_MERGE:-0}" = 1 ] && return 0
   [ -n "$GIT_ROOT" ] || return 0
+  # A linked worktree (its .git is a file) is never the shared checkout, also one made by hand outside the batch
+  [ -f "$GIT_ROOT/.git" ] && return 0
   local f; f="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
   [ -f "$f" ] || return 0
   # Stale after 240 minutes, unless warmd watch saw agents work in that time: it touches warmd-batch-alive, never the marker,
@@ -176,9 +228,11 @@ CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics
 CFG_mcp_words='roblox studio|mcp'; CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
 CFG_world_method=""; CFG_world_sources=""; CFG_world_outputs=""; CFG_gfx_tests=""
 load_config() {
-  local f="$PROJECT/warmd.conf" k v
+  local f="$PROJECT/warmd.conf" k v line
   [ -f "$f" ] || return 0
-  while IFS='=' read -r k v || [ -n "$k" ]; do
+  # Split at the first = by hand: read with IFS== drops one = at the end of the value (test=... ONLY= lost it)
+  while IFS= read -r line || [ -n "$line" ]; do
+    k="${line%%=*}"; [ "$k" = "$line" ] && continue; v="${line#*=}"
     k="${k//[[:space:]]/}"
     case "$k" in ''|\#*) continue;; esac
     case "$k" in *[!a-z_]*) continue;; esac
@@ -201,6 +255,7 @@ base_branch() {
 # run_bounded <label> <cmd...>: agents see one line on success, the error lines on failure, the rest stays in .warmd/last.log
 run_bounded() {
   local label="$1" rc t; shift
+  [ -z "$PHASE_FILE" ] || phase "RUN $label: $(native_path "$RUN/last.log")"
   t="$(now_ms)"
   "$@" > "$RUN/last.log" 2>&1; rc=$?
   # Real (uncached) full suite: its time lets warmd check pick the full suite when that is cheaper than build plus selection
@@ -213,8 +268,8 @@ run_bounded() {
 summarize_errors() {
   [ -n "$(type -t digest_log)" ] || . "$WARMD_HOME/lib/digest.sh"
   digest_log "$1" && return 0
-  sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | grep -iE 'error|fail|panic|traceback|assert|expected|✗|×|exception' | awk '!seen[$0]++' | cut -c1-200 | head -13 | grep . \
-    || { tail -13 "$1" | cut -c1-200; }
+  sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | grep -aiE 'error|fail|panic|traceback|assert|expected|✗|×|exception' | awk '!seen[$0]++' | cut -c1-200 | head -13 | grep -a . \
+    || { tail -13 "$1" | cut -c1-200; }   # -a: a log with a NUL or CR byte said "Binary file (standard input) matches" instead of its lines
 }
 
 # Two git calls (tree, file list) and two sha1sum calls (all changed files in chunks, then the lot). Names are part of the key, so a deleted or renamed file changes it too.
@@ -311,12 +366,23 @@ cached() {
 
 # Queue: at most <slots> heavy runs per machine across all projects. A slot is a directory (mkdir is atomic) holding the owner pid, dead owners expire.
 slots_max() { tune_slots; }
+# Each place also names who holds it (slot/what: worktree folder and command), so a queued run says whom it waits for.
+slot_who() { local w="${GIT_ROOT:-${PROJECT:-$PWD}}"; printf '%s %s\n' "${w##*/}" "${CMD:-run}"; }
+slot_holders() { # dir count -> REPLY = "a test, b run" of the live places, builtins only
+  local i w="" out=""
+  for (( i = 1; i <= $2; i++ )); do
+    [ -d "$1/$i" ] || continue
+    w=""; { read -r w < "$1/$i/what"; } 2>/dev/null
+    out="${out:+$out, }${w:-?}"
+  done
+  REPLY="${out:-none}"
+}
 slot_try() {
   [ -n "$SLOT" ] && return 0
   local i n holder dir="$CACHE_ROOT/slots"
   n="$(slots_max)"
   for (( i = 1; i <= n; i++ )); do
-    if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; SLOT="$dir/$i"; return 0; fi
+    if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; slot_who > "$dir/$i/what"; SLOT="$dir/$i"; return 0; fi
     [ -d "$dir" ] || { mkdir -p "$dir"; i=$((i - 1)); continue; }
     holder=""; read -r holder 2>/dev/null < "$dir/$i/pid"
     if [ -n "$holder" ]; then shell_alive "$holder" || rm -rf "${dir:?}/$i"
@@ -330,8 +396,8 @@ slot_now() { SLOT_LAZY=0; slot_take; }
 slot_take() {
   [ "$SLOT_LAZY" = 1 ] && return 0
   slot_try && { slot_port; return 0; }
-  echo "(queued: $(slots_max) heavy runs active)"; queue_mark
   local sn; sn="$(slots_max)"
+  echo "(queued: $sn heavy runs active)"; slot_holders "$CACHE_ROOT/slots" "$sn"; queue_mark "slot $sn/$sn busy: $REPLY"
   until slot_maybe_free "$CACHE_ROOT/slots" "$sn" && slot_try; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
   queue_done; echo "(slot free after $(secs)s)"; slot_port
 }
@@ -361,7 +427,7 @@ changed_files() {
 changed_names() { changed_files | grep -E "$1" | sed 's#.*/##; s/\.[^.]*$//; s/\..*$//' | sort -u | paste -sd'|' -; }
 
 # shellcheck disable=SC2120  # check calls it without a filter on purpose: that is the full suite
-run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; run_log test "$*" "$rc"; return $rc; }
+run_tests() { merge_guard; SLOT_LAZY=1; FULL_RUN=0; [ -z "${1:-}" ] && FULL_RUN=1; TEST_ASKED="${1:-}"; a_test "$@"; local rc=$?; SLOT_LAZY=0; FULL_RUN=0; TEST_ASKED=""; run_log test "$*" "$rc"; return $rc; }
 # Every test and check leaves a line in .warmd/run/runs.log: time, commit, exit code, command, filter. warmd handoff copies the
 # green ones of the current commit into the note, so a successor trusts the record instead of the last agent's memory.
 run_log() { # command args rc

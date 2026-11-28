@@ -102,6 +102,15 @@ echo top > .warmd/tasks/rd.tier; echo $(( $(date +%s) - 840 )) > .warmd/tasks/rd
 expect "14 minutes into a top task: still reading" '^OK all worktrees moved' "$("$WARMD" watch --once 5 2>&1)"
 "$WARMD" batch-done >/dev/null
 
+# (6) a worktree made by hand on a branch with a slash, while a batch runs: it is no shared checkout, finish marks it done
+printf '%s\n' "$TMP/elsewhere" > "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+git worktree add -q -b fix/hand "$TMP/hand" HEAD; printf 'test=true\n' > "$TMP/hand/warmd.conf"
+expect "a hand-made worktree runs its tests during a batch" '^OK' "$(cd "$TMP/hand" && WARMD_NO_RAM_WAIT=1 "$WARMD" test 2>&1)"
+out="$(cd "$TMP/hand" && "$WARMD" finish 2>&1)"
+expect "finish on fix/hand says DONE without a path error" '^DONE fix/hand ' "$out"
+[ -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-auto/done/fix-hand" ] && ! echo "$out" | grep -q 'No such file' && echo "ok   its done marker is one file fix-hand" || { echo "FAIL done marker: $out"; fails=$((fails+1)); }
+rm -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "taskflow: all green" || echo "taskflow: $fails failed"
