@@ -76,6 +76,8 @@ out="$("$WARMD" run -- sh -c 'seq 1 500; exit 0')"; rc=$?
 out="$("$WARMD" run -- sh -c 'echo hi; exit 3')"; rc=$?
 [ "$rc" = 3 ] && [ "$out" = "$(printf 'hi\nFAIL exit 3')" ] && ok "short output passes through" || no "short output changed: rc=$rc $out"
 "$WARMD" run -- >/dev/null; [ $? = 2 ] && ok "run without command is usage" || no "run without command"
+out="$("$WARMD" run -- sh -c 'seq 1 30; printf "x\000y\r\n"; echo "FAIL thing broke"; exit 1')"
+echo "$out" | grep -q '^FAIL thing broke' && ! echo "$out" | grep -q 'Binary file' && ok "a log with a NUL byte still shows its error lines" || no "binary log: $out"
 
 # ---- heavy_cmd: a project's own engine or test runner, called directly, goes through the heavy queue ----
 HV="$TMP/heavy"; mkdir -p "$HV/sub"; printf 'heavy_cmd=godot[^ ]* .*(--headless|-s +tests/)\nslots=1\n' > "$HV/warmd.conf"

@@ -264,8 +264,8 @@ run_bounded() {
 summarize_errors() {
   [ -n "$(type -t digest_log)" ] || . "$WARMD_HOME/lib/digest.sh"
   digest_log "$1" && return 0
-  sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | grep -iE 'error|fail|panic|traceback|assert|expected|✗|×|exception' | awk '!seen[$0]++' | cut -c1-200 | head -13 | grep . \
-    || { tail -13 "$1" | cut -c1-200; }
+  sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | grep -aiE 'error|fail|panic|traceback|assert|expected|✗|×|exception' | awk '!seen[$0]++' | cut -c1-200 | head -13 | grep -a . \
+    || { tail -13 "$1" | cut -c1-200; }   # -a: a log with a NUL or CR byte said "Binary file (standard input) matches" instead of its lines
 }
 
 # Two git calls (tree, file list) and two sha1sum calls (all changed files in chunks, then the lot). Names are part of the key, so a deleted or renamed file changes it too.

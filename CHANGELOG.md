@@ -9,6 +9,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 - test: a Godot project runs test= from warmd.conf, a name that matches no runner fails at once, the WarmdTest search skips hidden folders (401 s over 56 old checkouts, now 7 s); a wait or run of 30 s prints its reason; a run mark whose pid was reused no longer keeps warmd state ACTIVE
 - route: top_words also raise a read-only task (files: none), umlauts match as ä/ae in any case, a task line may fix its tier with a fifth field tier=top (a strict review landed on mid)
 - split: the scene WAIT line names warmd merge and warmd drop, a finished task parked for scene_rest_hours (default 4) holds no scene any more
+- run, test: error lines of a log with NUL or CR bytes are shown, not "Binary file (standard input) matches"
 - split: the copy of ignored .import files takes only the base checkout's own, never a nested checkout (git listed 45 old worktrees under .claude/worktrees as folders and tar copied them whole, split hung 18 minutes); no stdin, files only, a WARN line after 120 s. A split stopped before its task file goes on when run again (it said "branch already exists")
 - split: a Godot worktree gets the ignored .import files and a current class cache before its agent starts (seven agents lost 4 to 12 minutes each to missing textures and "Identifier not declared")
 - split waits for a running merge of the same project and writes the base commit into the task file (worktrees started on the state before the merge, agents reported "predecessor not on main")

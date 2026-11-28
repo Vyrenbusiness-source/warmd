@@ -251,7 +251,7 @@ hook_run() {
     sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$log" | tr -d '\r' | grep . | tail -n 3 | cut -c1-160
   else
     echo "FAIL exit $rc, $lines lines, $bytes B, $((SECONDS - t0))s, raw log $log"
-    out="$(digest_log "$log" 2>/dev/null)" || out="$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$log" | tr -d '\r' | grep -iE 'error|fail|panic|traceback|assert|expected|exception' | awk '!s[$0]++' | cut -c1-160 | head -12)"
+    out="$(digest_log "$log" 2>/dev/null)" || out="$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$log" | tr -d '\r' | grep -aiE 'error|fail|panic|traceback|assert|expected|exception' | awk '!s[$0]++' | cut -c1-160 | head -12)"
     [ -n "$out" ] || out="$(tail -n 12 "$log" | cut -c1-160)"
     printf '%s\n' "$out"
   fi
