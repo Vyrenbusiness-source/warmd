@@ -252,28 +252,55 @@ godot_import() {
   local dir="${1:-$PROJECT}" exe keep rc
   exe="$(godot_exe)" || return 2
   keep="$(mktemp)"; cp -p "$dir/project.godot" "$keep" 2>/dev/null
-  "$exe" --headless --path "$(native_path "$dir")" --import >/dev/null 2>&1; rc=$?
+  "$exe" --headless --path "$(native_path "$dir")" --import </dev/null >/dev/null 2>&1; rc=$?
   if [ $rc != 0 ] && [ -n "$(PROJECT="$dir" class_cache_drift)" ]; then
-    "$exe" --headless --path "$(native_path "$dir")" --import >/dev/null 2>&1; rc=$?
+    "$exe" --headless --path "$(native_path "$dir")" --import </dev/null >/dev/null 2>&1; rc=$?
   fi
   [ -s "$keep" ] && ! cmp -s "$keep" "$dir/project.godot" && cp -p "$keep" "$dir/project.godot"
   rm -f "$keep"; return $rc
+}
+# godot_ignored_imports <project>: the git-ignored .import files of this checkout itself, one path per line relative to
+# it. git lists a nested checkout (an old worktree under .claude/worktrees, one with its own .git) as one "dir/" entry,
+# and tar copied each such entry whole: 45 game checkouts, the split never ended. Folders, files inside a nested
+# checkout (an own .git, or a worktree folder git forgot: .claude/worktrees, .warmd-worktrees), .godot and .warmd never count.
+godot_ignored_imports() { # project
+  local src="$1" f d up hit
+  local -A inside=()   # folder -> 1 when it or a parent holds its own .git
+  while IFS= read -r f; do
+    case "$f" in *.import) ;; *) continue;; esac
+    case "$f" in .godot/*|*/.godot/*|.warmd/*|*/.warmd/*|.claude/worktrees/*|*/.claude/worktrees/*|.warmd-worktrees/*|*/.warmd-worktrees/*) continue;; esac
+    hit=0; d="$f"
+    while [ "${d%/*}" != "$d" ]; do
+      d="${d%/*}"
+      if [ -n "${inside[$d]+x}" ]; then hit="${inside[$d]}"; break; fi
+      [ -e "$src/$d/.git" ] && { hit=1; break; }
+    done
+    # every folder walked gets the verdict, so each folder is looked at once
+    up="$f"; while [ "${up%/*}" != "$up" ]; do up="${up%/*}"; [ -n "${inside[$up]+x}" ] && break; inside[$up]=$hit; [ "$up" = "$d" ] && break; done
+    [ $hit = 0 ] && printf '%s\n' "$f"
+  done < <(git -C "$src" ls-files --others --ignored --exclude-standard -- '*.import' 2>/dev/null </dev/null | tr -d '')
+  return 0
 }
 # a_wt_ready <base project> <worktree project>: a worktree of a split must run at once. The .import files are
 # git-ignored in many projects, a worktree has none and every texture fails to load; they are copied from the base
 # checkout where the worktree lacks them (one tar, not a program start per file). A class_name the copied class cache
 # does not know (new since the copy, or brought by a merge of the base) makes every script that names it a parse
 # error: the worktree is imported then. One line on stderr says what was done.
+# The copy reads no stdin, names files only (--no-recursion) and stops after 120 s with a WARN line: split goes on.
 a_wt_ready() { # base dst
-  local src="$1" dst="$2" f n=0 list drift say=""
+  local src="$1" dst="$2" f n=0 list drift say="" cap=120 rc
   [ -f "$dst/project.godot" ] || return 0
   list="$(mktemp)"
   while IFS= read -r f; do
-    case "$f" in .godot/*|*/.godot/*|.warmd/*|*/.warmd/*) continue;; esac
-    [ -e "$dst/$f" ] || { printf '%s
-' "$f" >> "$list"; n=$((n + 1)); }
-  done < <(git -C "$src" ls-files --others --ignored --exclude-standard -- '*.import' 2>/dev/null | tr -d '')
-  [ $n = 0 ] || { (cd "$src" && tar -cf - -T "$list") | (cd "$dst" && tar -xf -) && say="copied $n ignored .import files"; }
+    [ -e "$dst/$f" ] || { printf '%s\n' "$f" >> "$list"; n=$((n + 1)); }
+  done < <(godot_ignored_imports "$src")
+  if [ $n != 0 ]; then
+    (cd "$src" && timeout "$cap" tar --no-recursion -cf - -T "$list" </dev/null 2>/dev/null) | (cd "$dst" && timeout "$cap" tar -xf - 2>/dev/null)
+    rc=("${PIPESTATUS[@]}")
+    if [ "${rc[0]}" = 124 ] || [ "${rc[1]}" = 124 ]; then echo "WARN worktree ${dst##*/}: copy of $n ignored .import files stopped after $cap s, the engine imports what is missing" >&2
+    elif [ "${rc[0]}" != 0 ] || [ "${rc[1]}" != 0 ]; then echo "WARN worktree ${dst##*/}: copy of $n ignored .import files failed (tar ${rc[0]}/${rc[1]}), the engine imports what is missing" >&2
+    else say="copied $n ignored .import files"; fi
+  fi
   rm -f "$list"
   drift="$(PROJECT="$dst" class_cache_drift)"
   if [ -n "$drift" ]; then

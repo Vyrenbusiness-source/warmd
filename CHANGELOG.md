@@ -5,6 +5,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [Unreleased]
 
 ### Fixed
+- split: the copy of ignored .import files takes only the base checkout's own, never a nested checkout (git listed 45 old worktrees under .claude/worktrees as folders and tar copied them whole, split hung 18 minutes); no stdin, files only, a WARN line after 120 s. A split stopped before its task file goes on when run again (it said "branch already exists")
 - split: a Godot worktree gets the ignored .import files and a current class cache before its agent starts (seven agents lost 4 to 12 minutes each to missing textures and "Identifier not declared")
 - split waits for a running merge of the same project and writes the base commit into the task file (worktrees started on the state before the merge, agents reported "predecessor not on main")
 - merge: a red gate= script runs once more alone and merges with "red only under load" when green (a load-sensitive test rolled back an unrelated merge); gate_retry=0 turns it off
