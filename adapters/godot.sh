@@ -238,6 +238,10 @@ refresh_classes() {
     [ -z "$drift" ] && return 0
     [ -f "$mark" ] && [ "$drift" = "$(cat "$mark" 2>/dev/null)" ] && return 0
   fi
+  # An import of a big project takes minutes: said before, never silent
+  local why="${drift%%$'\n'*}"; why="${why:-a fresh class cache}"
+  godot_exe > /dev/null 2>&1 && echo "(import first: $why)"
+  phase "RUN import, the class cache is stale: $why"
   daemon_alive && a_kill_daemon
   . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
   godot_import "$PROJECT"
@@ -392,10 +396,27 @@ changed_scenes() {
   done | sed 's/,$//'
 }
 
+# Is there a WarmdTest in the project? Searched from inside it on ".", hidden folders skipped like Godot does: a game
+# repo kept 56 old checkouts under .claude/worktrees and the search walked all of them, minutes without a line.
+godot_has_warmdtest() {
+  ( cd "$PROJECT" && grep -rqs --include='*.gd' --exclude-dir='.?*' --exclude-dir=addons -e 'extends WarmdTest' -e 'extends "res://addons/warmd/warmd_test.gd"' . )
+}
+godot_cmd() { # command [arg]: the test= command in the project folder, the filter as $1
+  local c="$1"; shift
+  ( cd "$PROJECT" && $(tune_prefix) sh -c "$c" sh "$@" )
+}
 a_test() {
   engine_refresh
   local filter=""
   while [ $# -gt 0 ]; do case "$1" in --*) ;; *) filter="$1";; esac; shift; done
+  # test= in warmd.conf is the project's own runner (ONLY=<test>.gd ... -s tests/_run_only.gd): it wins, through the
+  # queue like any engine run, the filter as one quoted argument. warmd ignored it here and ran every tests/run_*.gd.
+  if [ -n "$CFG_test" ]; then
+    refresh_classes
+    if [ -n "$filter" ]; then slot_take; cached "cmd|$CFG_test|$filter" run_bounded test godot_cmd "$CFG_test \"\$1\"" "$filter"
+    else slot_take; cached "cmd|$CFG_test" run_bounded test godot_cmd "$CFG_test"; fi
+    return
+  fi
   # GUT and gdUnit4 bring their own runner, a one-shot start is fast enough for them
   if [ -f "$PROJECT/addons/gut/gut_cmdln.gd" ]; then
     local exe; exe="$(godot_exe)"
@@ -408,13 +429,19 @@ a_test() {
     return
   fi
   refresh_classes
-  if ! grep -rqs --include='*.gd' -e 'extends WarmdTest' -e 'extends "res://addons/warmd/warmd_test.gd"' "$PROJECT" --exclude-dir=.godot --exclude-dir=addons; then
+  if ! godot_has_warmdtest; then
     local -a runners=()
     mapfile -t runners < <(godot_runners)
     if [ ${#runners[@]} -gt 0 ]; then
       local exe pick=() r; exe="$(godot_exe)" || { echo "FAIL Godot not found, set WARMD_GODOT"; return 2; }
       # A filter picks runners by name; one that names none (warmd check passes changed file names) runs the whole set, runners are suites
       for r in "${runners[@]}"; do [ -n "$filter" ] && [[ "${r##*/}" =~ $filter ]] && pick+=("$r"); done
+      # warmd test <name> asked for one thing: a name that matches no runner is said, the whole set (minutes) never runs instead
+      if [ ${#pick[@]} = 0 ] && [ -n "$filter" ] && [ -n "${TEST_ASKED:-}" ]; then
+        local names=""; for r in "${runners[@]}"; do names="${names:+$names, }${r##*/}"; done
+        echo "FAIL no runner matches $filter: $(printf '%s' "$names" | cut -c1-200). Name one, or set test=<command> in warmd.conf for your own runner"
+        return 2
+      fi
       [ ${#pick[@]} -gt 0 ] || pick=("${runners[@]}")
       # A replay (WARMD_SEED) really runs: its order is the point. A random order is green for the same code either way.
       slot_take; cached "runners|${pick[*]##*/}${WARMD_SEED:+|seed $WARMD_SEED}" run_bounded test class_retry run_runners "$exe" "${pick[@]}"
@@ -422,7 +449,7 @@ a_test() {
     fi
   fi
   # Never a silent green: no GUT, no gdUnit4, no runner and no WarmdTest class means nothing can run
-  if ! grep -rqs --include='*.gd' -e 'extends WarmdTest' -e 'extends "res://addons/warmd/warmd_test.gd"' "$PROJECT" --exclude-dir=.godot --exclude-dir=addons; then
+  if ! godot_has_warmdtest; then
     echo "WARN no tests found: no GUT, no gdUnit4, no WarmdTest class and no tests/run_*.gd that extends SceneTree. Nothing ran"
     return 0
   fi
