@@ -575,7 +575,12 @@ a_doctor() {
   if [ -n "$GIT_ROOT" ]; then
     if git -C "$PROJECT" check-ignore -q .godot/ 2>/dev/null; then echo "ok .godot/ ignored"
     else echo "ERROR .godot/ is not ignored: the import cache would land in git. Fix: echo .godot/ >> .gitignore"; rc=1; fi
-    bad="$(git -C "$PROJECT" ls-files --others -- '*.uid' '*.import' ':!:.godot/*' ':!:.warmd/*' 2>/dev/null)"
+    # An ignored .uid is an error, an ignored folder is not the project: .claude/worktrees/ held 255 old worktrees (24089
+    # files counted). git lists a wholly ignored folder as one "dir/" line, also one that holds only *.uid files of an
+    # ignored *.uid pattern: check-ignore keeps the folders a pattern names themselves.
+    bad="$(git -C "$PROJECT" ls-files --others -- '*.uid' '*.import' ':!:.godot/*' ':!:.warmd/*' ':!:.claude/worktrees/*' 2>/dev/null |
+      awk -v skip="$(git -C "$PROJECT" ls-files --others --ignored --exclude-standard --directory 2>/dev/null | grep '/$' | git -C "$PROJECT" check-ignore --stdin 2>/dev/null)" '
+        BEGIN { n = split(skip, s, "\n") } { for (i = 1; i <= n; i++) if (s[i] != "" && index($0, s[i]) == 1) next; print }')"
     if [ -z "$bad" ]; then echo "ok .uid and .import files versioned"
     else
       n="$(printf '%s\n' "$bad" | wc -l | tr -d ' ')"

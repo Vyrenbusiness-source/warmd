@@ -163,6 +163,18 @@ out="$(cd "$TMP/gp" && : > project.godot && HOME="$TMP/home" WARMD_GODOT= bash -
 expect "doctor names the Godot it found" '^WARN found Godot 4\.7 at .*rhyg/Godot_v4\.7-stable_win64_console\.exe, not on PATH: set WARMD_GODOT=' "$out"
 [ -s "$XDG_CACHE_HOME/warmd/godot.path" ] && ok "the found path is remembered" || no "godot.path not written"
 
+# .uid files in ignored folders and .claude/worktrees/ are no unversioned files, an ignored *.uid still is
+mkdir -p "$TMP/gd2/.claude/worktrees/old" "$TMP/gd2/build" "$TMP/gd2/sub"; cd "$TMP/gd2" || exit 1
+git init -q -b main .; git config core.autocrlf false; git config user.name t; git config user.email t@example.com
+printf 'config/features=PackedStringArray("4.7", "Forward Plus")\n' > project.godot; printf '.godot/\n.claude/\nbuild/\n' > .gitignore
+git add -A; git commit -qm init; touch .claude/worktrees/old/a.gd.uid build/b.gd.uid
+gdoc() { HOME="$TMP/home2" WARMD_GODOT= PATH="/usr/bin:/bin:/mingw64/bin" bash -c ". '$HERE/lib/platform.sh'; reg() { :; }; . '$HERE/lib/brake.sh'; CACHE_ROOT='$TMP/c2'; PROJECT=.; GIT_ROOT=.; . '$HERE/adapters/godot.sh'; a_doctor; brake_godot_doctor" 2>&1; }
+expect "ignored folders and old worktrees hold no unversioned .uid" '^ok \.uid and \.import files versioned' "$(gdoc)"
+touch sub/c.gd.uid; printf '*.uid\n' >> .gitignore
+expect "an ignored .uid outside an ignored folder is still an error" '^ERROR 1 \.uid/\.import files not versioned \(sub/c\.gd\.uid\)' "$(gdoc)"
+rm -f sub/c.gd.uid; git checkout -q .gitignore
+cd "$TMP" || exit 1
+
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "brake: all green" || echo "brake: $fails failed"
 exit $fails
