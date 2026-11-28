@@ -7,6 +7,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ### Fixed
 - doctor: the .uid check skips ignored folders and .claude/worktrees/ (24089 files were counted in old worktrees)
 - doctor: a Godot found outside PATH of the pinned version is remembered in godot.path and reported ok
+- disk --free removes merged worktrees without own work and frees the caches of the rest, also ignored target/, node_modules/, dist/ (255 old worktrees, 53 GB, gave nothing back); merges free those build folders too
 
 ## [0.6.4] - 2026-11-27
 

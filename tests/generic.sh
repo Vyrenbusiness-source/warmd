@@ -194,7 +194,7 @@ git worktree add -q -b warmd/batch "$TMP/ud-batch"; (cd "$TMP/ud-batch" && echo 
 for w in done fresh open batch; do mkdir -p "$TMP/ud-$w/Library"; echo x > "$TMP/ud-$w/Library/ArtifactDB"; done
 expect "disk lists what a merge would free" 'note: 1 finished worktrees hold a Library' "$(WARMD_BASE=1 "$WARMD" disk 2>&1)"
 out="$(WARMD_BASE=1 "$WARMD" disk --free 2>&1)"
-expect "disk --free frees the Library of a merged worktree" '^OK freed the cache of 1 finished worktrees' "$out"
+expect "disk --free frees the Library of a just merged worktree, removes none in its first 30 minutes" '^OK removed 0 merged worktrees, freed the caches of 1 others' "$out"
 [ ! -e "$TMP/ud-done/Library" ] && [ -d "$TMP/ud-fresh/Library" ] && [ -d "$TMP/ud-open/Library" ] && [ -d "$TMP/ud-batch/Library" ] && ok "fresh, unmerged and batch worktrees keep their Library" || no "freed wrong: $out"
 expect "disk below disk_min_mb is reported" '^LOW disk: .* GB free on ' "$(WARMD_BASE=1 WARMD_DISK_MIN_MB=999999999 "$WARMD" disk 2>&1)"
 rm -f "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
