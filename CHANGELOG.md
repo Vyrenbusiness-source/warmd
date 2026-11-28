@@ -5,6 +5,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [Unreleased]
 
 ### Fixed
+- test: a Godot project runs test= from warmd.conf, a name that matches no runner fails at once, the WarmdTest search skips hidden folders (401 s over 56 old checkouts, now 7 s); a wait or run of 30 s prints its reason; a run mark whose pid was reused no longer keeps warmd state ACTIVE
 - route: top_words also raise a read-only task (files: none), umlauts match as ä/ae in any case, a task line may fix its tier with a fifth field tier=top (a strict review landed on mid)
 - split: the scene WAIT line names warmd merge and warmd drop, a finished task parked for scene_rest_hours (default 4) holds no scene any more
 - split: the copy of ignored .import files takes only the base checkout's own, never a nested checkout (git listed 45 old worktrees under .claude/worktrees as folders and tar copied them whole, split hung 18 minutes); no stdin, files only, a WARN line after 120 s. A split stopped before its task file goes on when run again (it said "branch already exists")

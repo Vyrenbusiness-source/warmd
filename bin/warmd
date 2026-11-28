@@ -121,6 +121,8 @@ detect_project
 # shellcheck source=/dev/null
 . "$WARMD_HOME/adapters/$ADAPTER.sh"
 case "$CMD" in test|check|build|bench|shot|layout|call|package|perf) run_mark;; esac
+# A test or check that waits or works 30 s says on what, in one line (lib/core.sh phase)
+case "$CMD" in test|check) phase_start "RUN $CMD${1:+ $1}";; esac
 
 case "$CMD" in
   status)  common_status; install_behind; a_status;;

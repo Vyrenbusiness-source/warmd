@@ -1057,12 +1057,13 @@ finish_base_sync() { # base
 # The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
 # freed at once (a killed shell may not run its exit trap), and the engine stopped so the test stops too.
 finish_stop_runs() {
-  local f pid w c d p n=0
+  local f pid w c s d p n=0
   for f in "$STATE"/run/active/*; do
     [ -f "$f" ] || continue
     pid="${f##*/}"; [ "$pid" = "$$" ] && continue
-    shell_alive "$pid" || { rm -f "$f"; continue; }
     w=""; c=""; read -r w c < "$f" 2>/dev/null
+    s=""; case "$w" in *:*) s="${w#*:}";; esac
+    shell_alive "$pid" && run_mark_owner "$pid" "$s" || { rm -f "$f"; continue; }   # a reused pid is no warmd of ours: never killed
     kill "$pid" 2>/dev/null; rm -f "$f"; n=$((n + 1))
     for d in "$CACHE_ROOT"/slots/*/; do p=""; read -r p < "$d/pid" 2>/dev/null; [ "$p" = "$pid" ] && rm -rf "${d%/}"; done
     echo "(stopped warmd ${c:-run} pid $pid that was still running here, its slot is free)"

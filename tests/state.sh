@@ -37,6 +37,20 @@ expect "plain line names the run" '^ACTIVE check, 2 agents' "$(bash "$WARMD" sta
 rm -f "$P/.warmd/run/active/$$"; echo "- test" > "$P/.warmd/run/active/999999"
 expect "dead run mark is no run" '"what":"batch"' "$(st)"
 [ -f "$P/.warmd/run/active/999999" ] && no "dead run mark removed" || ok "dead run mark removed"
+# A run killed hard left its mark, and the pid now belongs to another process: its start time differs from the mark's
+if [ -r "/proc/$$/stat" ]; then
+  sleep 30 & s=$!; echo "-:1 test" > "$P/.warmd/run/active/$s"
+  expect "a mark whose pid was reused is no run" '"what":"batch"' "$(st)"
+  [ -f "$P/.warmd/run/active/$s" ] && no "reused pid mark removed" || ok "reused pid mark removed"
+  kill "$s" 2>/dev/null; wait "$s" 2>/dev/null
+  # a real warmd run writes its own start time: it counts while it runs and its mark goes with it
+  printf 'test=sleep 3\n' > "$P/warmd.conf"
+  (cd "$P" && WARMD_NO_RAM_WAIT=1 WARMD_BASE=1 bash "$WARMD" test > /dev/null 2>&1) & s=$!
+  for _ in $(seq 50); do ls "$P"/.warmd/run/active/* > /dev/null 2>&1 && break; sleep 0.2; done
+  expect "a running warmd test with its start time is a run" '"what":"test"' "$(st)"
+  wait "$s"; echo "test=true" > "$P/warmd.conf"
+  [ -z "$(ls "$P/.warmd/run/active" 2>/dev/null)" ] && ok "the mark goes with the run" || no "mark left: $(ls "$P/.warmd/run/active")"
+fi
 
 # CI wait: .warmd/ci.wait holds "pid run-id start median"
 echo "$$ 42 1700000000 300" > "$P/.warmd/ci.wait"
