@@ -168,8 +168,11 @@ mkdir -p "$TMP/gd2/.claude/worktrees/old" "$TMP/gd2/build" "$TMP/gd2/sub"; cd "$
 git init -q -b main .; git config core.autocrlf false; git config user.name t; git config user.email t@example.com
 printf 'config/features=PackedStringArray("4.7", "Forward Plus")\n' > project.godot; printf '.godot/\n.claude/\nbuild/\n' > .gitignore
 git add -A; git commit -qm init; touch .claude/worktrees/old/a.gd.uid build/b.gd.uid
-gdoc() { HOME="$TMP/home2" WARMD_GODOT= PATH="/usr/bin:/bin:/mingw64/bin" bash -c ". '$HERE/lib/platform.sh'; reg() { :; }; . '$HERE/lib/brake.sh'; CACHE_ROOT='$TMP/c2'; PROJECT=.; GIT_ROOT=.; . '$HERE/adapters/godot.sh'; a_doctor; brake_godot_doctor" 2>&1; }
-expect "ignored folders and old worktrees hold no unversioned .uid" '^ok \.uid and \.import files versioned' "$(gdoc)"
+GITDIR="$(dirname "$(command -v git)")"   # a PATH without godot, git where this runner keeps it
+gdoc() { HOME="$TMP/home2" WARMD_GODOT= PATH="$GITDIR:/usr/bin:/bin" bash -c ". '$HERE/lib/platform.sh'; reg() { :; }; . '$HERE/lib/brake.sh'; CACHE_ROOT='$TMP/c2'; PROJECT=.; GIT_ROOT=.; . '$HERE/adapters/godot.sh'; a_doctor; brake_godot_doctor" 2>&1; }
+out="$(gdoc)"
+expect "git works in the doctor of the test" '^ok \.godot/ ignored' "$out"
+expect "ignored folders and old worktrees hold no unversioned .uid" '^ok \.uid and \.import files versioned' "$out"
 touch sub/c.gd.uid; printf '*.uid\n' >> .gitignore
 expect "an ignored .uid outside an ignored folder is still an error" '^ERROR 1 \.uid/\.import files not versioned \(sub/c\.gd\.uid\)' "$(gdoc)"
 rm -f sub/c.gd.uid; git checkout -q .gitignore
