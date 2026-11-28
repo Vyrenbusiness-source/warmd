@@ -440,12 +440,38 @@ review_line() { # author model
 # The agent file of a role is only registered in projects with warmd init. A session started elsewhere cannot spawn it:
 # the FALLBACK line carries the worker rules inline for a general-purpose agent.
 agent_fallback() { # name agent model taskfile
-  local d="${CLAUDE_PROJECT_DIR:-$GIT_ROOT}" rules
+  local d rules
   [ -z "${AGENT_NS:-}" ] || return 0   # the plugin registers its agents itself
-  [ -f "$d/.claude/agents/${2#*:}.md" ] && return 0
+  session_dir_r; d="$REPLY"
+  [ -n "$d" ] && [ -f "$d/.claude/agents/${2#*:}.md" ] && return 0
+  [ -f "$HOME/.claude/agents/${2#*:}.md" ] && return 0   # user agents reach every session
   [ -f "$WARMD_HOME/agents/${2#*:}.md" ] || return 0
   rules="$(awk 'f>=2 && /^- / {sub(/^- /, ""); printf "%s ", $0} /^---$/ {f++}' "$WARMD_HOME/agents/${2#*:}.md" | tr '"' "'")"
-  echo "FALLBACK $1 (no ${2#*:} agent in $(native_path "$d")/.claude/agents): subagent_type=general-purpose model=$3 prompt=\"You are a warmd worker. ${rules}Read $4 and do it.\""
+  if [ -n "$d" ]; then d="$(native_path "$d")/.claude/agents"; else d=".claude/agents of this session, it started outside $(native_path "$GIT_ROOT")"; fi
+  echo "FALLBACK $1 (no ${2#*:} agent in $d): subagent_type=general-purpose model=$3 prompt=\"You are a warmd worker. ${rules}Read $4 and do it.\""
+}
+
+# The folder the Claude Code session started in: its Agent tool knows only that folder's .claude/agents. CLAUDE_PROJECT_DIR
+# when set, else the transcript of CLAUDE_CODE_SESSION_ID: its folder under ~/.claude/projects is the session folder with
+# every character that is no letter or digit turned into "-". The project or one of its parents with that name, or ""
+# when the session runs elsewhere (Desktop\mc, agents in mcttrition\.claudegents: warmd-worker was unknown).
+# Neither known: the project, as before.
+session_dir_r() { # -> REPLY
+  REPLY="${CLAUDE_PROJECT_DIR:-}"; [ -n "$REPLY" ] && return 0
+  REPLY="$GIT_ROOT"
+  local id="${CLAUDE_CODE_SESSION_ID:-}" root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}" f slug d n
+  [ -n "$id" ] && [ -d "$root" ] || return 0
+  for f in "$root"/*/"$id.jsonl"; do [ -f "$f" ] && break; done
+  [ -f "$f" ] || return 0
+  slug="${f%/*}"; slug="${slug##*/}"; slug="${slug,,}"
+  d="$GIT_ROOT"
+  while [ -n "$d" ]; do
+    n="$(native_path "$d")"; n="${n//[^A-Za-z0-9]/-}"
+    [ "${n,,}" = "$slug" ] && { REPLY="$d"; return 0; }
+    [ "${d%/*}" = "$d" ] && break
+    d="${d%/*}"
+  done
+  REPLY=""
 }
 
 write_task() { # name tier goal done files wt

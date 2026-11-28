@@ -55,6 +55,19 @@ rm -f .warmd/gates.txt; out="$("$WARMD" merge warmd/g2 2>&1)"
 expect "gate_retry=0 runs a red gate once" '^1$' "$(grep -c run .warmd/gates.txt)"
 rm -f warmd.conf gate.sh; git commit -qam "no gate"
 
+# (3) the session started in another folder (Desktop\mc, the agents in mcttrition\.claudegents): FALLBACK line
+mkdir -p .claude/agents; cp "$HERE/agents/warmd-worker.md" .claude/agents/
+printf 'sa | a goal | y | src/s.ts
+' > tasks3.txt
+out="$("$WARMD" split tasks3.txt 2>&1)"; "$WARMD" batch-done >/dev/null
+case "$out" in *FALLBACK*) echo "FAIL a session in the project folder got a FALLBACK line"; fails=$((fails+1));; *) echo "ok   a session in the project folder needs no FALLBACK";; esac
+slug="$(cd "$TMP" && pwd -W 2>/dev/null || pwd)"; slug="${slug//[^A-Za-z0-9]/-}"
+mkdir -p "$TMP/transcripts/$slug"; : > "$TMP/transcripts/$slug/s1.jsonl"
+out="$(CLAUDE_CODE_SESSION_ID=s1 "$WARMD" split tasks3.txt 2>&1)"; "$WARMD" batch-done >/dev/null
+expect "a session started in a parent folder gets the FALLBACK line" '^FALLBACK sa \(no warmd-worker agent in .*\.claude/agents\): subagent_type=general-purpose' "$out"
+expect "init says the session does not see the agents" 'WARN this Claude Code session started in .*its Agent tool does not see' "$(CLAUDE_CODE_SESSION_ID=s1 bash -c "WARMD_HOME='$HERE'; . '$HERE/lib/platform.sh'; . '$HERE/lib/core.sh'; detect_project >/dev/null 2>&1; . '$HERE/lib/team.sh'; common_init" 2>&1)"
+git checkout -q -- . 2>/dev/null; git clean -qfd -e .warmd 2>/dev/null
+
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "taskflow: all green" || echo "taskflow: $fails failed"
