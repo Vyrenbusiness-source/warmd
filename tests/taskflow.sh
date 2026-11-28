@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The life of one task around the batch: split waits for a running merge and names its base commit, a red gate= script
-# runs once more alone, the FALLBACK line for a session started elsewhere, finish of a read-only task. No engine needed.
+# runs once more alone, the FALLBACK line for a session started elsewhere, finish of a read-only task, the
+# reading grace of warmd watch. No engine needed.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
@@ -80,6 +81,25 @@ expect "the last open read-only task finishes without --task" '^DONE rp read onl
 expect "the ledger has both" 'ro.*rp|rp.*ro' "$(cut -f2 "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-ledger.tsv" 2>&1 | tr '
 ' ' ')"
 expect "without an open read-only task the base checkout still refuses" '^FAIL warmd finish runs in the base checkout' "$("$WARMD" finish 2>&1)"
+"$WARMD" batch-done >/dev/null
+
+# (5) watch: the first minutes of a task are reading, no WAKE before the grace of its tier ends (watch_grace_mid=10)
+printf 'rd | read then edit | y | src/r.ts
+' > tasks5.txt
+"$WARMD" split tasks5.txt >/dev/null 2>&1
+wr="$(dirname "$PWD")/.warmd-worktrees/app/rd"
+t1h=$(( $(date +%s) - 3600 )); t1h="$(date -d "@$t1h" +%Y%m%d%H%M 2>/dev/null || date -r "$t1h" +%Y%m%d%H%M)"
+find "$wr" -type f -not -path '*/.git/*' -exec touch -t "$t1h" {} +
+GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wr" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
+touch -t "$t1h" "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+echo $(( $(date +%s) - 480 )) > .warmd/tasks/rd.start; echo mid > .warmd/tasks/rd.tier
+expect "8 minutes into a mid task: still reading, no WAKE" '^OK all worktrees moved' "$("$WARMD" watch --once 5 2>&1)"
+printf 'watch_grace_mid=6
+' > warmd.conf
+expect "past watch_grace_mid the idle task gets its WAKE" '^WAKE rd: idle' "$("$WARMD" watch --once 5 2>&1)"
+rm -f warmd.conf
+echo top > .warmd/tasks/rd.tier; echo $(( $(date +%s) - 840 )) > .warmd/tasks/rd.start
+expect "14 minutes into a top task: still reading" '^OK all worktrees moved' "$("$WARMD" watch --once 5 2>&1)"
 "$WARMD" batch-done >/dev/null
 
 cd "$HERE" || exit 1

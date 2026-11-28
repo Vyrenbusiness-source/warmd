@@ -204,6 +204,7 @@ find "$wtw" -type f -not -path '*/.git/*' -exec touch -t "$t2h" {} +
 GIT_COMMITTER_DATE='2020-01-01T00:00:00' git -C "$wtw" commit -q --allow-empty --date='2020-01-01T00:00:00' -m old
 expect "watch gives a fresh batch time" 'OK all worktrees moved' "$("$WARMD" watch --once 15)"
 touch -t "$t2h" "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-batch"
+echo $(( $(date +%s) - 1200 )) > .warmd/tasks/footer.start   # 20 min: past the reading grace, within the time budget
 out="$("$WARMD" watch --once 15)"; rc=$?
 expect "watch reports a stalled agent" 'WAKE footer: idle' "$out"
 [ "$rc" = 3 ] && ok "a stall ends watch with its own exit code" || no "stall exited $rc"

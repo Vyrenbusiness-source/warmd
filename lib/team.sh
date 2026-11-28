@@ -609,10 +609,25 @@ wt_idle() { # worktree limit batchfile [task name]
   local now; printf -v now '%(%s)T' -1
   local age=$(( (now - last) / 60 ))
   [ "$age" -lt "$limit" ] && { echo 0; return; }
+  [ -n "${4:-}" ] && task_grace "$4" "$now" && { echo 0; return; }
   wt_busy "$wt" && { echo 0; return; }
   # An agent that reads or thinks writes no file, but its transcript grows: that is movement too.
   [ -n "${4:-}" ] && wt_talking "$4" "$limit" && { echo 0; return; }
   echo "$age"
+}
+
+# The first minutes of a task, and of a fresh agent after a handoff, are reading: no file moves. Two agents got a WAKE after
+# 8 minutes of reading code. The grace grows with the tier: watch_grace_cheap/mid/top in warmd.conf, default 5/10/15 min.
+task_grace() { # name now -> 0 while the task is in its grace minutes
+  local d="$STATE/tasks" st=0 t tier=mid g h
+  [ -f "$d/$1.start" ] && read -r st < "$d/$1.start"
+  h="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-handoff/$1.md"
+  if [ -f "$h" ]; then t="$(date -r "$h" +%s 2>/dev/null)"; [[ $t =~ ^[0-9]+$ ]] && [ "$t" -gt "${st:-0}" ] && st="$t"; fi
+  [ -f "$d/$1.tier" ] && read -r tier < "$d/$1.tier"
+  tier="$(apply_floor "$tier")"
+  case "$tier" in cheap) g="${CFG_watch_grace_cheap:-5}";; top) g="${CFG_watch_grace_top:-15}";; *) g="${CFG_watch_grace_mid:-10}";; esac
+  [[ $st =~ ^[0-9]+$ && $g =~ ^[0-9]+$ ]] || return 1
+  [ $(( $2 - st )) -lt $(( g * 60 )) ]
 }
 
 wt_talking() { # name limit -> 0 when a transcript of this task changed in the last <limit> minutes

@@ -204,7 +204,7 @@ fix-total                  warmd/fix-total            0m      0      0
 ```
 
 ### warmd watch
-Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again. A task over its time budget is escalated: an `OVER <task>: ...` line and the `AGENT` line for the next tier.
+Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. The first minutes of a task, and of a fresh agent after a handoff, are reading: no `WAKE` before `watch_grace_cheap`, `watch_grace_mid` or `watch_grace_top` minutes of its tier (default 5, 10, 15). On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again. A task over its time budget is escalated: an `OVER <task>: ...` line and the `AGENT` line for the next tier.
 ```text
 warmd watch --once
 OK no batch running
@@ -397,6 +397,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `worktree_links` | Globs of git-ignored files or folders (relative to the project, e.g. `tools/luau/*.exe`) that `warmd split` copies (files) or links (folders) into each new worktree, so tool binaries exist there | none |
 | `role_<role>` | Model per role as `provider:model`, roles `producer worker qa reviewer merge scout`; set with `warmd models` | preset quality |
 | `time_budget_cheap`, `time_budget_mid`, `time_budget_top` | Time budget per tier in minutes; `watch` escalates a task past it, `finish` reports `OVER` | 30, 60, 120 |
+| `watch_grace_cheap`, `watch_grace_mid`, `watch_grace_top` | Minutes after a task's start or handoff in which `watch` sends no `WAKE`, the agent reads | 5, 10, 15 |
 | `cost_limit_day` | Daily cost limit in USD: `warmd split` stops when the day's ledger cost reaches it, `WARMD_COST_LIMIT=off` bypasses | none |
 | `mutate` | `merge` runs `warmd mutate` in `warmd merge`, `off` skips it in `warmd nightly` | none |
 | `mutate_cmd`, `mutate_limit` | Judge command of `warmd mutate` and its time limit in seconds | `warmd check` without cache, 900 |
