@@ -106,7 +106,7 @@ brake_doctor() {
 
 # warmd doctor: a Godot that is on the PC but not on PATH and not in WARMD_GODOT made agents wait for CI for every
 # GDScript error. Common places are searched once, the find is remembered in the cache (godot.path) and printed.
-brake_godot_find() { # -> REPLY path, empty when none
+brake_godot_find() { # [--no-save] -> REPLY path, empty when none. --no-save: the caller decides whether it is remembered
   local c f="${CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/warmd}/godot.path"
   REPLY=""
   [ -f "$f" ] && read -r c < "$f" && [ -x "$c" ] && { REPLY="$c"; return 0; }
@@ -115,12 +115,13 @@ brake_godot_find() { # -> REPLY path, empty when none
            "$pf"/Godot*/Godot*console*.exe "$px"/Steam/steamapps/common/Godot*/godot*.exe "$h"/scoop/apps/godot*/current/godot*.exe \
            "$h"/.local/bin/godot* "$h"/Applications/Godot*.app/Contents/MacOS/Godot /Applications/Godot*.app/Contents/MacOS/Godot; do
     [ -f "$c" ] && [ -x "$c" ] || continue
-    REPLY="$c"; mkdir -p "${f%/*}" && printf '%s\n' "$c" > "$f"; return 0
+    REPLY="$c"; [ "${1:-}" = --no-save ] || { mkdir -p "${f%/*}" && printf '%s\n' "$c" > "$f"; }; return 0
   done
   return 1
 }
 brake_godot_doctor() {
   [ -f "${PROJECT:-.}/project.godot" ] || return 0
+  [ "${GODOT_DOCTOR_FOUND:-0}" = 1 ] && return 0   # the Godot doctor already judged the found engine against the pin
   [ -n "${WARMD_GODOT:-}" ] && [ -x "$WARMD_GODOT" ] && return 0
   command -v godot >/dev/null 2>&1 || command -v godot4 >/dev/null 2>&1 || command -v Godot >/dev/null 2>&1 && return 0
   brake_godot_find || { echo "WARN no Godot found: GDScript errors only show in CI. Set WARMD_GODOT to the console exe"; return 0; }

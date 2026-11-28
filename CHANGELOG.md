@@ -4,6 +4,10 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+- doctor: the .uid check skips ignored folders and .claude/worktrees/ (24089 files were counted in old worktrees)
+- doctor: a Godot found outside PATH of the pinned version is remembered in godot.path and reported ok
+
 ## [0.6.4] - 2026-11-27
 
 ### Changed

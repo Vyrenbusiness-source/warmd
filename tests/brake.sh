@@ -173,6 +173,19 @@ expect "ignored folders and old worktrees hold no unversioned .uid" '^ok \.uid a
 touch sub/c.gd.uid; printf '*.uid\n' >> .gitignore
 expect "an ignored .uid outside an ignored folder is still an error" '^ERROR 1 \.uid/\.import files not versioned \(sub/c\.gd\.uid\)' "$(gdoc)"
 rm -f sub/c.gd.uid; git checkout -q .gitignore
+
+# the Godot doctor takes a found engine of the pinned version over (ok, godot.path), another version stays MISSING
+mkdir -p "$TMP/home2/.local/bin"; printf '#!/bin/sh\necho 4.7.stable.official\n' > "$TMP/home2/.local/bin/godot4"; chmod +x "$TMP/home2/.local/bin/godot4"
+out="$(gdoc)"
+expect "doctor takes the found Godot of the pinned version over" '^ok Godot 4\.7\.stable\.official found at .*godot4, not on PATH: remembered in the warmd cache' "$out"
+expect "and compares it with the pin" '^ok Godot 4\.7\.stable\.official matches the pin 4\.7' "$out"
+grep -q 'home2/.local/bin/godot4' "$TMP/c2/godot.path" 2>/dev/null && ok "the found engine lands in godot.path" || no "godot.path: $(cat "$TMP/c2/godot.path" 2>&1)"
+echo "$out" | grep -q '^WARN found Godot' && no "the brake doctor repeats the find: $out" || ok "no second WARN for the same engine"
+expect "the next doctor uses it at once" '^ok Godot$' "$(gdoc)"
+rm -f "$TMP/c2/godot.path"; printf '#!/bin/sh\necho 4.6.stable.official\n' > "$TMP/home2/.local/bin/godot4"
+out="$(gdoc)"
+expect "another version is only named" '^MISSING Godot, set WARMD_GODOT: found Godot 4\.6\.stable\.official at .*, not the pinned 4\.7' "$out"
+[ ! -e "$TMP/c2/godot.path" ] && ok "another version is not remembered" || no "godot.path written for 4.6"
 cd "$TMP" || exit 1
 
 rm -rf "$TMP" 2>/dev/null
