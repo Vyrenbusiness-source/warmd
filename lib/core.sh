@@ -228,9 +228,11 @@ CFG_top_paths=''; CFG_top_words='architecture|race condition|concurrency|physics
 CFG_mcp_words='roblox studio|mcp'; CFG_budget_cheap=40; CFG_budget_mid=100; CFG_budget_top=160
 CFG_world_method=""; CFG_world_sources=""; CFG_world_outputs=""; CFG_gfx_tests=""
 load_config() {
-  local f="$PROJECT/warmd.conf" k v
+  local f="$PROJECT/warmd.conf" k v line
   [ -f "$f" ] || return 0
-  while IFS='=' read -r k v || [ -n "$k" ]; do
+  # Split at the first = by hand: read with IFS== drops one = at the end of the value (test=... ONLY= lost it)
+  while IFS= read -r line || [ -n "$line" ]; do
+    k="${line%%=*}"; [ "$k" = "$line" ] && continue; v="${line#*=}"
     k="${k//[[:space:]]/}"
     case "$k" in ''|\#*) continue;; esac
     case "$k" in *[!a-z_]*) continue;; esac

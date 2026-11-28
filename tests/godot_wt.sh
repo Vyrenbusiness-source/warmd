@@ -113,7 +113,7 @@ out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 "$WARMD" test test_match_ziel 2>&1)"
 expect "a test name that matches no runner is said, nothing else runs" '^FAIL no runner matches test_match_ziel: run_all\.gd\. ' "$out"
 printf 'test=echo ran only=\n' > warmd.conf
 out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 WARMD_NOCACHE=1 "$WARMD" test 'test_a|b' 2>&1; tr -d '\r' < .warmd/run/last.log)"
-expect "test= runs in a Godot project with the filter as one argument" '^ran only= test_a\|b$' "$out"
+expect "test= runs in a Godot project with the filter as one argument" '^ran only= test_a.b$' "$out"
 printf 'test=sleep 4; echo slept\n' > warmd.conf
 out="$(WARMD_BASE=1 WARMD_NO_RAM_WAIT=1 WARMD_NOCACHE=1 WARMD_PHASE_SAY=1 "$WARMD" test 2>&1)"
 expect "a test that works past WARMD_PHASE_SAY says what it does" '^RUN test: .*last\.log \([0-9]+s\)$' "$out"

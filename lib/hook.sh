@@ -194,8 +194,8 @@ hook_heavy() { # command -> 0 when rewritten (decision printed)
   case "$dir" in [A-Za-z]:*) local dl="${dir:0:1}"; dir="/${dl,,}${dir:2}";; /*) ;; *) dir="$PWD/$dir";; esac
   while [ -n "$dir" ] && [ ! -f "$dir/warmd.conf" ]; do [ "${dir%/*}" = "$dir" ] && return 1; dir="${dir%/*}"; done
   [ -f "$dir/warmd.conf" ] || return 1
-  while IFS='=' read -r k v || [ -n "$k" ]; do
-    k="${k//[[:space:]]/}"; [ "$k" = heavy_cmd ] || continue
+  while IFS= read -r line || [ -n "$line" ]; do
+    k="${line%%=*}"; v="${line#*=}"; k="${k//[[:space:]]/}"; [ "$k" = heavy_cmd ] || continue
     v="${v%$'\r'}"; v="${v#\"}"; pat="${v%\"}"
   done < "$dir/warmd.conf"
   [ -n "$pat" ] || return 1

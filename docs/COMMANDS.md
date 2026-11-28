@@ -350,7 +350,7 @@ Builds a player with your own method (Unity), see `package_method` below. With `
 
 ## Configuration
 
-Everything is optional. Put a `warmd.conf` in the project root.
+Everything is optional. Put a `warmd.conf` in the project root, one `key=value` per line; the value is everything after the first `=`, an `=` at its end included.
 
 | Key | Meaning | Default |
 |---|---|---|
