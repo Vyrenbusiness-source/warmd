@@ -215,6 +215,7 @@ out="$out0"
 echo "$out" | grep -q '^AGENT c:' && ok "a task on another scene runs in parallel" || no "other scene: $out"
 grep -q '^Review: .*reviewer agent on opus. Never sonnet (the author)' .warmd/tasks/a.md && ok "the reviewer model is never the author model" || no "review line: $(grep Review .warmd/tasks/a.md)"
 grep -q '^Time budget: 60 min' .warmd/tasks/a.md && ok "the task file states its time budget" || no "time budget line: $(cat .warmd/tasks/a.md)"
+grep -q '^Heavy runs: .*warmd run --heavy -- <command>' .warmd/tasks/a.md && ok "the task file sends own engine runs through the heavy queue" || no "heavy line: $(cat .warmd/tasks/a.md)"
 echo "$out" | grep -q '^FALLBACK a (no warmd-worker agent in .*): subagent_type=general-purpose model=sonnet prompt="You are a warmd worker\. .*Read .*a\.md and do it\."' && ok "without the agent file split prints a general-purpose fallback with the rules inline" || no "fallback: $out"
 grep -q 'gameplay\|worker' .warmd/tasks/a.role && [ -f ".warmd/roles/$(cat .warmd/tasks/a.role).md" ] && ok "a worker task gets its role file" || no "role file: $(ls .warmd/roles 2>&1)"
 mkdir -p .claude/agents; cp "$HERE/agents/warmd-worker.md" .claude/agents/

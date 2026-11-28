@@ -64,6 +64,7 @@ Everyday
   warmd shot [scene] --golden  Godot: the shot against this machine's reference, SAME or DIFF p% in region
   warmd layout [url|path]      layout problems as text lines, no screenshot
   warmd run -- <cmd>           run anything, short output, raw log kept on disk
+  warmd run --heavy -- <cmd>   the same through the heavy queue (RAM, slot), WAIT line after 30 s
   warmd map [file]             repo map by import rank, or one outline with line numbers
   warmd where <term>           at most five file:line places for a term (Laufen, projectile), then what changed
   warmd where --changed [ref]  every moved, changed, gone or added symbol since your last read or a git state

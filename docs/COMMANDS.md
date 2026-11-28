@@ -106,6 +106,7 @@ It also lists every MCP server from `~/.claude.json` and `.mcp.json`, says which
 
 ### warmd run
 Runs any command and keeps its output short: up to 20 lines pass through unchanged, longer output becomes one OK or FAIL line with the error lines, and the full log stays on disk. After `warmd init` the hooks send noisy known commands (test runners, builds, linters) through it on their own.
+`warmd run --heavy -- <command>` goes through the heavy queue first, like `warmd test`: free RAM, one of the machine's heavy slots, the disk check. A wait of 30 seconds prints one line naming the holders, `WAIT slot 2/2 busy: <worktree> <command>, <worktree> <command> (30s)`. With `heavy_cmd=<regex>` in `warmd.conf` the hook sends every Bash command that matches it there on its own (a leading `cd <dir> &&` stays in front), so agents that call a project's own engine or test runner directly never start more engines than there are slots. Every task file of `warmd split` says so in its `Heavy runs:` line.
 
 ```text
 warmd run -- git log --oneline -40
@@ -354,6 +355,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | Key | Meaning | Default |
 |---|---|---|
 | `build`, `test`, `lint`, `dev` | Override a command | detected |
+| `heavy_cmd` | Regex: the hook sends matching Bash commands through `warmd run --heavy` (ATTRITION: `godot[^ ]* .*(--headless|-s +tests/)`) | none |
 | `url` | Dev server URL | read from its output |
 | `base` | Base branch | from `origin/HEAD` |
 | `slots` | Heavy runs per machine | one per 4 cores and per 8 GB RAM, the smaller, at least 1 |

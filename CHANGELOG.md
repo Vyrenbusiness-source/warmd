@@ -5,6 +5,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 ## [Unreleased]
 
 ### Fixed
+- run --heavy: any command through the heavy queue (RAM, slot, disk) with one "WAIT slot 2/2 busy: <holders>" line after 30 s; heavy_cmd=<regex> lets the hook send a project's own engine calls there, the task file says so (ten agents ran up to ten Godot processes at once outside the queue)
 - test: a Godot project runs test= from warmd.conf, a name that matches no runner fails at once, the WarmdTest search skips hidden folders (401 s over 56 old checkouts, now 7 s); a wait or run of 30 s prints its reason; a run mark whose pid was reused no longer keeps warmd state ACTIVE
 - route: top_words also raise a read-only task (files: none), umlauts match as ä/ae in any case, a task line may fix its tier with a fifth field tier=top (a strict review landed on mid)
 - split: the scene WAIT line names warmd merge and warmd drop, a finished task parked for scene_rest_hours (default 4) holds no scene any more

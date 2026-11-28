@@ -67,6 +67,7 @@ hook_pre() {
   hook_engine_timeout "$cmd" && return 0
   hook_repeat_guard "$in" "$cmd" && return 0
   hook_import_seed "$cmd"
+  hook_heavy "$cmd" && return 0
   hook_wrappable "$cmd" || return 0
   hook_self_r
   # no permissionDecision on purpose: the user's own permission rules stay in charge of the rewritten command
@@ -181,6 +182,31 @@ hook_import_seed() { # command
   return 0
 }
 
+# heavy_cmd=<regex> in warmd.conf: a Bash command that matches (a project's own engine or test runner, called directly)
+# goes through warmd run --heavy, so it waits for a heavy slot and RAM like warmd test. Ten agents started up to ten
+# engines at once and tests ended in their time limits. A leading cd <dir> && stays in front, warmd then counts the run
+# for that worktree. Builtins only: warmd.conf is read from the folder of the command upwards.
+hook_heavy() { # command -> 0 when rewritten (decision printed)
+  local c="$1" dir="$PWD" rest="$1" re_cd='^cd +"?([^"&;]+)"? *&& *(.*)$' line k v pat="" q="'" lead="" s
+  case "$c" in *warmd\ run\ *|warmd\ *|*/warmd\ *) return 1;; esac
+  if [[ $c =~ $re_cd ]]; then dir="${BASH_REMATCH[1]}"; dir="${dir%"${dir##*[! ]}"}"; rest="${BASH_REMATCH[2]}"; lead="cd \"$dir\" && "; fi
+  dir="${dir//\\//}"
+  case "$dir" in [A-Za-z]:*) local dl="${dir:0:1}"; dir="/${dl,,}${dir:2}";; /*) ;; *) dir="$PWD/$dir";; esac
+  while [ -n "$dir" ] && [ ! -f "$dir/warmd.conf" ]; do [ "${dir%/*}" = "$dir" ] && return 1; dir="${dir%/*}"; done
+  [ -f "$dir/warmd.conf" ] || return 1
+  while IFS='=' read -r k v || [ -n "$k" ]; do
+    k="${k//[[:space:]]/}"; [ "$k" = heavy_cmd ] || continue
+    v="${v%$'\r'}"; v="${v#\"}"; pat="${v%\"}"
+  done < "$dir/warmd.conf"
+  [ -n "$pat" ] || return 1
+  [[ $rest =~ $pat ]] || return 1
+  hook_self_r
+  s="$lead$REPLY run --heavy -- bash -c '${rest//$q/$q\\$q$q}'"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"%s"}}}\n' "$s"
+  return 0
+}
+
 hook_self() { hook_self_r; echo "$REPLY"; }
 hook_self_r() { # REPLY = how the hook calls warmd: the name when PATH finds this warmd first, else the absolute path. command -v by hand, no subshell
   local d dirs f=""; REPLY="$WARMD_HOME/bin/warmd"
@@ -195,9 +221,19 @@ hook_self_r() { # REPLY = how the hook calls warmd: the name when PATH finds thi
 }
 
 # warmd run -- <cmd>: run anything, print a short result, keep the raw log
+# warmd run --heavy -- <cmd>: the same through the machine's heavy queue first, like warmd test: free RAM, a heavy slot
+# (one line "WAIT slot 2/2 busy: <worktree> <command>, ..." when the wait lasts 30 s) and the disk check.
 hook_run() {
+  local heavy=0
+  [ "${1:-}" = "--heavy" ] && { heavy=1; shift; }
   [ "${1:-}" = "--" ] && shift
-  [ $# -gt 0 ] || { echo "warmd run -- <command>"; return 2; }
+  [ $# -gt 0 ] || { echo "warmd run [--heavy] -- <command>"; return 2; }
+  if [ $heavy = 1 ]; then
+    detect_project > /dev/null 2>&1 || true
+    run_mark; phase_start "RUN heavy: $*"
+    slot_take_now
+    phase_stop   # only the wait is told, the run itself ends with its own short result
+  fi
   local dir="$CACHE_ROOT/runs" log rc lines bytes t0=$SECONDS out old
   mkdir -p "$dir"
   log="$dir/$(date +%Y%m%d-%H%M%S)-$$.log"

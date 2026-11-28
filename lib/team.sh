@@ -507,6 +507,7 @@ write_task() { # name tier goal done files wt
     echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
     echo "Time budget: $(tier_minutes "$tier") min. warmd watch escalates the task past it: commit before."
+    echo "Heavy runs: start an engine or a long test yourself only as warmd run --heavy -- <command>, it waits for a free heavy slot and RAM (warmd test and check queue on their own${CFG_heavy_cmd:+, the hook sends commands matching heavy_cmd there})."
     review_line "$model"
     [ "$role" = scout ] || echo "Role $area: read $(native_path "$(role_file "$area")") first, its Learned lines come from rolled-back merges."
   } > "$f"

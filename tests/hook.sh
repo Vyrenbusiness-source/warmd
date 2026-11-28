@@ -77,6 +77,22 @@ out="$("$WARMD" run -- sh -c 'echo hi; exit 3')"; rc=$?
 [ "$rc" = 3 ] && [ "$out" = "$(printf 'hi\nFAIL exit 3')" ] && ok "short output passes through" || no "short output changed: rc=$rc $out"
 "$WARMD" run -- >/dev/null; [ $? = 2 ] && ok "run without command is usage" || no "run without command"
 
+# ---- heavy_cmd: a project's own engine or test runner, called directly, goes through the heavy queue ----
+HV="$TMP/heavy"; mkdir -p "$HV/sub"; printf 'heavy_cmd=godot[^ ]* .*(--headless|-s +tests/)\nslots=1\n' > "$HV/warmd.conf"
+got="$(updated "$(pre "cd \"$HV/sub\" && ONLY='a b.gd' godot --headless -s tests/_run_only.gd")" 2>/dev/null)"
+case "$got" in "cd \"$HV/sub\" && "*" run --heavy -- bash -c 'ONLY='\\''a b.gd'\\'' godot --headless -s tests/_run_only.gd'") ok "heavy_cmd: a matching command goes through warmd run --heavy, quotes kept";; *) no "heavy_cmd rewrite: $got";; esac
+[ -z "$(pre "cd \"$HV/sub\" && godot --version")" ] && ok "heavy_cmd: a command that does not match is left alone" || no "heavy_cmd touched godot --version"
+[ -z "$(pre "cd \"$HV/sub\" && warmd run --heavy -- godot --headless -s tests/x.gd")" ] && ok "heavy_cmd: a warmd run is never wrapped twice" || no "heavy_cmd wrapped a warmd run"
+[ -z "$(pre "cd \"$TMP\" && godot --headless -s tests/x.gd")" ] && ok "heavy_cmd: no warmd.conf with it, nothing changes" || no "heavy_cmd without conf"
+# warmd run --heavy waits for the slot and says for whom after WARMD_PHASE_SAY seconds, then runs with the short output
+mkdir -p "$XDG_CACHE_HOME/warmd/slots/1"; sleep 60 & held=$!; echo "$held" > "$XDG_CACHE_HOME/warmd/slots/1/pid"; echo "kaliber test" > "$XDG_CACHE_HOME/warmd/slots/1/what"
+(cd "$HV" && WARMD_PHASE_SAY=1 WARMD_QUEUE_POLL=1 WARMD_NO_RAM_WAIT=1 "$WARMD" run --heavy -- sh -c 'echo heavy-ran' > "$TMP/heavy.out" 2>&1) & hr=$!
+for _ in $(seq 120); do grep -q "^WAIT slot" "$TMP/heavy.out" 2>/dev/null && break; sleep 0.5; done
+kill "$held"; wait "$hr"; out="$(cat "$TMP/heavy.out")"
+echo "$out" | grep -qE '^WAIT slot 1/1 busy: kaliber test \([0-9]+s\)$' && ok "run --heavy names the slot holders while it waits" || no "run --heavy wait line: $out"
+echo "$out" | grep -q '^heavy-ran$' && ok "run --heavy runs once the slot is free" || no "run --heavy did not run: $out"
+[ -z "$(ls "$XDG_CACHE_HOME/warmd/slots" 2>/dev/null)" ] && ok "run --heavy gives its slot back" || no "slot left: $(ls "$XDG_CACHE_HOME/warmd/slots")"
+
 # ---- init --hooks / --no-hooks ----
 mkdir -p "$TMP/proj/.claude"; cd "$TMP/proj" && git init -q -b main . || exit 1
 S="$TMP/proj/.claude/settings.local.json"
