@@ -80,7 +80,7 @@ Agents
   warmd note "<one line>"      add a finding to the brief all agents of a batch share
   warmd escalate <name>        same task, next model tier
   warmd handoff <name> <done> <next>  context filling up: save state, get the line for a fresh agent
-  warmd finish [--tokens N --calls N --outcome ok|escalated|failed]
+  warmd finish [--task <name>] [--tokens N --calls N --outcome ok|escalated|failed]
                                record cost, push, print a one-line report
   warmd report                 cost per tier and what escalation wasted
   warmd board                  all worktrees at a glance

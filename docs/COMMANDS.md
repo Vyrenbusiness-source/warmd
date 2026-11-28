@@ -153,8 +153,10 @@ OK 2 tasks split. Start now, in the background: warmd watch
 Studio rules:
 - Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` and is split again when the first is merged. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
 - Every task file names a reviewer model that is not the author's model (`role_reviewer`, default the top tier).
-- When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline.
+- When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline. The agent files count in the folder the Claude Code session started in (`CLAUDE_PROJECT_DIR`, else the folder of the session's transcript) and in `~/.claude/agents`: a session started in a parent folder of the project gets the `FALLBACK` line, and `warmd init` warns about it.
 - Every agent records its slowdowns with `warmd note "BRAKE: ..."`.
+- A split while a merge of the same project runs waits for it (at most `merge_wait` seconds, default 900), so the worktrees start on the merged state; every task file names that commit in a `Base: <branch> at <sha> <subject>` line.
+- Godot: a new or reused worktree gets the base checkout's git-ignored `.import` files it lacks, and an import when its class cache misses a `class_name` (once more when the engine crashes, `project.godot` left as committed); one `(worktree <name>: ...)` line says what was done.
 
 ### warmd note
 Adds one finding to the brief all agents of a batch share. Syntax: `warmd note "<one line>"`. Exit 2 without a batch.
@@ -166,12 +168,13 @@ Same task, next model tier, with the earlier commits as context. Syntax: `warmd 
 Context is filling up: saves state and prints the line for a fresh agent. Syntax: `warmd handoff <name> "<what is done>" "<what is next>"`. Refuses uncommitted work.
 
 ### warmd finish
-Records cost, pushes, prints a one-line report. Syntax: `warmd finish [--tokens N --calls N --outcome ok|escalated|failed]`.
+Records cost, pushes, prints a one-line report. Syntax: `warmd finish [--task <name>] [--tokens N --calls N --outcome ok|escalated|failed]`.
 ```text
 warmd finish
 DONE main 3e64022, 0 ahead, 0 uncommitted, local
 ```
 A task past its time budget (`time_budget_cheap`, `time_budget_mid`, `time_budget_top`) gets `, OVER time budget: ...` in this line.
+A read-only task (`files: none`, measuring or reading) has no worktree: `warmd finish --task <name>` in the base checkout records it and prints `DONE <name> read only, nothing to commit`; without `--task` it takes the one read-only task still open.
 
 ### warmd report
 Cost per tier and what escalation wasted.
@@ -201,14 +204,14 @@ fix-total                  warmd/fix-total            0m      0      0
 ```
 
 ### warmd watch
-Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again. A task over its time budget is escalated: an `OVER <task>: ...` line and the `AGENT` line for the next tier.
+Runs in the background and ends when an agent stalls or the batch is over. Syntax: `warmd watch [--once] [minutes]`, default 5. An agent counts as active while a file or commit changes, a warmd run holds its worktree or a process runs inside it. The first minutes of a task, and of a fresh agent after a handoff, are reading: no `WAKE` before `watch_grace_cheap`, `watch_grace_mid` or `watch_grace_top` minutes of its tier (default 5, 10, 15). On a stall it prints one `WAKE <task>: idle N min in <path>. Send to the <task> agent: "..."` line per idle agent and exits 3; the session sends that message and starts the watch again. Queued AGENT lines end it the same way. An `ESCALATE` or `SHIP` line only a human can act on ends it with exit 4 and a closing `OPEN batch still runs` line; exit 0 only means no batch runs. `warmd watch --pause <name>` skips a task you stopped by hand until its worktree moves again. A task over its time budget is escalated: an `OVER <task>: ...` line and the `AGENT` line for the next tier.
 ```text
 warmd watch --once
 OK no batch running
 ```
 
 ### warmd merge
-Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>... [--no-gate]`. Several branches are merged one after the other, one commit each, then one gate runs over all of them and one player build follows, not one per branch; red rolls every branch of the call back. After a conflict, resolve it and run `warmd merge --continue`: it commits the resolved branch and merges the ones after it. In a Godot project a conflict only in one-line lists of `project.godot` (`locale/translations=PackedStringArray(...)`, `editor_plugins/enabled`, ...) is joined on its own: HEAD's order stays, the branch's new entries are appended, an entry one side removed stays out, and one `resolved project.godot list <key>: +n entries` line names it. Any other conflict stops as before. The gate is `check`, or `gate=` from `warmd.conf`; `--no-gate` skips it for an integration a human released. With `package_dir` the merge starts `warmd package` in the background, so the player is always the merged base; without it the merge says that no player follows. Afterwards the engine caches of finished worktrees are freed (see `warmd disk`). The automatic merge at the end of a batch merges all green branches in one call and goes one by one only when that is red. A rolled-back merge writes a rule line into `.warmd/roles/<role>.md`, so the next agent of that role reads it. With `mutate=merge` in `warmd.conf` the merge also runs `warmd mutate`. Exit 1 on red.
+Safe merge into the base branch, rolls back on red. Syntax: `warmd merge <branch>... [--no-gate]`. Several branches are merged one after the other, one commit each, then one gate runs over all of them and one player build follows, not one per branch; red rolls every branch of the call back. After a conflict, resolve it and run `warmd merge --continue`: it commits the resolved branch and merges the ones after it. In a Godot project a conflict only in one-line lists of `project.godot` (`locale/translations=PackedStringArray(...)`, `editor_plugins/enabled`, ...) is joined on its own: HEAD's order stays, the branch's new entries are appended, an entry one side removed stays out, and one `resolved project.godot list <key>: +n entries` line names it. Any other conflict stops as before. The gate is `check`, or `gate=` from `warmd.conf`; in a Godot project whose class cache misses a `class_name` the merge brought, an import runs first; `--no-gate` skips it for an integration a human released. warmd cannot tell which changed file a `gate=` script reaches, so a red one runs once more after other heavy warmd runs ended (at most `gate_quiet_wait` seconds, default 300): green then merges with `WARN gate red only under load: ...`, red again rolls back; `gate_retry=0` turns this off, and a commit made during the gate skips it. With `package_dir` the merge starts `warmd package` in the background, so the player is always the merged base; without it the merge says that no player follows. Afterwards the engine caches of finished worktrees are freed (see `warmd disk`). The automatic merge at the end of a batch merges all green branches in one call and goes one by one only when that is red. A rolled-back merge writes a rule line into `.warmd/roles/<role>.md`, so the next agent of that role reads it. With `mutate=merge` in `warmd.conf` the merge also runs `warmd mutate`. Exit 1 on red.
 
 ```text
 warmd merge warmd/a warmd/b warmd/c
@@ -383,6 +386,9 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `package_dir` | The one player folder, relative to the project or absolute; set it and every merge refreshes the player there. Without it `merge` and `doctor` say that no player is built | none |
 | `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
 | `gate` | Shell command `warmd merge` runs instead of `check` | none |
+| `gate_retry` | A red `gate` runs once more alone before the merge rolls back (1), never (0) | 1 |
+| `gate_quiet_wait` | Seconds that rerun waits for other heavy warmd runs to end | 300 |
+| `merge_wait` | Seconds `warmd split` waits for a running merge of the same project | 900 |
 | `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
@@ -394,6 +400,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `worktree_links` | Globs of git-ignored files or folders (relative to the project, e.g. `tools/luau/*.exe`) that `warmd split` copies (files) or links (folders) into each new worktree, so tool binaries exist there | none |
 | `role_<role>` | Model per role as `provider:model`, roles `producer worker qa reviewer merge scout`; set with `warmd models` | preset quality |
 | `time_budget_cheap`, `time_budget_mid`, `time_budget_top` | Time budget per tier in minutes; `watch` escalates a task past it, `finish` reports `OVER` | 30, 60, 120 |
+| `watch_grace_cheap`, `watch_grace_mid`, `watch_grace_top` | Minutes after a task's start or handoff in which `watch` sends no `WAKE`, the agent reads | 5, 10, 15 |
 | `cost_limit_day` | Daily cost limit in USD: `warmd split` stops when the day's ledger cost reaches it, `WARMD_COST_LIMIT=off` bypasses | none |
 | `mutate` | `merge` runs `warmd mutate` in `warmd merge`, `off` skips it in `warmd nightly` | none |
 | `mutate_cmd`, `mutate_limit` | Judge command of `warmd mutate` and its time limit in seconds | `warmd check` without cache, 900 |

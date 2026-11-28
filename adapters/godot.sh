@@ -240,9 +240,52 @@ refresh_classes() {
   fi
   daemon_alive && a_kill_daemon
   . "$WARMD_HOME/lib/godot_seed.sh" && godot_seed_imports "$PROJECT"
-  "$(godot_exe)" --headless --path "$(native_path "$PROJECT")" --import >/dev/null 2>&1
+  godot_import "$PROJECT"
   drift="$(class_cache_drift)"
   if [ -n "$drift" ]; then printf '%s\n' "$drift" > "$mark" 2>/dev/null; else rm -f "$mark"; fi
+  return 0
+}
+# godot_import [dir]: one --import of the project. Godot 4.7 often ends an import with a segfault (exit 139) and the
+# class cache is there anyway: only when the engine failed and the cache still differs it runs once more. An import may
+# rewrite project.godot; it is left as it was, or a merge and the worktree's diff carry the engine's edits.
+godot_import() {
+  local dir="${1:-$PROJECT}" exe keep rc
+  exe="$(godot_exe)" || return 2
+  keep="$(mktemp)"; cp -p "$dir/project.godot" "$keep" 2>/dev/null
+  "$exe" --headless --path "$(native_path "$dir")" --import >/dev/null 2>&1; rc=$?
+  if [ $rc != 0 ] && [ -n "$(PROJECT="$dir" class_cache_drift)" ]; then
+    "$exe" --headless --path "$(native_path "$dir")" --import >/dev/null 2>&1; rc=$?
+  fi
+  [ -s "$keep" ] && ! cmp -s "$keep" "$dir/project.godot" && cp -p "$keep" "$dir/project.godot"
+  rm -f "$keep"; return $rc
+}
+# a_wt_ready <base project> <worktree project>: a worktree of a split must run at once. The .import files are
+# git-ignored in many projects, a worktree has none and every texture fails to load; they are copied from the base
+# checkout where the worktree lacks them (one tar, not a program start per file). A class_name the copied class cache
+# does not know (new since the copy, or brought by a merge of the base) makes every script that names it a parse
+# error: the worktree is imported then. One line on stderr says what was done.
+a_wt_ready() { # base dst
+  local src="$1" dst="$2" f n=0 list drift say=""
+  [ -f "$dst/project.godot" ] || return 0
+  list="$(mktemp)"
+  while IFS= read -r f; do
+    case "$f" in .godot/*|*/.godot/*|.warmd/*|*/.warmd/*) continue;; esac
+    [ -e "$dst/$f" ] || { printf '%s
+' "$f" >> "$list"; n=$((n + 1)); }
+  done < <(git -C "$src" ls-files --others --ignored --exclude-standard -- '*.import' 2>/dev/null | tr -d '')
+  [ $n = 0 ] || { (cd "$src" && tar -cf - -T "$list") | (cd "$dst" && tar -xf -) && say="copied $n ignored .import files"; }
+  rm -f "$list"
+  drift="$(PROJECT="$dst" class_cache_drift)"
+  if [ -n "$drift" ]; then
+    local had="${SLOT:-}"; slot_take >&2   # an import is a heavy run; wt_create runs in a subshell, the slot is given back here
+    godot_import "$dst" || :
+    [ -n "$had" ] || { [ -n "${SLOT:-}" ] && rm -rf "$SLOT"; SLOT=""; }
+    drift="$(PROJECT="$dst" class_cache_drift)"
+    if [ -z "$drift" ]; then say="${say:+$say, }imported: class cache current"
+    else say="${say:+$say, }class cache still differs after the import: $(printf '%s
+' "$drift" | head -1)"; fi
+  fi
+  [ -z "$say" ] || echo "(worktree ${dst##*/}: $say)" >&2
   return 0
 }
 # class_retry <command...>: "hides a global script class" comes from a class cache that names a script twice. Its run

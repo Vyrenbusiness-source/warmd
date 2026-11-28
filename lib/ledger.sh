@@ -29,7 +29,7 @@ ledger_finish() {
   done
   case "$tokens$calls" in *[!0-9-]*) echo "FAIL tokens and calls are numbers"; return 2;; esac
   case "$outcome" in ok|escalated|failed) ;; *) echo "FAIL outcome is ok, escalated or failed"; return 2;; esac
-  name="$(git -C "$GIT_ROOT" branch --show-current)"; name="${name#warmd/}"
+  name="${FINISH_TASK:-$(git -C "$GIT_ROOT" branch --show-current)}"; name="${name#warmd/}"
   td="$(ledger_taskdir)"; tf="$td/$name.md"
   [ -f "$tf" ] || return 0
   tier="$(cat "$td/$name.tier" 2>/dev/null || echo mid)"
