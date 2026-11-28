@@ -148,7 +148,7 @@ tune_wait_ram() {
   while :; do
     pct="$(tune_free_pct)"
     [ "$pct" -ge "$min" ] && break
-    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark; }
+    [ -n "$said" ] || { echo "(queued: only ${pct}% RAM free, waiting for ${min}%)"; said=1; queue_mark "RAM ${pct}% free, the run needs ${min}%"; }
     # An idle daemon holds gigabytes for nobody: the one idle longest goes before this run waits for RAM
     if tune_stop_idle; then echo "(RAM short: stopped the idle engine in $(native_path "$REPLY"))"; nap 5; continue; fi
     [ $(( $(date +%s) - t0 )) -ge "$limit" ] && { echo "(RAM still at ${pct}% free after ${limit}s, running anyway)"; anyway=1; break; }
@@ -225,7 +225,7 @@ GFXSLOT=""   # freed by on_exit in lib/core.sh
 gfx_take() {
   [ -n "$GFXSLOT" ] && return 0
   claim_slot "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)" GFXSLOT && return 0
-  echo "(queued: $(tune_gfx_slots) graphics runs active)"; queue_mark
+  echo "(queued: $(tune_gfx_slots) graphics runs active)"; slot_holders "$CACHE_ROOT/gfxslots" "$(tune_gfx_slots)"; queue_mark "graphics slot busy: $REPLY"
   local gn; gn="$(tune_gfx_slots)"
   until slot_maybe_free "$CACHE_ROOT/gfxslots" "$gn" && claim_slot "$CACHE_ROOT/gfxslots" "$gn" GFXSLOT; do nap "${WARMD_QUEUE_POLL:-5}"; orphan_check; done
   queue_done
@@ -251,7 +251,7 @@ claim_slot() {
   local dir="$1" n="$2" i holder clean
   mkdir -p "$dir"
   for i in $(seq 1 "$n"); do
-    if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; printf -v "$3" '%s' "$dir/$i"; return 0; fi
+    if mkdir "$dir/$i" 2>/dev/null; then echo "$$" > "$dir/$i/pid"; slot_who > "$dir/$i/what"; printf -v "$3" '%s' "$dir/$i"; return 0; fi
     clean="$dir/.clean$i"
     if [ -n "$(find "$clean" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$clean" 2>/dev/null; fi
     if mkdir "$clean" 2>/dev/null; then
