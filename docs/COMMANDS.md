@@ -126,7 +126,7 @@ Names the cheapest model tier that fits a goal. Syntax: `warmd route <goal> [fil
 warmd route fix typo in cart.js
 mid model=sonnet budget=100k agent=warmd-worker
 ```
-Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down.
+Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down. A goal word from `top_words` routes to the top tier also for a read-only task (`files: none`); umlauts match in both spellings and any case (`Prüfung`, `PRUEFUNG`). A task line in `warmd split` may fix its tier with a fifth field: `name | goal | done check | files | tier=top` (`floor=` still holds, an editing task never goes below mid).
 
 ### warmd models
 One model per role, kept in `warmd.conf` as `role_<role>=provider:model`. Syntax: `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`. Roles: `producer`, `worker`, `qa`, `reviewer`, `merge`, `scout`. Without arguments it opens a WinForms window on Windows and a text prompt elsewhere; the first interactive `warmd init` asks once. `--list` shows the success per model from the ledger. `reviewer` and `merge` never go below `floor`, `worker` and `qa` never get the cheap tier. `split` stops at `cost_limit_day` (`WARMD_COST_LIMIT=off` bypasses).
@@ -366,7 +366,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `nice` | Priority of heavy runs, 0 turns it off | 10 |
 | `full` | `ci`: a bash project's full self-test runs on CI only | none |
 | `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
-| `top_words` | Goal words that route to the top tier (regex) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
+| `top_words` | Goal words that route to the top tier (regex, also for `files: none`; ä and ae match) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
 | `daemon_idle` | Minutes until an idle daemon ends itself (`idle_min` is the older name) | 10 |
 | `world_method` | Unity: static method that builds the generated parts of the project. Runs in the warm editor before `test` and `check` whenever its sources changed since its last run, so a merge or a pull never leaves generated parts behind | off |
 | `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |

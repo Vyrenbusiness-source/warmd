@@ -1,11 +1,19 @@
 # Agent work: model routing by tier, cheap first, worktrees for parallel tasks, one-line prompts, safe merge.
 # Tiers map to model aliases. Claude Code resolves haiku, sonnet and opus to the newest release, so a new model needs no change here.
 
+# Umlauts the way a German goal or pattern may spell them: ä and ae, Ü and ue match each other, in any case. grep -i in
+# the C locale of Git Bash folds ASCII only, so "PRÜFUNG" never met "Prüfung". Builtins only.
+umlaut_fold() { local s="$1"; s="${s//ä/ae}"; s="${s//Ä/ae}"; s="${s//ö/oe}"; s="${s//Ö/oe}"; s="${s//ü/ue}"; s="${s//Ü/ue}"; s="${s//ß/ss}"; printf '%s' "$s"; }   # one pattern each: a bracket splits a UTF-8 letter into bytes in the C locale
+top_word_hit() { # goal -> 0 when it names a word of top_words
+  [ -n "$CFG_top_words" ] || return 1
+  printf '%s\n' "$(umlaut_fold "$1")" | grep -qiE "$(umlaut_fold "$CFG_top_words")"
+}
 route_tier() { # goal files
   local goal="$1" files="${2:-}"
-  if [ -z "$files" ] || [ "$files" = none ]; then apply_floor cheap; return; fi
+  # A read-only task (measure, review) reads on the cheap tier, unless its goal names a top word: a strict review is top work
+  if [ -z "$files" ] || [ "$files" = none ]; then if top_word_hit "$goal"; then apply_floor top; else apply_floor cheap; fi; return; fi
   local tier=mid
-  if echo "$goal" | grep -qiE "$CFG_top_words"; then tier=top; fi
+  if top_word_hit "$goal"; then tier=top; fi
   if [ -n "$CFG_top_paths" ] && echo "$files" | grep -qE "$CFG_top_paths"; then tier=top; fi
   # Learned from the ledger: an area where half of the mid attempts needed escalation (two or more tasks) starts at top. Older history.tsv counts still apply.
   if [ "$tier" = mid ]; then
@@ -789,8 +797,12 @@ batch_prune() { # common
 
 # task_fields <line>: name | goal | done check | files. The goal may contain "|" itself (|x| <= y, a | b):
 # name is the first field, files the last, the done check the one before it, the goal all in between.
+# An optional fifth field tier=cheap|mid|top fixes the task's tier (a project sets reviews high on purpose); floor= still holds.
 task_fields() {
-  local l="$1" rest pipes="${1//[^|]/}"
+  local l="$1" rest pipes re='^(.*)\|[[:space:]]*tier=(cheap|mid|top)[[:space:]]*$'
+  ftier=""
+  if [[ $l =~ $re ]]; then l="${BASH_REMATCH[1]}"; ftier="${BASH_REMATCH[2]}"; fi
+  pipes="${l//[^|]/}"
   if [ ${#pipes} -lt 3 ]; then IFS='|' read -r name goal check files <<< "$l"; return; fi
   name="${l%%|*}"; rest="${l#*|}"
   files="${rest##*|}"; rest="${rest%|*}"
@@ -855,7 +867,7 @@ batch_fresh() { # common
 
 team_split() {
   need_git
-  local file="${1:-}" name goal check files tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
+  local file="${1:-}" name goal check files ftier="" tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
   rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   ledger_cost_gate || return 2
@@ -900,6 +912,10 @@ team_split() {
       fi
     fi
     tier="$(route_tier "$goal" "$files")"
+    if [ -n "$ftier" ]; then   # tier= of the task line wins over routing; an editing task never goes to the read-only cheap tier
+      [ "$ftier" = cheap ] && [ -n "$files" ] && [ "$files" != none ] && ftier=mid
+      tier="$(apply_floor "$ftier")"
+    fi
     # A worktree without its engine cache gets a copy: only with room for it plus disk_min_mb, after freeing finished ones
     if [ -n "$files" ] && [ "$files" != none ] && disk_cache_name && [ ! -d "$(worktree_dir)/$name${rel:+/$rel}/$REPLY" ] && ! disk_room "$PROJECT" 1 "$(dirname "$GIT_ROOT")"; then
       disk_reclaim

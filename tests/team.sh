@@ -244,6 +244,16 @@ for i in 3 4 5 6 7; do printf '%s\tz%s\tmid\tsrc\t-\t-\t1\tok\n' "$i" "$i" >> "$
 "$HERE/bin/warmd" route 'fix a bug' src/a.js | grep -q '^top' && ok "later successes never lower a raised area" || no "area went back down"
 "$HERE/bin/warmd" route 'fix the crash' lib/a.js > /dev/null
 "$HERE/bin/warmd" route 'fix a bug' lib/a.js | grep -q '^mid' && ok "a goal word raises the task, not its area" || no "goal word made the area sticky"
+# A read-only task that names a top word is top work too, umlauts in either spelling and case
+printf 'top_words=crash|Strenge Prüfung\n' > warmd.conf
+"$HERE/bin/warmd" route 'Strenge Prüfung des Spiels' | grep -q '^top' && ok "a top word routes a read-only task to top" || no "files none top word: $("$HERE/bin/warmd" route 'Strenge Prüfung des Spiels')"
+"$HERE/bin/warmd" route 'STRENGE PRUEFUNG der KI' none | grep -q '^top' && ok "an umlaut matches in ue spelling and upper case" || no "umlaut fold: $("$HERE/bin/warmd" route 'STRENGE PRUEFUNG der KI' none)"
+"$HERE/bin/warmd" route 'read the docs' | grep -q '^cheap' && ok "a plain read-only task stays cheap" || no "read-only not cheap"
+printf 'r1 | read the code | y | none | tier=top\nr2 | fix a | b | y | src/a.js | tier=cheap\n' > "$TMP/tier.txt"
+out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/tier.txt" 2>&1)"
+[ "$(cat .warmd/tasks/r1.tier 2>/dev/null)" = top ] && grep -q '^Goal: read the code$' .warmd/tasks/r1.md && ok "tier=top in the task line fixes the tier" || no "tier field: $out; $(cat .warmd/tasks/r1.tier 2>&1)"
+[ "$(cat .warmd/tasks/r2.tier 2>/dev/null)" = mid ] && grep -q '^Goal: fix a | b$' .warmd/tasks/r2.md && ok "tier=cheap never sends an editing task to the read-only tier, a | in the goal stays" || no "tier cheap edit: $(cat .warmd/tasks/r2.tier 2>&1); $(grep Goal .warmd/tasks/r2.md 2>&1)"
+"$HERE/bin/warmd" batch-done > /dev/null 2>&1; : > warmd.conf
 
 # A rolled-back merge leaves one rule line in the role file of its task
 printf 'gate=false\n' > warmd.conf; git add warmd.conf; git commit -qm conf
