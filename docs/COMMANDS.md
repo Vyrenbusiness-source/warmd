@@ -294,7 +294,7 @@ RED run 41
 Installs the engine side, agent definitions and a short block in `CLAUDE.md` or `AGENTS.md`, between `<!-- warmd ... -->` markers. The session start hook renews that block and the agent definitions in the shared checkout when a newer warmd brings other text, an older block without markers is replaced in place. With `--slim` it also gives project agents without a `tools` line the cheapest useful set. Syntax: `warmd init [--slim]`.
 
 ### warmd disk
-Shows the free space and the finished worktrees that still hold an engine cache (a Unity `Library` is often several GB per worktree). `--free` frees those caches now. warmd does this by itself: `split` copies a cache only with room for it plus `disk_min_mb` and answers `WAIT` otherwise, every heavy run first frees finished caches and is refused below `disk_min_mb`, and every merge frees the caches of the worktrees it finished. A cache is freed only when the worktree's HEAD is in the base branch, nothing is uncommitted, it is not in the running batch and no engine or warmd run is there; a worktree without work of its own also needs 30 quiet minutes. The next split that reuses it copies the cache again.
+Shows the free space and the finished worktrees that still hold an engine cache (a Unity `Library` is often several GB per worktree). `--free` cleans up now, wider than a merge: every worktree that is not an open task of the running batch, not locked, holds no engine and had 30 quiet minutes (no checkout, commit or index write) is removed with `git worktree remove --force` when its HEAD is in the base branch and it holds nothing of its own (untracked files count; `*.uid`, `*.import`, `*.translation`, `.godot/`, `override.cfg` do not), and gives its caches back otherwise. One line: `OK removed <n> merged worktrees, freed the caches of <m> others: <x> GB freed, <y> GB free`. Caches are the engine cache plus `target/`, `node_modules/` and `dist/` when git ignores them (in the worktree, the project folder and one level below). warmd does this by itself: `split` copies a cache only with room for it plus `disk_min_mb` and answers `WAIT` otherwise, every heavy run first frees finished caches and is refused below `disk_min_mb`, and every merge frees the caches (engine cache and ignored build folders) of the worktrees it finished. After a merge a cache is freed only when the worktree's HEAD is in the base branch, nothing is uncommitted, it is not in the running batch and no engine or warmd run is there; a worktree without work of its own also needs 30 quiet minutes. The next split that reuses it copies the cache again.
 ```text
 warmd disk --free
 ```
@@ -307,6 +307,21 @@ detected: web at <project>
 ok git
 ok git repo
 machine: 8 cores, 31 GB RAM
+```
+
+### warmd resume
+Resume after a reboot, Windows only. `warmd resume --arm <handoff.md>` writes `warmd-resume.cmd` into the user's Startup folder: after the next sign-in it opens a visible terminal in the folder `--arm` ran in, starts the Claude Code CLI (`~/.local/bin/claude.exe`, `WARMD_CLAUDE` overrides) with `Lies <handoff.md> und mache dort weiter.` and deletes itself, so it runs once. `--disarm` removes it, `warmd resume` alone says whether it is armed. Each call also says whether Windows signs in by itself (`AutoAdminLogon` in the Winlogon registry key); without it the PC waits at the sign-in screen. warmd only reads that value and never changes the sign-in.
+```text
+warmd resume --arm HANDOFF.md
+OK resume armed: after the next sign-in Claude Code starts in C:\Users\me\game on C:\Users\me\game\HANDOFF.md (C:/Users/me/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/warmd-resume.cmd)
+WARN automatic sign-in is not set up (AutoAdminLogon 0): after a reboot the PC waits at the sign-in screen, the session resumes once someone signs in
+```
+
+### warmd reboot
+`warmd reboot --if-starved` looks at the free RAM three times, 90 seconds apart (`WARMD_REBOOT_POLL`). Only when all three are below `ram_free_min`, the limit an engine run waits at, `reboot=1` is in `warmd.conf` and `warmd resume` is armed, it writes a line to `reboot.log` in the warmd cache and runs `shutdown /r /t 120`, which `shutdown /a` aborts. Without `reboot=1` it only prints what it would do (`DRY ...`). Armed is required: a reboot without resume would leave the work standing.
+```text
+warmd reboot --if-starved
+DRY RAM stayed below ram_free_min 15% (9%, 8%, 8% over 180s). With reboot=1 in warmd.conf warmd would log it and run: shutdown /r /t 120
 ```
 
 ### warmd leak
@@ -344,6 +359,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `ram_free_min` | A Unity or Godot start waits while less than this percent of RAM is free, 0 turns it off | 15 |
 | `ram_free_min_light` | Any other suite (web, Python, shell) waits only below this percent of free RAM, 0 turns it off | 3 |
 | `ram_wait` | 0 turns the RAM wait off | 1 |
+| `reboot` | 1 lets `warmd reboot --if-starved` restart the PC when the RAM stays below `ram_free_min` and `warmd resume` is armed | 0 |
 | `nice` | Priority of heavy runs, 0 turns it off | 10 |
 | `full` | `ci`: a bash project's full self-test runs on CI only | none |
 | `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
@@ -408,8 +424,9 @@ A headless engine renders nothing. Then golden is red and says to run with `WARM
 
 ### warmd doctor (Godot)
 
-Errors: `.uid` or `.import` files not versioned, `.godot/` not ignored, Godot version not pinned, engine not the pinned version.
+Errors: `.uid` or `.import` files not versioned (folders a `.gitignore` pattern names and `.claude/worktrees/` are skipped, a `.uid` ignored by a `*.uid` pattern still counts), `.godot/` not ignored, Godot version not pinned, engine not the pinned version.
 The pin is `godot_version=` in warmd.conf, else the version in `config/features` of project.godot.
+A Godot outside PATH and `WARMD_GODOT` in a common place (Desktop, Downloads, Program Files, Steam, scoop, `~/.local/bin`) whose `--version` matches the pin is taken over into the warmd cache (`godot.path`) and reported `ok`; another version stays `MISSING` and is not remembered.
 
 ### Godot leaks at test end
 

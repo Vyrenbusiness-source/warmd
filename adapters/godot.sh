@@ -570,24 +570,42 @@ a_init() {
 # Errors that break a clone or a teammate: .uid and .import files not versioned (Godot 4.4 links by uid), the import
 # cache .godot/ not ignored, an engine that is not the version the project is pinned to.
 a_doctor() {
-  local exe="" v="" pin src bad n rc=0
-  if exe="$(godot_exe)"; then echo "ok Godot"; else exe=""; echo "MISSING Godot, set WARMD_GODOT"; fi
+  local exe="" v="" pin src bad n rc=0 found=""
+  src="godot_version in warmd.conf"; pin="${CFG_godot_version:-}"
+  if [ -z "$pin" ]; then
+    src="config/features in project.godot"
+    pin="$(tr -d '\r' < "$PROJECT/project.godot" 2>/dev/null | sed -n 's/^config\/features=PackedStringArray("\([0-9][0-9.]*\)".*/\1/p' | head -1)"
+  fi
+  if exe="$(godot_exe)"; then echo "ok Godot"
+  # Not on PATH, not in WARMD_GODOT: an engine in a common place (brake_godot_find) of the pinned version is taken over
+  # into the cache (godot.path), so no session sets WARMD_GODOT again. Another version is only named, never remembered.
+  elif declare -F brake_godot_find >/dev/null && brake_godot_find --no-save; then
+    found="$REPLY"; v="$("$found" --version 2>/dev/null | tr -d '\r' | grep -E '^[0-9]' | head -1)"
+    if [ -n "$v" ] && [ -n "$pin" ] && { [ "$v" = "$pin" ] || [[ $v == "$pin".* ]]; }; then
+      exe="$found"; WARMD_GODOT="$found"; GODOT_DOCTOR_FOUND=1
+      { mkdir -p "$CACHE_ROOT" && printf '%s\n' "$found" > "$CACHE_ROOT/godot.path"; } 2>/dev/null
+      echo "ok Godot $v found at $(native_path "$found"), not on PATH: remembered in the warmd cache (godot.path)"
+    else
+      echo "MISSING Godot, set WARMD_GODOT: found Godot ${v:-of unknown version} at $(native_path "$found"), not the pinned ${pin:-version}"
+      exe=""; v=""; GODOT_DOCTOR_FOUND=1
+    fi
+  else exe=""; echo "MISSING Godot, set WARMD_GODOT"; fi
   if [ -n "$GIT_ROOT" ]; then
     if git -C "$PROJECT" check-ignore -q .godot/ 2>/dev/null; then echo "ok .godot/ ignored"
     else echo "ERROR .godot/ is not ignored: the import cache would land in git. Fix: echo .godot/ >> .gitignore"; rc=1; fi
-    bad="$(git -C "$PROJECT" ls-files --others -- '*.uid' '*.import' ':!:.godot/*' ':!:.warmd/*' 2>/dev/null)"
+    # An ignored .uid is an error, an ignored folder is not the project: .claude/worktrees/ held 255 old worktrees (24089
+    # files counted). git lists a wholly ignored folder as one "dir/" line, also one that holds only *.uid files of an
+    # ignored *.uid pattern: check-ignore keeps the folders a pattern names themselves.
+    bad="$(git -C "$PROJECT" ls-files --others -- '*.uid' '*.import' ':!:.godot/*' ':!:.warmd/*' ':!:.claude/worktrees/*' 2>/dev/null |
+      awk -v skip="$(git -C "$PROJECT" ls-files --others --ignored --exclude-standard --directory 2>/dev/null | grep '/$' | git -C "$PROJECT" check-ignore --stdin 2>/dev/null)" '
+        BEGIN { n = split(skip, s, "\n") } { for (i = 1; i <= n; i++) if (s[i] != "" && index($0, s[i]) == 1) next; print }')"
     if [ -z "$bad" ]; then echo "ok .uid and .import files versioned"
     else
       n="$(printf '%s\n' "$bad" | wc -l | tr -d ' ')"
       echo "ERROR $n .uid/.import files not versioned ($(printf '%s\n' "$bad" | head -3 | tr '\n' ' ' | sed 's/ $//')): a clone without them loses uid links and import settings. Fix: git add them, take them out of .gitignore"; rc=1
     fi
   fi
-  src="godot_version in warmd.conf"; pin="${CFG_godot_version:-}"
-  if [ -z "$pin" ]; then
-    src="config/features in project.godot"
-    pin="$(tr -d '\r' < "$PROJECT/project.godot" 2>/dev/null | sed -n 's/^config\/features=PackedStringArray("\([0-9][0-9.]*\)".*/\1/p' | head -1)"
-  fi
-  [ -n "$exe" ] && v="$("$exe" --version 2>/dev/null | tr -d '\r' | grep -E '^[0-9]' | head -1)"
+  [ -n "$exe" ] && [ -z "$v" ] && v="$("$exe" --version 2>/dev/null | tr -d '\r' | grep -E '^[0-9]' | head -1)"
   if [ -z "$pin" ]; then echo "ERROR Godot version not pinned: project.godot has no config/features version, warmd.conf no godot_version. Fix: godot_version=${v%%.stable*} in warmd.conf"; rc=1
   elif [ -z "$v" ]; then echo "note: Godot $pin pinned ($src), no engine here to compare"
   elif [ "$v" = "$pin" ] || [[ $v == "$pin".* ]]; then echo "ok Godot $v matches the pin $pin ($src)"

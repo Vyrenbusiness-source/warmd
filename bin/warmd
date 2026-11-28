@@ -96,7 +96,7 @@ Setup
   warmd init --slim            also give project agents without a tools line the cheapest useful set
   warmd init --no-hooks        remove the hooks (--hooks installs only them)
   warmd doctor                 check what is missing
-  warmd disk [--free]          free space; --free gives finished worktrees' engine caches back
+  warmd disk [--free]          free space; --free removes merged worktrees, frees the caches of the rest
   warmd feedback               prefilled GitHub issue with your bench numbers, you decide
   warmd update                 fetch the newest version, only when you run it
   warmd package                build a player with your own method (Unity), export smoke (Godot)
@@ -157,6 +157,6 @@ case "$CMD" in
   batch-done) rm -f "$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir)/warmd-batch"; echo "OK batch ended";;
   init)    common_init; a_init; . "$WARMD_HOME/lib/hook.sh"; hook_install || echo "WARN hooks not installed, warmd works without them"; models_first_run; case "${1:-}" in --slim) . "$WARMD_HOME/lib/slim.sh"; slim_init;; esac;;
   doctor)  common_doctor; install_behind; a_doctor; disk_doctor; brake_doctor;;
-  disk)    if [ "${1:-}" = --free ]; then disk_reclaim; echo "OK freed the cache of $REPLY finished worktrees${DISK_FREED:+:$DISK_FREED}"; else disk_doctor; fi;;
+  disk)    if [ "${1:-}" = --free ]; then disk_free_all; else disk_doctor; fi;;
   *) echo "warmd: unknown command '$CMD'"; usage | head -3; exit 2;;
 esac

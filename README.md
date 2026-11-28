@@ -134,7 +134,8 @@ Cheap models do the work, a stronger one reviews, and the base branch stays gree
 | `warmd audit` | What your agents pay for on every turn, biggest first, including MCP servers that load upfront. |
 | `warmd gain` · `warmd report` | Tokens and dollars per session from the transcripts; cost per tier and what escalation wasted. |
 | `warmd init --slim` | Gives project agents without a tools line the cheapest useful set: fewer start tokens per subagent. |
-| `warmd disk` · `warmd leak` | Free space and engine caches of finished worktrees; kernel memory lost per process start on Windows. |
+| `warmd disk` · `warmd leak` | Free space, old worktrees and their caches; kernel memory lost per process start on Windows. |
+| **Resume after reboot** | When a PC that loses memory per process start has too little RAM left for any run, warmd can restart it (only when you allow it) and Claude Code picks the handoff up again after sign-in. |
 | `warmd doctor` · `warmd update` · `warmd feedback` | What is missing; the newest version, only when you run it; a prefilled issue with your bench numbers. |
 
 ### Web and UI
