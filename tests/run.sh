@@ -280,7 +280,8 @@ expect "the note lists the commits" 'wip' "$(cat "$note")"
 (cd "$wtf" && "$WARMD" handoff footer a b && "$WARMD" handoff footer c d) > /dev/null
 expect "a fourth handoff asks for a split instead" 'handed off 3 times' "$(cd "$wtf" && "$WARMD" handoff footer e f)"
 expect "handoff in the shared checkout during a batch is refused" '^FAIL a batch runs, this is the shared checkout' "$("$WARMD" handoff footer g h)"
-expect "finish refuses the base checkout and pushes nothing" '^FAIL warmd finish runs in the base checkout \(main\), nothing recorded, nothing pushed' "$("$WARMD" finish)"
+# The read-only task search may end here (warmd finish without --task), a task with a worktree never
+expect "finish refuses the base checkout for a task with a worktree" '^FAIL footer is no read-only task' "$("$WARMD" finish --task footer)"
 expect "finish reports facts in one line" '^DONE warmd/footer [0-9a-f]+' "$(cd "$wtf" && "$WARMD" finish)"
 expect "board lists worktrees" 'warmd/footer' "$("$WARMD" board)"
 
