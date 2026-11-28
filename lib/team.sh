@@ -266,19 +266,25 @@ wt_create() { # name
       wt="$wt-$(date +%s)"; echo "(worktree folder $name holds $cur, still owned: using ${wt##*/})" >&2
       mkdir -p "$(worktree_dir)"
       git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
-      a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+      wt_seed "$src" "$wt${rel:+/$rel}"
       echo "$wt"; return 0
     fi
   fi
   # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
-  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
-  if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; wt_seed "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if wt="$(wt_reuse "$name")"; then wt_seed "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   wt="$(worktree_dir)/$name"
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
-  a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1
-  seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+  wt_seed "$src" "$wt${rel:+/$rel}"
   echo "$wt"
+}
+# The caches of a new or reused worktree, then what the adapter needs to run there at once (Godot: ignored .import
+# files, a current class cache). stdout is the worktree path of wt_create: anything said goes to stderr.
+wt_seed() { # base project, worktree project
+  a_seed "$1" "$2" >/dev/null 2>&1; seed_links "$1" "$2"; worktree_links "$1" "$2"
+  [ "$(type -t a_wt_ready)" = function ] && a_wt_ready "$1" "$2" >&2
+  return 0
 }
 
 # Shared brief: one short file all agents of a batch read. It lives in the common git dir, so every worktree sees the same copy and it never gets committed.
@@ -434,12 +440,38 @@ review_line() { # author model
 # The agent file of a role is only registered in projects with warmd init. A session started elsewhere cannot spawn it:
 # the FALLBACK line carries the worker rules inline for a general-purpose agent.
 agent_fallback() { # name agent model taskfile
-  local d="${CLAUDE_PROJECT_DIR:-$GIT_ROOT}" rules
+  local d rules
   [ -z "${AGENT_NS:-}" ] || return 0   # the plugin registers its agents itself
-  [ -f "$d/.claude/agents/${2#*:}.md" ] && return 0
+  session_dir_r; d="$REPLY"
+  [ -n "$d" ] && [ -f "$d/.claude/agents/${2#*:}.md" ] && return 0
+  [ -f "$HOME/.claude/agents/${2#*:}.md" ] && return 0   # user agents reach every session
   [ -f "$WARMD_HOME/agents/${2#*:}.md" ] || return 0
   rules="$(awk 'f>=2 && /^- / {sub(/^- /, ""); printf "%s ", $0} /^---$/ {f++}' "$WARMD_HOME/agents/${2#*:}.md" | tr '"' "'")"
-  echo "FALLBACK $1 (no ${2#*:} agent in $(native_path "$d")/.claude/agents): subagent_type=general-purpose model=$3 prompt=\"You are a warmd worker. ${rules}Read $4 and do it.\""
+  if [ -n "$d" ]; then d="$(native_path "$d")/.claude/agents"; else d=".claude/agents of this session, it started outside $(native_path "$GIT_ROOT")"; fi
+  echo "FALLBACK $1 (no ${2#*:} agent in $d): subagent_type=general-purpose model=$3 prompt=\"You are a warmd worker. ${rules}Read $4 and do it.\""
+}
+
+# The folder the Claude Code session started in: its Agent tool knows only that folder's .claude/agents. CLAUDE_PROJECT_DIR
+# when set, else the transcript of CLAUDE_CODE_SESSION_ID: its folder under ~/.claude/projects is the session folder with
+# every character that is no letter or digit turned into "-". The project or one of its parents with that name, or ""
+# when the session runs elsewhere (Desktop\mc, agents in mcttrition\.claudegents: warmd-worker was unknown).
+# Neither known: the project, as before.
+session_dir_r() { # -> REPLY
+  REPLY="${CLAUDE_PROJECT_DIR:-}"; [ -n "$REPLY" ] && return 0
+  REPLY="$GIT_ROOT"
+  local id="${CLAUDE_CODE_SESSION_ID:-}" root="${WARMD_TRANSCRIPTS:-$HOME/.claude/projects}" f slug d n
+  [ -n "$id" ] && [ -d "$root" ] || return 0
+  for f in "$root"/*/"$id.jsonl"; do [ -f "$f" ] && break; done
+  [ -f "$f" ] || return 0
+  slug="${f%/*}"; slug="${slug##*/}"; slug="${slug,,}"
+  d="$GIT_ROOT"
+  while [ -n "$d" ]; do
+    n="$(native_path "$d")"; n="${n//[^A-Za-z0-9]/-}"
+    [ "${n,,}" = "$slug" ] && { REPLY="$d"; return 0; }
+    [ "${d%/*}" = "$d" ] && break
+    d="${d%/*}"
+  done
+  REPLY=""
 }
 
 write_task() { # name tier goal done files wt
@@ -455,6 +487,8 @@ write_task() { # name tier goal done files wt
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
+    case "${files:-none}" in none) echo "End: nothing to commit, run warmd finish --task $name where you are";; esac
+    local bs; bs="$(git -C "$wt" merge-base HEAD "$(base_branch)" 2>/dev/null)" && echo "Base: $(base_branch) at ${bs:0:9} $(git -C "$wt" log -1 --format=%s "$bs" 2>/dev/null | cut -c1-60)"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
     echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
@@ -575,10 +609,25 @@ wt_idle() { # worktree limit batchfile [task name]
   local now; printf -v now '%(%s)T' -1
   local age=$(( (now - last) / 60 ))
   [ "$age" -lt "$limit" ] && { echo 0; return; }
+  [ -n "${4:-}" ] && task_grace "$4" "$now" && { echo 0; return; }
   wt_busy "$wt" && { echo 0; return; }
   # An agent that reads or thinks writes no file, but its transcript grows: that is movement too.
   [ -n "${4:-}" ] && wt_talking "$4" "$limit" && { echo 0; return; }
   echo "$age"
+}
+
+# The first minutes of a task, and of a fresh agent after a handoff, are reading: no file moves. Two agents got a WAKE after
+# 8 minutes of reading code. The grace grows with the tier: watch_grace_cheap/mid/top in warmd.conf, default 5/10/15 min.
+task_grace() { # name now -> 0 while the task is in its grace minutes
+  local d="$STATE/tasks" st=0 t tier=mid g h
+  [ -f "$d/$1.start" ] && read -r st < "$d/$1.start"
+  h="$(git -C "$PROJECT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-handoff/$1.md"
+  if [ -f "$h" ]; then t="$(date -r "$h" +%s 2>/dev/null)"; [[ $t =~ ^[0-9]+$ ]] && [ "$t" -gt "${st:-0}" ] && st="$t"; fi
+  [ -f "$d/$1.tier" ] && read -r tier < "$d/$1.tier"
+  tier="$(apply_floor "$tier")"
+  case "$tier" in cheap) g="${CFG_watch_grace_cheap:-5}";; top) g="${CFG_watch_grace_top:-15}";; *) g="${CFG_watch_grace_mid:-10}";; esac
+  [[ $st =~ ^[0-9]+$ && $g =~ ^[0-9]+$ ]] || return 1
+  [ $(( $2 - st )) -lt $(( g * 60 )) ]
 }
 
 wt_talking() { # name limit -> 0 when a transcript of this task changed in the last <limit> minutes
@@ -811,6 +860,7 @@ team_split() {
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
+  merge_wait
   [ $append = 1 ] || batch_fresh "${batch%/warmd-batch}"
   while IFS= read -r line <&3; do
     task_fields "$line"
@@ -902,6 +952,7 @@ team_finish() {
   br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
   # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
   if [ -z "$br" ] || [ "$br" = "$base" ]; then
+    finish_readonly "$@"; case $? in 0) return 0;; 2) return 2;; esac
     echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
     return 2
   fi
@@ -927,6 +978,30 @@ team_finish() {
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
 }
 
+
+# A task with files: none (measure, read) has no worktree: its agent works in the base checkout and has nothing to commit.
+# finish there records it and marks it done: --task <name>, or the one read-only task still open. 1: no such task.
+finish_readonly() {
+  local name="" td f n=0 open="" fb last
+  while [ $# -gt 0 ]; do [ "$1" = --task ] && { name="${2:-}"; shift; }; shift; done
+  td="$(ledger_taskdir)"; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"
+  if [ -z "$name" ]; then
+    for f in "$td"/*.md; do
+      [ -f "$f" ] && grep -q '^Files you own: none' "$f" || continue
+      f="${f##*/}"; f="${f%.md}"; [ -e "$fb/$f" ] && continue
+      open="$open $f"; n=$((n + 1)); name="$f"
+    done
+    [ $n -le 1 ] || { echo "FAIL $n read-only tasks are open:$open. Run warmd finish --task <name>"; return 2; }
+  fi
+  [ -n "$name" ] || return 1
+  [ -f "$td/$name.md" ] && grep -q '^Files you own: none' "$td/$name.md" || { echo "FAIL $name is no read-only task (files: none), finish it in its worktree"; return 2; }
+  FINISH_TASK="$name" ledger_finish "$@" || return 2
+  mkdir -p "$fb" && : > "$fb/$name"
+  last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '' | cut -c1-70)"
+  type brake_batch_line >/dev/null 2>&1 && brake_batch_line "$name"
+  echo "DONE $name read only, nothing to commit${last:+, last run: $last}"
+  return 0
+}
 
 # Before the push: a PR that conflicts with its base gets no CI run at all, and agents waited minutes for checks that
 # never start. A clean merge of origin/<base> is made here (clean tree only), a conflict is named at once.
@@ -1014,6 +1089,45 @@ merge_rollback() { # start, last commit of this merge
 # warmd merge <branch>... [--no-gate]: every branch merged one after the other (one commit each), then ONE gate over all of
 # them and one player build, not one per branch. Red rolls every branch of the call back. A conflict stops at its branch:
 # resolve it, warmd merge --continue merges the branches after it. --no-gate is for an integration the user released.
+gate_script() { (cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1); }
+# Wait until no other heavy warmd run on this machine holds a slot, at most gate_quiet_wait seconds (default 300).
+gate_quiet() {
+  local d p n t0; t0="$(date +%s)"
+  while :; do
+    n=0
+    for d in "$CACHE_ROOT"/slots/*/; do
+      [ -d "$d" ] || continue; p=""; read -r p < "$d/pid" 2>/dev/null
+      [ -n "$p" ] && [ "$p" != "$$" ] && shell_alive "$p" && n=$((n + 1))
+    done
+    [ $n = 0 ] && return 0
+    [ $(( $(date +%s) - t0 )) -ge "${CFG_gate_quiet_wait:-300}" ] && { echo "(still $n other heavy runs after ${CFG_gate_quiet_wait:-300}s, the gate runs anyway)"; return 0; }
+    nap "${WARMD_QUEUE_POLL:-5}"
+  done
+}
+merge_lock() {
+  MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"
+  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
+  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
+}
+# A split during a merge made its worktrees on the state before it, and agents found their predecessor "not on main".
+# split waits for a running merge of this project, at most merge_wait seconds (default 900), then goes on with a WARN.
+merge_wait() {
+  local f="$STATE/merge.owner" owner w t0 said=0
+  t0="$(date +%s)"
+  while [ -f "$f" ]; do
+    owner="$(cat "$f" 2>/dev/null)"; w="$(cat "$f.win" 2>/dev/null)"
+    [ "$owner" = "$$" ] && return 0
+    shell_alive "$owner" || { [ -n "$w" ] && pid_alive "$w"; } || return 0
+    if [ $(( $(date +%s) - t0 )) -ge "${CFG_merge_wait:-900}" ]; then
+      echo "WARN a merge still runs after ${CFG_merge_wait:-900}s (pid $owner): worktrees start on the state before it"; return 1
+    fi
+    [ $said = 1 ] || { echo "(a merge runs in this project, pid $owner: split waits for it, worktrees start on its result)"; said=1; }
+    nap "${WARMD_MERGE_POLL:-5}"
+  done
+  [ $said = 0 ] || echo "(merge done after $(( $(date +%s) - t0 ))s)"
+  return 0
+}
+
 team_merge() {
   need_git
   local base out m br start="" mine="" nogate=0 cont=0 brs=() merged=() new=() q="$STATE/merge.queue" i rest
@@ -1043,6 +1157,8 @@ team_merge() {
     start="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   fi
   mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
+  # The lock holds from the first git merge on: a split meanwhile waits for it (merge_wait), its worktrees start on the result
+  merge_lock
   for i in "${!brs[@]}"; do
     br="${brs[$i]}"
     merge_clear_byproducts "$br"
@@ -1070,9 +1186,7 @@ team_merge() {
     merged+=("$br")
   done
   [ ${#merged[@]} -gt 0 ] || { echo "OK nothing to merge"; return 0; }
-  MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"; export WARMD_IN_MERGE=1
-  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
-  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
+  export WARMD_IN_MERGE=1
   br="${merged[*]}"; export WARMD_DIFF_BASE="$start"
   # Red rolls back to the start of this merge, never further and never over a commit made meanwhile (merge_rollback).
   # Not rolled back: exit 3, the caller stops merging on top of it.
@@ -1083,9 +1197,24 @@ team_merge() {
     echo "FAIL merge $br: $*${left:+; kept uncommitted (written by the gate or by someone meanwhile): ${left% }}"; return 1
   }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --check "$start" HEAD 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return; }
+  # A class_name the merge brought is unknown to the checkout's class cache: every script naming it is a parse error in
+  # a gate= script that starts the engine itself. The import runs first (a gate without it rolled a branch with a new class back).
+  if [ $nogate = 0 ] && [ "$(type -t class_cache_drift)" = function ] && [ -n "$(class_cache_drift)" ]; then
+    echo "(class_name new to the class cache: imported before the gate)"; refresh_classes force
+  fi
   if [ $nogate = 1 ]; then :
   elif [ -n "$CFG_gate" ]; then
-    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
+    if ! m="$(gate_script)"; then
+      # warmd cannot tell which changed file a gate= script reaches: a red gate runs once more, alone (gate_retry=0: never).
+      # A load-sensitive test went red while other agents loaded the machine and rolled back a merge it had nothing to do with.
+      local red1; red1="$(red_lines "$m" tail)"
+      # Not after a commit made during the gate: that HEAD is someone's, the rollback decides alone (merge_rollback)
+      { [ "${CFG_gate_retry:-1}" -ge 1 ] 2>/dev/null && [ "$(git -C "$GIT_ROOT" rev-parse HEAD)" = "$mine" ]; } || { mfail "$red1"; return; }
+      echo "(gate red: ${red1:0:160}; once more alone, warmd cannot tell what a gate= script reaches)"
+      gate_quiet
+      if ! m="$(gate_script)"; then mfail "$(red_lines "$m" tail)"; return; fi
+      echo "WARN gate red only under load: green when run alone, red before: ${red1:0:200}"
+    fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
   if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
   # mutate=merge in warmd.conf: every changed line of this merge must have a test that notices a flipped operator (lib/mutate.sh)

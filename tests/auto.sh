@@ -130,6 +130,8 @@ for n in a b c d; do
   (cd "$W/$n" && GIT_COMMITTER_DATE='2020-01-01T00:00:00' git commit -q --allow-empty --date='2020-01-01T00:00:00' -m old)
 done
 touch -t "$t2h" "$C/warmd-batch"
+for n in a b c d; do echo $(( $(date +%s) - 1200 )) > ".warmd/tasks/$n.start"; done   # 20 min: past the reading grace, within the time budget
+for f in "$C"/warmd-handoff/*.md; do [ -f "$f" ] && touch -t "$t2h" "$f"; done   # handoffs long ago: no fresh agent reads
 "$WARMD" watch --pause b | grep -q '^OK b paused' && ok "watch --pause" || no "watch --pause"
 out="$("$WARMD" watch --once)"; rc=$?
 [ "$rc" = 3 ] && echo "$out" | grep -q '^WAKE c:' && echo "$out" | grep -q '^WAKE d:' && ! echo "$out" | grep -qE '^WAKE (a|b):' && ok "a stopped and a paused task raise no WAKE" || no "paused watch rc=$rc: $out"
