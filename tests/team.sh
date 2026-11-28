@@ -203,6 +203,7 @@ echo "$out" | grep -q '^WAIT b: .*(warmd merge warmd/a) or dropped (warmd drop a
 # a parked holder: its agent finished and nothing moved for scene_rest_hours, the scene is free
 out0="$out"
 SC="$(git rev-parse --path-format=absolute --git-common-dir)"; AW="$(sed -n 1p "$SC/warmd-batch")"
+echo 'extends Node2D # moved' > "$AW/scripts/player.gd"; git -C "$AW" commit -qam "a: work not merged yet"   # nothing ahead of the base would count as merged
 printf '%s\tok\twarmd/a\n' "$AW" >> "$SC/warmd-batch-done"
 printf 'b | redo the level | y | scenes/level.tscn\n' > "$TMP/scn2.txt"
 out="$(WARMD_NO_PREWARM=1 "$HERE/bin/warmd" split "$TMP/scn2.txt" 2>&1)"
