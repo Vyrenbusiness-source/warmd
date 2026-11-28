@@ -1022,6 +1022,21 @@ merge_rollback() { # start, last commit of this merge
 # warmd merge <branch>... [--no-gate]: every branch merged one after the other (one commit each), then ONE gate over all of
 # them and one player build, not one per branch. Red rolls every branch of the call back. A conflict stops at its branch:
 # resolve it, warmd merge --continue merges the branches after it. --no-gate is for an integration the user released.
+gate_script() { (cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1); }
+# Wait until no other heavy warmd run on this machine holds a slot, at most gate_quiet_wait seconds (default 300).
+gate_quiet() {
+  local d p n t0; t0="$(date +%s)"
+  while :; do
+    n=0
+    for d in "$CACHE_ROOT"/slots/*/; do
+      [ -d "$d" ] || continue; p=""; read -r p < "$d/pid" 2>/dev/null
+      [ -n "$p" ] && [ "$p" != "$$" ] && shell_alive "$p" && n=$((n + 1))
+    done
+    [ $n = 0 ] && return 0
+    [ $(( $(date +%s) - t0 )) -ge "${CFG_gate_quiet_wait:-300}" ] && { echo "(still $n other heavy runs after ${CFG_gate_quiet_wait:-300}s, the gate runs anyway)"; return 0; }
+    nap "${WARMD_QUEUE_POLL:-5}"
+  done
+}
 merge_lock() {
   MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"
   # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
@@ -1122,7 +1137,17 @@ team_merge() {
   fi
   if [ $nogate = 1 ]; then :
   elif [ -n "$CFG_gate" ]; then
-    if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
+    if ! m="$(gate_script)"; then
+      # warmd cannot tell which changed file a gate= script reaches: a red gate runs once more, alone (gate_retry=0: never).
+      # A load-sensitive test went red while other agents loaded the machine and rolled back a merge it had nothing to do with.
+      local red1; red1="$(red_lines "$m" tail)"
+      # Not after a commit made during the gate: that HEAD is someone's, the rollback decides alone (merge_rollback)
+      { [ "${CFG_gate_retry:-1}" -ge 1 ] 2>/dev/null && [ "$(git -C "$GIT_ROOT" rev-parse HEAD)" = "$mine" ]; } || { mfail "$red1"; return; }
+      echo "(gate red: ${red1:0:160}; once more alone, warmd cannot tell what a gate= script reaches)"
+      gate_quiet
+      if ! m="$(gate_script)"; then mfail "$(red_lines "$m" tail)"; return; fi
+      echo "WARN gate red only under load: green when run alone, red before: ${red1:0:200}"
+    fi
   elif ! m="$(run_check 2>&1)"; then mfail "$(red_lines "$m" head)"; return; fi
   if [ $nogate = 0 ] && [ -n "$CFG_perf" ]; then m="$(perf_run 2>&1)" || { mfail "$(echo "$m" | tail -2 | tr '\n' ' ' | cut -c1-200)"; return; }; fi
   # mutate=merge in warmd.conf: every changed line of this merge must have a test that notices a flipped operator (lib/mutate.sh)

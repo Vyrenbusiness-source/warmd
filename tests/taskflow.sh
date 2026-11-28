@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The life of one task around the batch: split waits for a running merge and names its base commit. No engine needed.
+# The life of one task around the batch: split waits for a running merge and names its base commit, a red gate= script
+# runs once more alone. No engine needed.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
@@ -27,6 +28,32 @@ expect "the worktree starts on the merged state" 'merged meanwhile' "$(git -C "$
 expect "the task file names its base commit" "^Base: main at $(git rev-parse --short=9 main) merged meanwhile" "$(cat .warmd/tasks/mw.md)"
 rm -f .warmd/merge.owner
 "$WARMD" batch-done >/dev/null
+
+# (2) a red gate= script runs once more alone: green then merges with "red only under load", red twice rolls back
+printf 'echo run >> .warmd/gates.txt
+[ -f .warmd/load ] && { rm -f .warmd/load; echo "FAIL test_timing too slow"; exit 1; }
+exit 0
+' > gate.sh
+printf 'gate=sh gate.sh
+' > warmd.conf; git add gate.sh warmd.conf; git commit -qm gate
+git checkout -qb warmd/g1; echo g1 > g1.txt; git add g1.txt; git commit -qm g1; git checkout -q main
+: > .warmd/load; rm -f .warmd/gates.txt
+out="$("$WARMD" merge warmd/g1 2>&1)"
+expect "a gate red under load merges when green alone" '^OK .*merged warmd/g1' "$out"
+expect "the merge says the gate was red only under load" '^WARN gate red only under load: .*FAIL test_timing too slow' "$out"
+expect "the gate ran twice" '^2$' "$(grep -c run .warmd/gates.txt)"
+printf 'echo run >> .warmd/gates.txt; echo "FAIL test_real broke"; exit 1
+' > gate.sh; git commit -qam redgate
+git checkout -qb warmd/g2; echo g2 > g2.txt; git add g2.txt; git commit -qm g2; git checkout -q main
+rm -f .warmd/gates.txt; out="$("$WARMD" merge warmd/g2 2>&1)"
+expect "a gate red twice rolls back" '^FAIL merge warmd/g2: FAIL test_real broke' "$out"
+expect "a red gate ran once more" '^2$' "$(grep -c run .warmd/gates.txt)"
+printf 'gate=sh gate.sh
+gate_retry=0
+' > warmd.conf; git commit -qam noretry
+rm -f .warmd/gates.txt; out="$("$WARMD" merge warmd/g2 2>&1)"
+expect "gate_retry=0 runs a red gate once" '^1$' "$(grep -c run .warmd/gates.txt)"
+rm -f warmd.conf gate.sh; git commit -qam "no gate"
 
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null
