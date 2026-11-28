@@ -6,6 +6,7 @@ All notable changes to warmd. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 - split: a Godot worktree gets the ignored .import files and a current class cache before its agent starts (seven agents lost 4 to 12 minutes each to missing textures and "Identifier not declared")
+- merge: a Godot merge that brings a class_name missing from the class cache imports before the gate
 - doctor: the .uid check skips ignored folders and .claude/worktrees/ (24089 files were counted in old worktrees)
 - doctor: a Godot found outside PATH of the pinned version is remembered in godot.path and reported ok
 - disk --free removes merged worktrees without own work and frees the caches of the rest, also ignored target/, node_modules/, dist/ (255 old worktrees, 53 GB, gave nothing back); merges free those build folders too

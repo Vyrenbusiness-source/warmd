@@ -57,6 +57,20 @@ printf 'tex2 | a goal | y | art/c.gd\n' > tasks2.txt
 out="$("$WARMD" split tasks2.txt 2>&1)"
 expect "a current class cache costs no import" '^0$' "$(imports)"
 
+# (3) merge: a branch brings a class_name the base's cache lacks, the gate= script runs after an import
+"$WARMD" batch-done >/dev/null
+"$S/godot" --path "$PWD" --import; git checkout -q -- project.godot; rm -f "$S/imports"
+printf 'gate=grep -q CityBig .godot/global_script_class_cache.cfg\n' > warmd.conf; git add warmd.conf; git commit -qm gate
+git checkout -qb warmd/city; printf 'class_name CityBig\nextends Node\n' > city.gd; git add city.gd; git commit -qm city; git checkout -q main
+out="$("$WARMD" merge warmd/city 2>&1)"
+expect "the merge imports for a new class_name and the gate is green" '^OK .*merged warmd/city' "$out"
+expect "the merge says it imported" 'class_name new to the class cache: imported before the gate' "$out"
+expect "project.godot stays as merged" '^$' "$(git status --porcelain -- project.godot)"
+rm -f "$S/imports"
+git checkout -qb warmd/plain; echo y > plain.txt; git add plain.txt; git commit -qm plain; git checkout -q main
+out="$("$WARMD" merge warmd/plain 2>&1)"
+expect "a merge without a new class_name costs no import" '^0$' "$(imports)"
+
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "godot_wt: all green" || echo "godot_wt: $fails failed"

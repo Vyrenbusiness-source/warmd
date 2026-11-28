@@ -1089,6 +1089,11 @@ team_merge() {
     echo "FAIL merge $br: $*${left:+; kept uncommitted (written by the gate or by someone meanwhile): ${left% }}"; return 1
   }
   m="$(git -C "$GIT_ROOT" -c core.whitespace=-trailing-space,-space-before-tab,-blank-at-eof,-blank-at-eol diff --check "$start" HEAD 2>&1 | head -3 | cut -c1-160)"; [ -z "$m" ] || { mfail "$m"; return; }
+  # A class_name the merge brought is unknown to the checkout's class cache: every script naming it is a parse error in
+  # a gate= script that starts the engine itself. The import runs first (a gate without it rolled a branch with a new class back).
+  if [ $nogate = 0 ] && [ "$(type -t class_cache_drift)" = function ] && [ -n "$(class_cache_drift)" ]; then
+    echo "(class_name new to the class cache: imported before the gate)"; refresh_classes force
+  fi
   if [ $nogate = 1 ]; then :
   elif [ -n "$CFG_gate" ]; then
     if ! m="$(cd "$PROJECT" && WARMD_BIN="bash $WARMD_HOME/bin/warmd" sh -c "$CFG_gate" 2>&1)"; then mfail "$(red_lines "$m" tail)"; return; fi
