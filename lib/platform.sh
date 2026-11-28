@@ -42,8 +42,9 @@ native_path() {
 shell_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 # .warmd/run/queued: this project's last run waited in a queue (slot, RAM, graphics, job lock). It goes when the wait ends
 # or the next run starts. A run that died while queued leaves it: a wait is no failure of the agent (lib/auto.sh).
-queue_mark() { [ -n "${RUN:-}" ] && [ -d "$RUN" ] && : > "$RUN/queued" 2>/dev/null; return 0; }
-queue_done() { [ -n "${RUN:-}" ] && rm -f "$RUN/queued" 2>/dev/null; return 0; }
+# queue_mark [reason] also sets the phase (lib/core.sh): a wait of 30 s prints "WAIT <reason>" once.
+queue_mark() { [ -z "${PHASE_FILE:-}" ] || phase "WAIT ${1:-in a queue}"; [ -n "${RUN:-}" ] && [ -d "$RUN" ] && : > "$RUN/queued" 2>/dev/null; return 0; }
+queue_done() { [ -z "${PHASE_FILE:-}" ] || phase "RUN ${CMD:-run}"; [ -n "${RUN:-}" ] && rm -f "$RUN/queued" 2>/dev/null; return 0; }
 
 pid_alive() {
   [ -n "${1:-}" ] || return 1
