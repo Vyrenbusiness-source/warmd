@@ -1,11 +1,19 @@
 # Agent work: model routing by tier, cheap first, worktrees for parallel tasks, one-line prompts, safe merge.
 # Tiers map to model aliases. Claude Code resolves haiku, sonnet and opus to the newest release, so a new model needs no change here.
 
+# Umlauts the way a German goal or pattern may spell them: ä and ae, Ü and ue match each other, in any case. grep -i in
+# the C locale of Git Bash folds ASCII only, so "PRÜFUNG" never met "Prüfung". Builtins only.
+umlaut_fold() { local s="$1"; s="${s//ä/ae}"; s="${s//Ä/ae}"; s="${s//ö/oe}"; s="${s//Ö/oe}"; s="${s//ü/ue}"; s="${s//Ü/ue}"; s="${s//ß/ss}"; printf '%s' "$s"; }   # one pattern each: a bracket splits a UTF-8 letter into bytes in the C locale
+top_word_hit() { # goal -> 0 when it names a word of top_words
+  [ -n "$CFG_top_words" ] || return 1
+  printf '%s\n' "$(umlaut_fold "$1")" | grep -qiE "$(umlaut_fold "$CFG_top_words")"
+}
 route_tier() { # goal files
   local goal="$1" files="${2:-}"
-  if [ -z "$files" ] || [ "$files" = none ]; then apply_floor cheap; return; fi
+  # A read-only task (measure, review) reads on the cheap tier, unless its goal names a top word: a strict review is top work
+  if [ -z "$files" ] || [ "$files" = none ]; then if top_word_hit "$goal"; then apply_floor top; else apply_floor cheap; fi; return; fi
   local tier=mid
-  if echo "$goal" | grep -qiE "$CFG_top_words"; then tier=top; fi
+  if top_word_hit "$goal"; then tier=top; fi
   if [ -n "$CFG_top_paths" ] && echo "$files" | grep -qE "$CFG_top_paths"; then tier=top; fi
   # Learned from the ledger: an area where half of the mid attempts needed escalation (two or more tasks) starts at top. Older history.tsv counts still apply.
   if [ "$tier" = mid ]; then
@@ -499,6 +507,7 @@ write_task() { # name tier goal done files wt
     echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
     echo "Handoff: past 70% of the budget or after 60 tool calls, commit, run warmd handoff $name \"what is done\" \"what is next\", end with its AGENT line. A fresh agent is cheaper than a full context."
     echo "Time budget: $(tier_minutes "$tier") min. warmd watch escalates the task past it: commit before."
+    echo "Heavy runs: start an engine or a long test yourself only as warmd run --heavy -- <command>, it waits for a free heavy slot and RAM (warmd test and check queue on their own${CFG_heavy_cmd:+, the hook sends commands matching heavy_cmd there})."
     review_line "$model"
     [ "$role" = scout ] || echo "Role $area: read $(native_path "$(role_file "$area")") first, its Learned lines come from rolled-back merges."
   } > "$f"
@@ -789,8 +798,12 @@ batch_prune() { # common
 
 # task_fields <line>: name | goal | done check | files. The goal may contain "|" itself (|x| <= y, a | b):
 # name is the first field, files the last, the done check the one before it, the goal all in between.
+# An optional fifth field tier=cheap|mid|top fixes the task's tier (a project sets reviews high on purpose); floor= still holds.
 task_fields() {
-  local l="$1" rest pipes="${1//[^|]/}"
+  local l="$1" rest pipes re='^(.*)\|[[:space:]]*tier=(cheap|mid|top)[[:space:]]*$'
+  ftier=""
+  if [[ $l =~ $re ]]; then l="${BASH_REMATCH[1]}"; ftier="${BASH_REMATCH[2]}"; fi
+  pipes="${l//[^|]/}"
   if [ ${#pipes} -lt 3 ]; then IFS='|' read -r name goal check files <<< "$l"; return; fi
   name="${l%%|*}"; rest="${l#*|}"
   files="${rest##*|}"; rest="${rest%|*}"
@@ -818,11 +831,25 @@ task_scenes() { # files -> project-relative scene paths, one per line
     (cd "$PROJECT" && grep -rlF --include='*.tscn' --exclude-dir=.godot -e "$p" . 2>/dev/null | sed 's#^\./##')
   done | sort -u
 }
-# Is one of these scenes held by another task still in the batch (running, or finished and not merged)? REPLY names it.
+# Is one of these scenes held by another task still in the batch (running, or finished and not merged)? REPLY names it
+# and the way out. A parked task (its agent finished, no commit or file change for scene_rest_hours, default 4, 0 = never)
+# holds nothing any more: its branch stays, the scene is free for the next task.
+scene_parked() { # common worktree
+  local h="${CFG_scene_rest_hours:-4}" now last f m
+  [ "$h" -gt 0 ] 2>/dev/null || return 1
+  wt_finished "$1" "$2" || return 1
+  printf -v now '%(%s)T' -1
+  last="$(git -C "$2" log -1 --format=%ct 2>/dev/null)"; last="${last:-0}"
+  while IFS= read -r f; do
+    f="${f:3}"; f="${f#\"}"; f="${f%\"}"
+    m="$(date -r "$2/$f" +%s 2>/dev/null)" && [ "$m" -gt "$last" ] && last="$m"
+  done < <(wt_work "$2")
+  [ $(( now - last )) -ge $(( h * 3600 )) ]
+}
 scene_taken() { # common name scenes
   local wt live=" " sc t
   [ -s "$1/warmd-batch-scenes" ] || return 1
-  while IFS= read -r wt; do [ -d "$wt" ] && live="$live$(wt_task "$wt") "; done < "$1/warmd-batch"
+  while IFS= read -r wt; do [ -d "$wt" ] && ! scene_parked "$1" "$wt" && live="$live$(wt_task "$wt") "; done < "$1/warmd-batch"
   while IFS=$'\t' read -r sc t; do
     [ "$t" != "$2" ] || continue
     case "$live" in *" $t "*) ;; *) continue;; esac
@@ -841,7 +868,7 @@ batch_fresh() { # common
 
 team_split() {
   need_git
-  local file="${1:-}" name goal check files tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
+  local file="${1:-}" name goal check files ftier="" tier wt sc seen="" f n=0 bad=0 batch append=0 running=0 cap own="" waited=0 rel
   rel="$(rel_project)"
   [ -f "$file" ] || { echo "warmd split <file>, lines: name | goal | done check | files"; return 2; }
   ledger_cost_gate || return 2
@@ -881,11 +908,15 @@ team_split() {
     if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then
       sc="$(task_scenes "$files")"
       if [ -n "$sc" ] && scene_taken "${batch%/warmd-batch}" "$name" "$sc"; then
-        echo "WAIT $name: $REPLY, two tasks on one scene never run in parallel. Split it again when ${REPLY##* } is merged"
+        echo "WAIT $name: $REPLY, two tasks on one scene never run in parallel. Split it again when ${REPLY##* } is merged (warmd merge warmd/${REPLY##* }) or dropped (warmd drop ${REPLY##* })"
         waited=$((waited+1)); running=$((running-1)); continue
       fi
     fi
     tier="$(route_tier "$goal" "$files")"
+    if [ -n "$ftier" ]; then   # tier= of the task line wins over routing; an editing task never goes to the read-only cheap tier
+      [ "$ftier" = cheap ] && [ -n "$files" ] && [ "$files" != none ] && ftier=mid
+      tier="$(apply_floor "$ftier")"
+    fi
     # A worktree without its engine cache gets a copy: only with room for it plus disk_min_mb, after freeing finished ones
     if [ -n "$files" ] && [ "$files" != none ] && disk_cache_name && [ ! -d "$(worktree_dir)/$name${rel:+/$rel}/$REPLY" ] && ! disk_room "$PROJECT" 1 "$(dirname "$GIT_ROOT")"; then
       disk_reclaim
@@ -964,7 +995,7 @@ team_finish() {
   shared_guard   # the main checkout during a batch: the agent's shell went back there, the end belongs to its worktree
   ledger_finish "$@" || return $?
   # DONE with an outcome other than failed or escalated: the task waits for the merge. No stop may escalate or restart it.
-  case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; mkdir -p "$fb" && : > "$fb/${br#warmd/}";; esac
+  case " $* " in *" --outcome failed "*|*" --outcome escalated "*) ;; *) local fb; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"; local fn="${br#warmd/}"; mkdir -p "$fb" && : > "$fb/${fn//\//-}";; esac   # fix/x: one file fix-x, no folder that is not there
   finish_stop_runs
   git -C "$GIT_ROOT" remote get-url origin >/dev/null 2>&1 && finish_base_sync "$base"
   sha="$(git -C "$GIT_ROOT" rev-parse --short HEAD)"
@@ -1027,12 +1058,13 @@ finish_base_sync() { # base
 # The agent ends: a warmd run it left in this worktree (a background test) holds a slot for nobody. It is ended, its slot
 # freed at once (a killed shell may not run its exit trap), and the engine stopped so the test stops too.
 finish_stop_runs() {
-  local f pid w c d p n=0
+  local f pid w c s d p n=0
   for f in "$STATE"/run/active/*; do
     [ -f "$f" ] || continue
     pid="${f##*/}"; [ "$pid" = "$$" ] && continue
-    shell_alive "$pid" || { rm -f "$f"; continue; }
     w=""; c=""; read -r w c < "$f" 2>/dev/null
+    s=""; case "$w" in *:*) s="${w#*:}";; esac
+    shell_alive "$pid" && run_mark_owner "$pid" "$s" || { rm -f "$f"; continue; }   # a reused pid is no warmd of ours: never killed
     kill "$pid" 2>/dev/null; rm -f "$f"; n=$((n + 1))
     for d in "$CACHE_ROOT"/slots/*/; do p=""; read -r p < "$d/pid" 2>/dev/null; [ "$p" = "$pid" ] && rm -rf "${d%/}"; done
     echo "(stopped warmd ${c:-run} pid $pid that was still running here, its slot is free)"

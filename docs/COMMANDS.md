@@ -29,7 +29,7 @@ OK nothing to compile
 
 ### warmd test
 Runs the tests. Exit 1 on red, with only the error lines and the path of the full log.
-Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window] [--sound]`. Unity runs are muted (the daemon sets `EditorUtility.audioMasterMute` before every run and `AudioListener.volume = 0` in PlayMode), `--sound` lets one run be heard. `WARMD_NOCACHE=1` ignores the cache.
+Syntax: `warmd test [filter] [--play|--edit] [--speed N] [--window] [--sound]`. In a Godot project `test=` from `warmd.conf` is the project's own runner, the filter appended as one quoted argument (`test=bash tools/run_one.sh` runs `bash tools/run_one.sh "<filter>"`); without it a filter that names no `tests/run_*.gd` fails with the runner names instead of running the whole set. A test that waits or works 30 seconds prints one line with the reason (`WAIT slot 2/2 busy: ...`, `WAIT RAM 9% free, the run needs 15%`, `RUN import, the class cache is stale: ...`, `RUN test: <log>`; `WARMD_PHASE_SAY=<seconds>`, 0 = never). A run killed from outside leaves no mark that keeps `warmd state` on `ACTIVE`: a mark whose process is gone or whose pid now runs another process is removed when read. Unity runs are muted (the daemon sets `EditorUtility.audioMasterMute` before every run and `AudioListener.volume = 0` in PlayMode), `--sound` lets one run be heard. `WARMD_NOCACHE=1` ignores the cache.
 
 Cache: a green result is kept 7 days, a red one 2 hours, per code state and engine fingerprint (engine version and binary, warmd version, `export_presets.cfg`, `WARMD_GODOT`, `WARMD_UNITY`, `WARMD_GFX`, `WARMD_WINDOW`, `WARMD_FULL`). A red hit prints `RED cached, code unchanged: <line>. Change code first. Log: <path>`, keeps the exit code and answers at once, without waiting for a slot or RAM. Timeouts, kills (exit 124 and up, also one killed test in a sh suite, which prints `<test> killed (exit N)`), a missing engine, RAM waits and crashes are never kept. `WARMD_NOCACHE=1` bypasses both caches.
 
@@ -106,6 +106,7 @@ It also lists every MCP server from `~/.claude.json` and `.mcp.json`, says which
 
 ### warmd run
 Runs any command and keeps its output short: up to 20 lines pass through unchanged, longer output becomes one OK or FAIL line with the error lines, and the full log stays on disk. After `warmd init` the hooks send noisy known commands (test runners, builds, linters) through it on their own.
+`warmd run --heavy -- <command>` goes through the heavy queue first, like `warmd test`: free RAM, one of the machine's heavy slots, the disk check. A wait of 30 seconds prints one line naming the holders, `WAIT slot 2/2 busy: <worktree> <command>, <worktree> <command> (30s)`. With `heavy_cmd=<regex>` in `warmd.conf` the hook sends every Bash command that matches it there on its own (a leading `cd <dir> &&` stays in front), so agents that call a project's own engine or test runner directly never start more engines than there are slots. Every task file of `warmd split` says so in its `Heavy runs:` line.
 
 ```text
 warmd run -- git log --oneline -40
@@ -126,7 +127,7 @@ Names the cheapest model tier that fits a goal. Syntax: `warmd route <goal> [fil
 warmd route fix typo in cart.js
 mid model=sonnet budget=100k agent=warmd-worker
 ```
-Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down.
+Routing only learns upward: a failure moves a kind of task to a higher tier, a success never moves it down. A goal word from `top_words` routes to the top tier also for a read-only task (`files: none`); umlauts match in both spellings and any case (`Prüfung`, `PRUEFUNG`). A task line in `warmd split` may fix its tier with a fifth field: `name | goal | done check | files | tier=top` (`floor=` still holds, an editing task never goes below mid).
 
 ### warmd models
 One model per role, kept in `warmd.conf` as `role_<role>=provider:model`. Syntax: `warmd models [--list | --set role=model... | --set preset=quality|balanced|frugal | --set cost_limit_day=N]`. Roles: `producer`, `worker`, `qa`, `reviewer`, `merge`, `scout`. Without arguments it opens a WinForms window on Windows and a text prompt elsewhere; the first interactive `warmd init` asks once. `--list` shows the success per model from the ledger. `reviewer` and `merge` never go below `floor`, `worker` and `qa` never get the cheap tier. `split` stops at `cost_limit_day` (`WARMD_COST_LIMIT=off` bypasses).
@@ -151,7 +152,7 @@ AGENT add-tests: subagent_type=warmd-worker model=sonnet prompt="Read <project>/
 OK 2 tasks split. Start now, in the background: warmd watch
 ```
 Studio rules:
-- Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` and is split again when the first is merged. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
+- Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` naming the way out (`warmd merge warmd/<holder>` or `warmd drop <holder>`) and is split again when the first is merged. A parked holder (its agent finished, no commit or file change for `scene_rest_hours`, default 4, 0 = always holds) holds no scene any more. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
 - Every task file names a reviewer model that is not the author's model (`role_reviewer`, default the top tier).
 - When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline. The agent files count in the folder the Claude Code session started in (`CLAUDE_PROJECT_DIR`, else the folder of the session's transcript) and in `~/.claude/agents`: a session started in a parent folder of the project gets the `FALLBACK` line, and `warmd init` warns about it.
 - Every agent records its slowdowns with `warmd note "BRAKE: ..."`.
@@ -349,11 +350,12 @@ Builds a player with your own method (Unity), see `package_method` below. With `
 
 ## Configuration
 
-Everything is optional. Put a `warmd.conf` in the project root.
+Everything is optional. Put a `warmd.conf` in the project root, one `key=value` per line; the value is everything after the first `=`, an `=` at its end included.
 
 | Key | Meaning | Default |
 |---|---|---|
 | `build`, `test`, `lint`, `dev` | Override a command | detected |
+| `heavy_cmd` | Regex: the hook sends matching Bash commands through `warmd run --heavy` (ATTRITION: `godot[^ ]* .*(--headless|-s +tests/)`) | none |
 | `url` | Dev server URL | read from its output |
 | `base` | Base branch | from `origin/HEAD` |
 | `slots` | Heavy runs per machine | one per 4 cores and per 8 GB RAM, the smaller, at least 1 |
@@ -366,7 +368,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `nice` | Priority of heavy runs, 0 turns it off | 10 |
 | `full` | `ci`: a bash project's full self-test runs on CI only | none |
 | `budget_cheap`, `budget_mid`, `budget_top` | Token budget per tier in thousands, the handoff starts past 70% of it | 40, 100, 160 |
-| `top_words` | Goal words that route to the top tier (regex) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
+| `top_words` | Goal words that route to the top tier (regex, also for `files: none`; ä and ae match) | architecture, race condition, concurrency, physics, netcode, security, root cause, crash |
 | `daemon_idle` | Minutes until an idle daemon ends itself (`idle_min` is the older name) | 10 |
 | `world_method` | Unity: static method that builds the generated parts of the project. Runs in the warm editor before `test` and `check` whenever its sources changed since its last run, so a merge or a pull never leaves generated parts behind | off |
 | `world_sources` | Paths (comma separated, in the project) whose change makes `world_method` run again | `Assets` |
@@ -389,6 +391,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `gate_retry` | A red `gate` runs once more alone before the merge rolls back (1), never (0) | 1 |
 | `gate_quiet_wait` | Seconds that rerun waits for other heavy warmd runs to end | 300 |
 | `merge_wait` | Seconds `warmd split` waits for a running merge of the same project | 900 |
+| `scene_rest_hours` | Hours after which a finished, unmerged task stops holding its scenes for `split`; 0 holds until merge or drop | 4 |
 | `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
