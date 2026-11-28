@@ -818,11 +818,25 @@ task_scenes() { # files -> project-relative scene paths, one per line
     (cd "$PROJECT" && grep -rlF --include='*.tscn' --exclude-dir=.godot -e "$p" . 2>/dev/null | sed 's#^\./##')
   done | sort -u
 }
-# Is one of these scenes held by another task still in the batch (running, or finished and not merged)? REPLY names it.
+# Is one of these scenes held by another task still in the batch (running, or finished and not merged)? REPLY names it
+# and the way out. A parked task (its agent finished, no commit or file change for scene_rest_hours, default 4, 0 = never)
+# holds nothing any more: its branch stays, the scene is free for the next task.
+scene_parked() { # common worktree
+  local h="${CFG_scene_rest_hours:-4}" now last f m
+  [ "$h" -gt 0 ] 2>/dev/null || return 1
+  wt_finished "$1" "$2" || return 1
+  printf -v now '%(%s)T' -1
+  last="$(git -C "$2" log -1 --format=%ct 2>/dev/null)"; last="${last:-0}"
+  while IFS= read -r f; do
+    f="${f:3}"; f="${f#\"}"; f="${f%\"}"
+    m="$(date -r "$2/$f" +%s 2>/dev/null)" && [ "$m" -gt "$last" ] && last="$m"
+  done < <(wt_work "$2")
+  [ $(( now - last )) -ge $(( h * 3600 )) ]
+}
 scene_taken() { # common name scenes
   local wt live=" " sc t
   [ -s "$1/warmd-batch-scenes" ] || return 1
-  while IFS= read -r wt; do [ -d "$wt" ] && live="$live$(wt_task "$wt") "; done < "$1/warmd-batch"
+  while IFS= read -r wt; do [ -d "$wt" ] && ! scene_parked "$1" "$wt" && live="$live$(wt_task "$wt") "; done < "$1/warmd-batch"
   while IFS=$'\t' read -r sc t; do
     [ "$t" != "$2" ] || continue
     case "$live" in *" $t "*) ;; *) continue;; esac
@@ -881,7 +895,7 @@ team_split() {
     if [ -n "$files" ] && [ "$files" != none ] && ! { [ $append = 1 ] && batch_has "$batch" "$name"; }; then
       sc="$(task_scenes "$files")"
       if [ -n "$sc" ] && scene_taken "${batch%/warmd-batch}" "$name" "$sc"; then
-        echo "WAIT $name: $REPLY, two tasks on one scene never run in parallel. Split it again when ${REPLY##* } is merged"
+        echo "WAIT $name: $REPLY, two tasks on one scene never run in parallel. Split it again when ${REPLY##* } is merged (warmd merge warmd/${REPLY##* }) or dropped (warmd drop ${REPLY##* })"
         waited=$((waited+1)); running=$((running-1)); continue
       fi
     fi

@@ -151,7 +151,7 @@ AGENT add-tests: subagent_type=warmd-worker model=sonnet prompt="Read <project>/
 OK 2 tasks split. Start now, in the background: warmd watch
 ```
 Studio rules:
-- Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` and is split again when the first is merged. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
+- Two tasks on the same scene never run in parallel: the second gets `WAIT <task>: ...` naming the way out (`warmd merge warmd/<holder>` or `warmd drop <holder>`) and is split again when the first is merged. A parked holder (its agent finished, no commit or file change for `scene_rest_hours`, default 4, 0 = always holds) holds no scene any more. A task's scenes are its `.tscn` files plus the scenes they reference by `res://`, one level deep.
 - Every task file names a reviewer model that is not the author's model (`role_reviewer`, default the top tier).
 - When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline. The agent files count in the folder the Claude Code session started in (`CLAUDE_PROJECT_DIR`, else the folder of the session's transcript) and in `~/.claude/agents`: a session started in a parent folder of the project gets the `FALLBACK` line, and `warmd init` warns about it.
 - Every agent records its slowdowns with `warmd note "BRAKE: ..."`.
@@ -389,6 +389,7 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `gate_retry` | A red `gate` runs once more alone before the merge rolls back (1), never (0) | 1 |
 | `gate_quiet_wait` | Seconds that rerun waits for other heavy warmd runs to end | 300 |
 | `merge_wait` | Seconds `warmd split` waits for a running merge of the same project | 900 |
+| `scene_rest_hours` | Hours after which a finished, unmerged task stops holding its scenes for `split`; 0 holds until merge or drop | 4 |
 | `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
