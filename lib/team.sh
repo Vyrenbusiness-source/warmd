@@ -266,19 +266,25 @@ wt_create() { # name
       wt="$wt-$(date +%s)"; echo "(worktree folder $name holds $cur, still owned: using ${wt##*/})" >&2
       mkdir -p "$(worktree_dir)"
       git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
-      a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+      wt_seed "$src" "$wt${rel:+/$rel}"
       echo "$wt"; return 0
     fi
   fi
   # Every worktree of a split gets the base's Library, also a reused one: a worktree never imports cold
-  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
-  if wt="$(wt_reuse "$name")"; then a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1; seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if [ -d "$wt" ]; then wt_fresh "$wt" "$name"; wt_seed "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
+  if wt="$(wt_reuse "$name")"; then wt_seed "$src" "$wt${rel:+/$rel}"; echo "$wt"; return 0; fi
   wt="$(worktree_dir)/$name"
   mkdir -p "$(worktree_dir)"
   git -C "$GIT_ROOT" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null || git -C "$GIT_ROOT" worktree add -q "$wt" "$branch" || return 1
-  a_seed "$src" "$wt${rel:+/$rel}" >/dev/null 2>&1
-  seed_links "$src" "$wt${rel:+/$rel}"; worktree_links "$src" "$wt${rel:+/$rel}"
+  wt_seed "$src" "$wt${rel:+/$rel}"
   echo "$wt"
+}
+# The caches of a new or reused worktree, then what the adapter needs to run there at once (Godot: ignored .import
+# files, a current class cache). stdout is the worktree path of wt_create: anything said goes to stderr.
+wt_seed() { # base project, worktree project
+  a_seed "$1" "$2" >/dev/null 2>&1; seed_links "$1" "$2"; worktree_links "$1" "$2"
+  [ "$(type -t a_wt_ready)" = function ] && a_wt_ready "$1" "$2" >&2
+  return 0
 }
 
 # Shared brief: one short file all agents of a batch read. It lives in the common git dir, so every worktree sees the same copy and it never gets committed.
