@@ -386,6 +386,9 @@ Everything is optional. Put a `warmd.conf` in the project root.
 | `package_dir` | The one player folder, relative to the project or absolute; set it and every merge refreshes the player there. Without it `merge` and `doctor` say that no player is built | none |
 | `package_exe` | Player file name to wait for when it is no `.exe` or `.x86_64` | none |
 | `gate` | Shell command `warmd merge` runs instead of `check` | none |
+| `gate_retry` | A red `gate` runs once more alone before the merge rolls back (1), never (0) | 1 |
+| `gate_quiet_wait` | Seconds that rerun waits for other heavy warmd runs to end | 300 |
+| `merge_wait` | Seconds `warmd split` waits for a running merge of the same project | 900 |
 | `disk_min_mb` | Space that stays free: split copies no cache and heavy runs refuse below it | 4096 |
 | `disk_reclaim` | 0 keeps the engine caches of finished worktrees | 1 |
 | `perf`, `perf_cmd`, `perf_tolerance`, `perf_dir` | What `warmd perf` measures and the allowed slowdown in percent | detected, 5 |
