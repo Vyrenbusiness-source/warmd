@@ -155,6 +155,7 @@ Studio rules:
 - Every task file names a reviewer model that is not the author's model (`role_reviewer`, default the top tier).
 - When the `warmd-worker` agent file is missing, split prints a `FALLBACK` line: a `general-purpose` agent with the worker rules inline.
 - Every agent records its slowdowns with `warmd note "BRAKE: ..."`.
+- A split while a merge of the same project runs waits for it (at most `merge_wait` seconds, default 900), so the worktrees start on the merged state; every task file names that commit in a `Base: <branch> at <sha> <subject>` line.
 - Godot: a new or reused worktree gets the base checkout's git-ignored `.import` files it lacks, and an import when its class cache misses a `class_name` (once more when the engine crashes, `project.godot` left as committed); one `(worktree <name>: ...)` line says what was done.
 
 ### warmd note

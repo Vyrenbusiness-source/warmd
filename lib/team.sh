@@ -461,6 +461,7 @@ write_task() { # name tier goal done files wt
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
+    local bs; bs="$(git -C "$wt" merge-base HEAD "$(base_branch)" 2>/dev/null)" && echo "Base: $(base_branch) at ${bs:0:9} $(git -C "$wt" log -1 --format=%s "$bs" 2>/dev/null | cut -c1-60)"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
     echo "Docs: a new command's entry (### warmd <name>) goes to docs/pending/$name.md, that file is yours; warmd ship moves it into docs/COMMANDS.md."
@@ -817,6 +818,7 @@ team_split() {
     n=$((n+1))
   done 3< <(tr -d '\r' < "$file")
   [ $bad = 0 ] || { echo "FAIL fix the gaps, nothing was created"; return 1; }
+  merge_wait
   [ $append = 1 ] || batch_fresh "${batch%/warmd-batch}"
   while IFS= read -r line <&3; do
     task_fields "$line"
@@ -1020,6 +1022,30 @@ merge_rollback() { # start, last commit of this merge
 # warmd merge <branch>... [--no-gate]: every branch merged one after the other (one commit each), then ONE gate over all of
 # them and one player build, not one per branch. Red rolls every branch of the call back. A conflict stops at its branch:
 # resolve it, warmd merge --continue merges the branches after it. --no-gate is for an integration the user released.
+merge_lock() {
+  MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"
+  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
+  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
+}
+# A split during a merge made its worktrees on the state before it, and agents found their predecessor "not on main".
+# split waits for a running merge of this project, at most merge_wait seconds (default 900), then goes on with a WARN.
+merge_wait() {
+  local f="$STATE/merge.owner" owner w t0 said=0
+  t0="$(date +%s)"
+  while [ -f "$f" ]; do
+    owner="$(cat "$f" 2>/dev/null)"; w="$(cat "$f.win" 2>/dev/null)"
+    [ "$owner" = "$$" ] && return 0
+    shell_alive "$owner" || { [ -n "$w" ] && pid_alive "$w"; } || return 0
+    if [ $(( $(date +%s) - t0 )) -ge "${CFG_merge_wait:-900}" ]; then
+      echo "WARN a merge still runs after ${CFG_merge_wait:-900}s (pid $owner): worktrees start on the state before it"; return 1
+    fi
+    [ $said = 1 ] || { echo "(a merge runs in this project, pid $owner: split waits for it, worktrees start on its result)"; said=1; }
+    nap "${WARMD_MERGE_POLL:-5}"
+  done
+  [ $said = 0 ] || echo "(merge done after $(( $(date +%s) - t0 ))s)"
+  return 0
+}
+
 team_merge() {
   need_git
   local base out m br start="" mine="" nogate=0 cont=0 brs=() merged=() new=() q="$STATE/merge.queue" i rest
@@ -1049,6 +1075,8 @@ team_merge() {
     start="$(git -C "$GIT_ROOT" rev-parse HEAD)"
   fi
   mine="$(git -C "$GIT_ROOT" rev-parse HEAD)"
+  # The lock holds from the first git merge on: a split meanwhile waits for it (merge_wait), its worktrees start on the result
+  merge_lock
   for i in "${!brs[@]}"; do
     br="${brs[$i]}"
     merge_clear_byproducts "$br"
@@ -1076,9 +1104,7 @@ team_merge() {
     merged+=("$br")
   done
   [ ${#merged[@]} -gt 0 ] || { echo "OK nothing to merge"; return 0; }
-  MERGELOCK="$STATE/merge.owner"; echo "$$" > "$MERGELOCK"; export WARMD_IN_MERGE=1
-  # Windows pid next to it: a merge launched through WMI is not always visible to kill -0 of other shells
-  if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid" > "$MERGELOCK.win"; else rm -f "$MERGELOCK.win"; fi
+  export WARMD_IN_MERGE=1
   br="${merged[*]}"; export WARMD_DIFF_BASE="$start"
   # Red rolls back to the start of this merge, never further and never over a commit made meanwhile (merge_rollback).
   # Not rolled back: exit 3, the caller stops merging on top of it.
