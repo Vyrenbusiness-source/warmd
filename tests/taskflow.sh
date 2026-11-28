@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The life of one task around the batch: split waits for a running merge and names its base commit, a red gate= script
-# runs once more alone. No engine needed.
+# runs once more alone, the FALLBACK line for a session started elsewhere, finish of a read-only task. No engine needed.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WARMD="$HERE/bin/warmd"
@@ -67,6 +67,20 @@ out="$(CLAUDE_CODE_SESSION_ID=s1 "$WARMD" split tasks3.txt 2>&1)"; "$WARMD" batc
 expect "a session started in a parent folder gets the FALLBACK line" '^FALLBACK sa \(no warmd-worker agent in .*\.claude/agents\): subagent_type=general-purpose' "$out"
 expect "init says the session does not see the agents" 'WARN this Claude Code session started in .*its Agent tool does not see' "$(CLAUDE_CODE_SESSION_ID=s1 bash -c "WARMD_HOME='$HERE'; . '$HERE/lib/platform.sh'; . '$HERE/lib/core.sh'; detect_project >/dev/null 2>&1; . '$HERE/lib/team.sh'; common_init" 2>&1)"
 git checkout -q -- . 2>/dev/null; git clean -qfd -e .warmd 2>/dev/null
+
+# (4) a read-only task (files: none) has no worktree: finish in the base checkout records it without a commit
+printf 'ro | measure the load | numbers noted | none
+rp | read the docs | summary | none
+' > tasks4.txt
+out="$("$WARMD" split tasks4.txt 2>&1)"
+expect "a read-only task file says how it ends" '^End: nothing to commit, run warmd finish --task ro' "$(cat .warmd/tasks/ro.md)"
+expect "two open read-only tasks need --task" '^FAIL 2 read-only tasks are open: ro rp\. Run warmd finish --task <name>' "$("$WARMD" finish 2>&1)"
+expect "finish --task records a read-only task" '^DONE ro read only, nothing to commit' "$("$WARMD" finish --task ro 2>&1)"
+expect "the last open read-only task finishes without --task" '^DONE rp read only, nothing to commit' "$("$WARMD" finish 2>&1)"
+expect "the ledger has both" 'ro.*rp|rp.*ro' "$(cut -f2 "$(git rev-parse --path-format=absolute --git-common-dir)/warmd-ledger.tsv" 2>&1 | tr '
+' ' ')"
+expect "without an open read-only task the base checkout still refuses" '^FAIL warmd finish runs in the base checkout' "$("$WARMD" finish 2>&1)"
+"$WARMD" batch-done >/dev/null
 
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null

@@ -487,6 +487,7 @@ write_task() { # name tier goal done files wt
     echo "Goal: $goal"
     echo "Done when: $check"
     echo "Files you own: ${files:-none, read only}"
+    case "${files:-none}" in none) echo "End: nothing to commit, run warmd finish --task $name where you are";; esac
     local bs; bs="$(git -C "$wt" merge-base HEAD "$(base_branch)" 2>/dev/null)" && echo "Base: $(base_branch) at ${bs:0:9} $(git -C "$wt" log -1 --format=%s "$bs" 2>/dev/null | cut -c1-60)"
     echo "Budget: under $(tier_budget "$tier")k tokens."
     echo "Shared brief: $(native_path "$(shared_file)")"
@@ -936,6 +937,7 @@ team_finish() {
   br="$(git -C "$GIT_ROOT" branch --show-current)"; base="$(base_branch)"
   # The end of a task belongs to its worktree: in the base checkout finish would record the base as the task and push it
   if [ -z "$br" ] || [ "$br" = "$base" ]; then
+    finish_readonly "$@"; case $? in 0) return 0;; 2) return 2;; esac
     echo "FAIL warmd finish runs in the base checkout (${br:-detached}), nothing recorded, nothing pushed. Run it in your task worktree: the cd in the first line of your task file"
     return 2
   fi
@@ -961,6 +963,30 @@ team_finish() {
   echo "DONE $br $sha, $ahead ahead, $dirty uncommitted, $up${last:+, last run: $last}$over"
 }
 
+
+# A task with files: none (measure, read) has no worktree: its agent works in the base checkout and has nothing to commit.
+# finish there records it and marks it done: --task <name>, or the one read-only task still open. 1: no such task.
+finish_readonly() {
+  local name="" td f n=0 open="" fb last
+  while [ $# -gt 0 ]; do [ "$1" = --task ] && { name="${2:-}"; shift; }; shift; done
+  td="$(ledger_taskdir)"; fb="$(git -C "$GIT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/warmd-auto/done"
+  if [ -z "$name" ]; then
+    for f in "$td"/*.md; do
+      [ -f "$f" ] && grep -q '^Files you own: none' "$f" || continue
+      f="${f##*/}"; f="${f%.md}"; [ -e "$fb/$f" ] && continue
+      open="$open $f"; n=$((n + 1)); name="$f"
+    done
+    [ $n -le 1 ] || { echo "FAIL $n read-only tasks are open:$open. Run warmd finish --task <name>"; return 2; }
+  fi
+  [ -n "$name" ] || return 1
+  [ -f "$td/$name.md" ] && grep -q '^Files you own: none' "$td/$name.md" || { echo "FAIL $name is no read-only task (files: none), finish it in its worktree"; return 2; }
+  FINISH_TASK="$name" ledger_finish "$@" || return 2
+  mkdir -p "$fb" && : > "$fb/$name"
+  last="$(sed -n '2p' "$RUN/result.txt" 2>/dev/null | tr -d '' | cut -c1-70)"
+  type brake_batch_line >/dev/null 2>&1 && brake_batch_line "$name"
+  echo "DONE $name read only, nothing to commit${last:+, last run: $last}"
+  return 0
+}
 
 # Before the push: a PR that conflicts with its base gets no CI run at all, and agents waited minutes for checks that
 # never start. A clean merge of origin/<base> is made here (clean tree only), a conflict is named at once.

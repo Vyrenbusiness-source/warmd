@@ -168,12 +168,13 @@ Same task, next model tier, with the earlier commits as context. Syntax: `warmd 
 Context is filling up: saves state and prints the line for a fresh agent. Syntax: `warmd handoff <name> "<what is done>" "<what is next>"`. Refuses uncommitted work.
 
 ### warmd finish
-Records cost, pushes, prints a one-line report. Syntax: `warmd finish [--tokens N --calls N --outcome ok|escalated|failed]`.
+Records cost, pushes, prints a one-line report. Syntax: `warmd finish [--task <name>] [--tokens N --calls N --outcome ok|escalated|failed]`.
 ```text
 warmd finish
 DONE main 3e64022, 0 ahead, 0 uncommitted, local
 ```
 A task past its time budget (`time_budget_cheap`, `time_budget_mid`, `time_budget_top`) gets `, OVER time budget: ...` in this line.
+A read-only task (`files: none`, measuring or reading) has no worktree: `warmd finish --task <name>` in the base checkout records it and prints `DONE <name> read only, nothing to commit`; without `--task` it takes the one read-only task still open.
 
 ### warmd report
 Cost per tier and what escalation wasted.
