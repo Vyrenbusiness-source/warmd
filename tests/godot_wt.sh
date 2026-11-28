@@ -71,6 +71,35 @@ git checkout -qb warmd/plain; echo y > plain.txt; git add plain.txt; git commit 
 out="$("$WARMD" merge warmd/plain 2>&1)"
 expect "a merge without a new class_name costs no import" '^0$' "$(imports)"
 
+# (4) old worktrees below the base checkout: git lists a nested checkout as one "dir/" entry and tar copied it whole
+# (45 game checkouts under .claude/worktrees, the split hung). Only the base's own .import files are copied.
+"$WARMD" batch-done >/dev/null
+printf '.claude/\nnative/cpp/\n' >> .gitignore; git add .gitignore; git commit -qm ignore
+for w in agent-old agent-older; do
+  mkdir -p ".claude/worktrees/$w/art"; echo "gitdir: $PWD/.git/worktrees/$w" > ".claude/worktrees/$w/.git"
+  for i in $(seq 1 30); do printf '[remap]\n' > ".claude/worktrees/$w/art/t$i.png.import"; echo big > ".claude/worktrees/$w/art/t$i.png"; done
+done
+mkdir -p .claude/worktrees/forgotten/art; printf '[remap]\n' > .claude/worktrees/forgotten/art/f.png.import   # a folder git no longer knows: no .git
+mkdir -p native/cpp/.git native/cpp/gen; printf '[remap]\n' > native/cpp/gen/x.png.import   # a nested repository
+mkdir -p art/sub; printf '[remap]\n' > art/sub/b.png.import
+printf 'nest | a goal | y | art/n.gd\n' > tasks4.txt
+out="$(timeout 120 "$WARMD" split tasks4.txt 2>&1)"; rc=$?
+expect "split with old worktrees below the base ends" '^0$' "$rc"
+expect "split prints the AGENT line" '^AGENT nest:' "$out"
+expect "only the base's own .import files are copied" 'worktree nest: copied 2 ignored \.import files' "$out"
+expect "the base's .import files are in the worktree" 'remap' "$(cat "$wts/nest/art/sub/b.png.import" 2>&1)"
+expect "no file of another checkout is copied" '^0$' "$(find "$wts/nest/.claude" "$wts/nest/native" -type f 2>/dev/null | wc -l | tr -d ' ')"
+
+# (5) a split stopped after the worktree was made, before its task file: the same split again finishes it
+"$WARMD" batch-done >/dev/null
+git worktree add -q -b warmd/halt "$wts/halt" HEAD
+rm -f "$wts/halt/old.gd"   # stopped inside the checkout: a tracked file not written yet
+printf 'halt | a goal | y | art/h.gd\n' > tasks5.txt
+out="$(timeout 120 "$WARMD" split tasks5.txt 2>&1)"
+expect "a split stopped before its task file goes on" '^AGENT halt:' "$out"
+expect "its unfinished checkout is completed" 'class_name OldOne' "$(cat "$wts/halt/old.gd" 2>&1)"
+expect "the stopped split's worktree is used again" "^Task halt\. First run: cd \".*halt\"" "$(cat .warmd/tasks/halt.md 2>&1 | head -1)"
+
 cd "$HERE" || exit 1
 rm -rf "$TMP" 2>/dev/null
 echo; [ $fails = 0 ] && echo "godot_wt: all green" || echo "godot_wt: $fails failed"

@@ -37,6 +37,7 @@ godot_seed_imports() { # project dir [donor dir...] -> REPLY = number of imports
       cp -f "$d/$dest" "$dir/$dest" && cp -f "$d/$md5f" "$dir/$md5f" && n=$((n + 1))
       break
     done
-  done < <(find "$dir" -name '*.import' -not -path '*/.godot/*' -not -path '*/.git/*' 2>/dev/null)
+  # never another checkout's files: old worktrees under .claude/worktrees or .warmd-worktrees hold tens of thousands
+  done < <(find "$dir" \( -name .godot -o -name .git -o -path '*/.claude/worktrees' -o -path '*/.warmd-worktrees' \) -prune -o -name '*.import' -print 2>/dev/null)
   REPLY=$n
 }

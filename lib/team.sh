@@ -193,6 +193,11 @@ wt_old_gap() { # name: prints a GAP line and returns 1 when the old branch/workt
   ahead="$(git -C "$GIT_ROOT" rev-list --count "$base..$br" 2>/dev/null || echo 0)"
   wt="$(git -C "$GIT_ROOT" worktree list --porcelain | awk -v b="refs/heads/$br" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')"
   [ -n "$wt" ] && [ -d "$wt" ] && dirty="$(git -C "$wt" status --porcelain -uno | grep -vE '\.sln[x]?$|Assets/Editor/Warmd/|\.(uid|import)$')"
+  # A split stopped after git worktree add and before the task file: no agent ever worked there, the only "changes" are
+  # files its checkout had not written yet. They are checked out again and the same split goes on.
+  if [ "${ahead:-0}" = 0 ] && [ -n "$dirty" ] && [ ! -f "$(ledger_taskdir)/$name.md" ] && ! printf '%s\n' "$dirty" | grep -qv '^ D '; then
+    git -C "$wt" checkout -q -- . 2>/dev/null && echo "(worktree $name: an earlier split stopped before its task file, its checkout is completed)" >&2 && return 0
+  fi
   if [ "${ahead:-0}" -gt 0 ] || [ -n "$dirty" ]; then
     echo "GAP $name: branch $br already exists with ${ahead:-0} commit(s) not in $base${dirty:+ and uncommitted changes}. Use a new task name or: warmd drop $name --delete"
     return 1
